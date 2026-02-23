@@ -277,62 +277,150 @@ function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): string[
   const arrayField = ctx.state.find(f => f.type.kind === 'array');
   const arrayName = arrayField?.name;
 
+  const canWireApi = ctx.hasBackend && ctx.apiRoutes.length > 0;
+  const expandedRoutes = canWireApi ? expandCrud(ctx.apiRoutes) : [];
+
   for (const mut of analysis.mutations) {
     const name = mut.name;
+    const match = canWireApi ? findMatchingRoute(name, expandedRoutes, ctx) : null;
 
     if (name === 'add' || name === 'addItem') {
-      if (arrayName) {
+      if (match) {
+        lines.push(`const ${name} = async (data) => {`);
+        lines.push(`  try {`);
+        lines.push(`    await api.${match.fnName}(data);`);
+        if (match.refetchFnName && match.refetchSetter) {
+          lines.push(`    const updated = await api.${match.refetchFnName}();`);
+          lines.push(`    ${match.refetchSetter}(updated);`);
+        }
+        lines.push(`  } catch (err) {`);
+        lines.push(`    console.error('${name} failed:', err);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else if (arrayName) {
         lines.push(`const ${name} = (data) => {`);
         lines.push(`  ${setter(arrayName)}(prev => [...prev, { ...data, id: Date.now() }]);`);
         lines.push('};');
       }
     } else if (name === 'del' || name === 'delItem' || name === 'remove') {
-      if (arrayName) {
+      if (match) {
+        lines.push(`const ${name} = async (id) => {`);
+        lines.push(`  try {`);
+        lines.push(`    await api.${match.fnName}(id);`);
+        if (match.refetchFnName && match.refetchSetter) {
+          lines.push(`    const updated = await api.${match.refetchFnName}();`);
+          lines.push(`    ${match.refetchSetter}(updated);`);
+        }
+        lines.push(`  } catch (err) {`);
+        lines.push(`    console.error('${name} failed:', err);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else if (arrayName) {
         lines.push(`const ${name} = (id) => {`);
         lines.push(`  ${setter(arrayName)}(prev => prev.filter(item => item.id !== id));`);
         lines.push('};');
       }
     } else if (name === 'toggle') {
-      if (arrayName) {
+      if (match) {
+        lines.push(`const ${name} = async (id, field) => {`);
+        lines.push(`  try {`);
+        if (arrayName) {
+          lines.push(`    const current = ${arrayName}.find(i => i.id === id);`);
+          lines.push(`    await api.${match.fnName}(id, { [field]: !(current?.[field]) });`);
+        } else {
+          lines.push(`    await api.${match.fnName}(id, { [field]: true });`);
+        }
+        if (match.refetchFnName && match.refetchSetter) {
+          lines.push(`    const updated = await api.${match.refetchFnName}();`);
+          lines.push(`    ${match.refetchSetter}(updated);`);
+        }
+        lines.push(`  } catch (err) {`);
+        lines.push(`    console.error('toggle failed:', err);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else if (arrayName) {
         lines.push(`const ${name} = (id, field) => {`);
         lines.push(`  ${setter(arrayName)}(prev => prev.map(item => item.id === id ? { ...item, [field]: !item[field] } : item));`);
         lines.push('};');
       }
     } else if (name === 'login') {
-      lines.push(`const login = async (e) => {`);
-      lines.push(`  e?.preventDefault?.();`);
-      lines.push(`  setLoading(true);`);
-      lines.push(`  setError(null);`);
-      lines.push(`  try {`);
-      lines.push(`    // TODO: Replace with actual API call`);
-      lines.push(`    console.log('Login attempted');`);
-      lines.push(`    setUser({ name: 'User', email: 'user@example.com', token: 'mock-token' });`);
-      lines.push(`    setCurrentPage('dashboard');`);
-      lines.push(`  } catch (err) {`);
-      lines.push(`    setError(err.message || 'Login failed');`);
-      lines.push(`  } finally {`);
-      lines.push(`    setLoading(false);`);
-      lines.push(`  }`);
-      lines.push('};');
+      if (match) {
+        lines.push(`const login = async (e) => {`);
+        lines.push(`  e?.preventDefault?.();`);
+        lines.push(`  setLoading(true);`);
+        lines.push(`  setError(null);`);
+        lines.push(`  try {`);
+        lines.push(`    const formData = e?.target ? Object.fromEntries(new FormData(e.target)) : {};`);
+        lines.push(`    const result = await api.${match.fnName}(formData);`);
+        lines.push(`    setUser(result);`);
+        lines.push(`    setCurrentPage('dashboard');`);
+        lines.push(`  } catch (err) {`);
+        lines.push(`    setError(err.message || 'Login failed');`);
+        lines.push(`  } finally {`);
+        lines.push(`    setLoading(false);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else {
+        lines.push(`const login = async (e) => {`);
+        lines.push(`  e?.preventDefault?.();`);
+        lines.push(`  setLoading(true);`);
+        lines.push(`  setError(null);`);
+        lines.push(`  try {`);
+        lines.push(`    // TODO: Replace with actual API call`);
+        lines.push(`    console.log('Login attempted');`);
+        lines.push(`    setUser({ name: 'User', email: 'user@example.com', token: 'mock-token' });`);
+        lines.push(`    setCurrentPage('dashboard');`);
+        lines.push(`  } catch (err) {`);
+        lines.push(`    setError(err.message || 'Login failed');`);
+        lines.push(`  } finally {`);
+        lines.push(`    setLoading(false);`);
+        lines.push(`  }`);
+        lines.push('};');
+      }
     } else if (name === 'logout') {
-      lines.push(`const logout = () => {`);
-      lines.push(`  setUser(null);`);
-      lines.push(`  setCurrentPage('login');`);
-      lines.push('};');
-    } else if (name === 'signup') {
-      lines.push(`const signup = async (e) => {`);
-      lines.push(`  e?.preventDefault?.();`);
-      lines.push(`  setLoading(true);`);
-      lines.push(`  setError(null);`);
-      lines.push(`  try {`);
-      lines.push(`    console.log('Signup attempted');`);
-      lines.push(`    setCurrentPage('login');`);
-      lines.push(`  } catch (err) {`);
-      lines.push(`    setError(err.message || 'Signup failed');`);
-      lines.push(`  } finally {`);
-      lines.push(`    setLoading(false);`);
-      lines.push(`  }`);
-      lines.push('};');
+      if (match) {
+        lines.push(`const logout = async () => {`);
+        lines.push(`  try { await api.${match.fnName}(); } catch (_) {}`);
+        lines.push(`  setUser(null);`);
+        lines.push(`  setCurrentPage('login');`);
+        lines.push('};');
+      } else {
+        lines.push(`const logout = () => {`);
+        lines.push(`  setUser(null);`);
+        lines.push(`  setCurrentPage('login');`);
+        lines.push('};');
+      }
+    } else if (name === 'signup' || name === 'register') {
+      if (match) {
+        lines.push(`const ${name} = async (e) => {`);
+        lines.push(`  e?.preventDefault?.();`);
+        lines.push(`  setLoading(true);`);
+        lines.push(`  setError(null);`);
+        lines.push(`  try {`);
+        lines.push(`    const formData = e?.target ? Object.fromEntries(new FormData(e.target)) : {};`);
+        lines.push(`    await api.${match.fnName}(formData);`);
+        lines.push(`    setCurrentPage('login');`);
+        lines.push(`  } catch (err) {`);
+        lines.push(`    setError(err.message || '${capitalize(name)} failed');`);
+        lines.push(`  } finally {`);
+        lines.push(`    setLoading(false);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else {
+        lines.push(`const ${name} = async (e) => {`);
+        lines.push(`  e?.preventDefault?.();`);
+        lines.push(`  setLoading(true);`);
+        lines.push(`  setError(null);`);
+        lines.push(`  try {`);
+        lines.push(`    console.log('${capitalize(name)} attempted');`);
+        lines.push(`    setCurrentPage('login');`);
+        lines.push(`  } catch (err) {`);
+        lines.push(`    setError(err.message || '${capitalize(name)} failed');`);
+        lines.push(`  } finally {`);
+        lines.push(`    setLoading(false);`);
+        lines.push(`  }`);
+        lines.push('};');
+      }
     } else {
       // Generic mutation stub
       lines.push(`const ${name.replace(/\./g, '_')} = (...args) => {`);
@@ -415,6 +503,83 @@ function matchHookToApiCall(
   const setter = `set${resource.charAt(0).toUpperCase() + resource.slice(1)}`;
 
   return `api.${fnName}().then(data => ${setter}(data)).catch(console.error);`;
+}
+
+// ---- Mutation-to-Route Matching ----
+
+interface MutationRouteMatch {
+  fnName: string;        // e.g. 'createTodo'
+  method: string;        // e.g. 'POST'
+  refetchFnName: string | null;  // e.g. 'getTodos'
+  refetchSetter: string | null;  // e.g. 'setItems'
+}
+
+/**
+ * Match a mutation name to an API route for fullstack wiring.
+ * Returns the API function name, HTTP method, and refetch info, or null if no match.
+ */
+function findMatchingRoute(
+  mutName: string,
+  expandedRoutes: import('../parser/types.js').AirRoute[],
+  ctx: TranspileContext,
+): MutationRouteMatch | null {
+  let matchedRoute: import('../parser/types.js').AirRoute | undefined;
+
+  if (mutName === 'add' || mutName === 'addItem') {
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'POST' && /~db\.\w+\.create/.test(r.handler)
+    );
+  } else if (mutName === 'del' || mutName === 'delItem' || mutName === 'remove') {
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'DELETE' && /~db\.\w+\.delete/.test(r.handler)
+    );
+  } else if (mutName === 'toggle') {
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'PUT' && /~db\.\w+\.update/.test(r.handler)
+    );
+  } else if (mutName === 'login') {
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'POST' && r.path.endsWith('/login')
+    );
+  } else if (mutName === 'signup' || mutName === 'register') {
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'POST' && (r.path.endsWith('/signup') || r.path.endsWith('/register'))
+    );
+  } else if (mutName === 'logout') {
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'POST' && r.path.endsWith('/logout')
+    );
+  }
+
+  if (!matchedRoute) return null;
+
+  const fnName = routeToFunctionName(matchedRoute.method, matchedRoute.path);
+
+  // Find refetch: GET route on the same base path
+  const basePath = matchedRoute.path.replace(/\/:[^/]+$/, '');
+  const getRoute = expandedRoutes.find(r =>
+    r.method === 'GET' && r.path === basePath
+  );
+  const refetchFnName = getRoute ? routeToFunctionName('GET', getRoute.path) : null;
+
+  // Resolve state setter for refetch
+  let refetchSetter: string | null = null;
+  if (refetchFnName) {
+    // 1. Direct name match: /todos → state field 'todos' → setTodos
+    const resource = basePath.replace(/^\//, '').split('/').pop() || '';
+    const directMatch = ctx.state.find(f => f.name === resource);
+    if (directMatch) {
+      refetchSetter = 'set' + capitalize(directMatch.name);
+    } else {
+      // 2. Single array fallback
+      const arrays = ctx.state.filter(f => f.type.kind === 'array');
+      if (arrays.length === 1) {
+        refetchSetter = 'set' + capitalize(arrays[0].name);
+      }
+    }
+  }
+
+  return { fnName, method: matchedRoute.method, refetchFnName, refetchSetter };
 }
 
 // ---- Root JSX ----
@@ -577,7 +742,8 @@ function generateElementJSX(
   // Self-closing or empty
   if (mapping.selfClosing) {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    return `${pad}<${mapping.tag}${typeAttr} className="${mapping.className}" />`;
+    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || 'text'}"` : '';
+    return `${pad}<${mapping.tag}${typeAttr}${nameAttr} className="${mapping.className}" />`;
   }
 
   if (mapping.className) {
@@ -1030,10 +1196,11 @@ function generateBindJSX(
   // Simple styled element
   if (mapping.selfClosing) {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
+    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolved.element}"` : '';
     const placeholder = mapping.inputType && resolved.element === 'input'
       ? ` placeholder="${capitalize(mapping.inputType)}..."`
       : '';
-    return `${pad}<${mapping.tag}${typeAttr}${classAttr(mapping.className)}${placeholder} />`;
+    return `${pad}<${mapping.tag}${typeAttr}${nameAttr}${classAttr(mapping.className)}${placeholder} />`;
   }
 
   return `${pad}<${mapping.tag}${classAttr(mapping.className)}></${mapping.tag}>`;
@@ -1144,9 +1311,11 @@ function generateBoundElement(
   if (mapping.tag === 'input' || resolved.element === 'search') {
     const ref = resolveRef(binding.kind === 'unary' ? binding.operand : binding, scope);
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    const inputJsx = `${pad}<input${typeAttr} className="${mapping.className}" value={${ref}} onChange={(e) => ${resolveSetterFromRef(ref)}(e.target.value)} placeholder="${capitalize(resolved.modifiers[0] || resolved.element)}..." />`;
+    const resolvedFieldName = ref.includes('.') ? ref.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
+    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolvedFieldName}"` : '';
+    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${ref}} onChange={(e) => ${resolveSetterFromRef(ref)}(e.target.value)} placeholder="${capitalize(resolved.modifiers[0] || resolved.element)}..." />`;
     if (scope.insideForm) {
-      const label = deriveLabel(ref.includes('.') ? ref.split('.').pop()! : (resolved.modifiers[0] || mapping.inputType || resolved.element));
+      const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
     }
     return inputJsx;
@@ -1360,9 +1529,11 @@ function generateFlowBoundElement(
   if (mapping.tag === 'input' || resolved.element === 'search') {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
     const placeholder = resolved.modifiers[0] || resolved.element;
-    const inputJsx = `${pad}<input${typeAttr} className="${mapping.className}" value={${stateRef}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${capitalize(placeholder)}..." />`;
+    const resolvedFieldName = stateRef.includes('.') ? stateRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
+    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolvedFieldName}"` : '';
+    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${stateRef}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${capitalize(placeholder)}..." />`;
     if (scope.insideForm) {
-      const label = deriveLabel(stateRef.includes('.') ? stateRef.split('.').pop()! : (resolved.modifiers[0] || mapping.inputType || resolved.element));
+      const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
     }
     return inputJsx;

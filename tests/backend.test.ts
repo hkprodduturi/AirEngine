@@ -653,3 +653,88 @@ describe('hook wiring (fullstack)', () => {
     expect(paths).not.toContain('client/src/api.js');
   });
 });
+
+// ---- Mutation wiring ----
+
+describe('mutation wiring (fullstack)', () => {
+  function getClientApp(name: string): string {
+    const result = transpileFile(name);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx');
+    return app?.content ?? '';
+  }
+
+  it('fullstack-todo add mutation calls api.createTodo', () => {
+    const app = getClientApp('fullstack-todo');
+    expect(app).toContain('api.createTodo(data)');
+  });
+
+  it('fullstack-todo del mutation calls api.deleteTodo', () => {
+    const app = getClientApp('fullstack-todo');
+    expect(app).toContain('api.deleteTodo(id)');
+  });
+
+  it('fullstack-todo mutations refetch with api.getTodos', () => {
+    const app = getClientApp('fullstack-todo');
+    expect(app).toContain('api.getTodos()');
+    expect(app).toContain('setItems(updated)');
+  });
+
+  it('fullstack-todo add mutation is async with try/catch', () => {
+    const app = getClientApp('fullstack-todo');
+    expect(app).toContain('const add = async (data)');
+    expect(app).toContain("console.error('add failed:'");
+  });
+
+  it('frontend-only todo has no api calls in mutations', () => {
+    const result = transpileFile('todo');
+    const app = result.files.find(f => f.path === 'src/App.jsx')!;
+    expect(app.content).not.toContain('api.');
+    expect(app.content).not.toContain('await');
+  });
+
+  it('auth.air login calls api with FormData', () => {
+    const app = getClientApp('auth');
+    expect(app).toContain('new FormData(e.target)');
+    expect(app).toContain('api.createLogin(formData)');
+  });
+
+  it('auth.air login does NOT have console.log stub', () => {
+    const app = getClientApp('auth');
+    expect(app).not.toContain("console.log('Login attempted')");
+  });
+
+  it('auth.air logout calls api.createLogout', () => {
+    const app = getClientApp('auth');
+    expect(app).toContain('api.createLogout()');
+  });
+
+  it('auth.air form inputs have name attributes', () => {
+    const app = getClientApp('auth');
+    expect(app).toContain('name="email"');
+    expect(app).toContain('name="password"');
+  });
+
+  it('unknown mutation still gets console.log stub', () => {
+    const ast = parse('@app:t\n@state{x:int}\n@api(\nGET:/data>handler\n)\n@ui(\nbtn:!archive\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain("console.log('archive'");
+  });
+
+  it('no matching route falls back to local-only behavior', () => {
+    // @api has no CRUD routes matching add → local-only
+    const ast = parse('@app:t\n@state{items:[{id:int,text:str}]}\n@api(\nGET:/stats>handler\n)\n@ui(\ninput:text>!add({text:#val})\nlist>*item(text:#item.text)\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('Date.now()');
+    expect(app.content).not.toContain('api.createTodo');
+  });
+
+  it('signup mutation with matching route uses FormData', () => {
+    const ast = parse('@app:t\n@state{user:?{name:str},error:?str,loading:bool}\n@api(\nPOST:/signup(name:str,email:str)>~db.users.create\n)\n@ui(\n@page:signup(form(input:text+input:email+btn:submit>"Sign Up")>!signup)\n@page:login(text>"Login")\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('api.createSignup(formData)');
+    expect(app.content).toContain('new FormData');
+  });
+});
