@@ -7,10 +7,10 @@
  */
 
 import type { TranspileContext } from './context.js';
-import { expandCrud, routeToFunctionName, extractPathParams } from './route-utils.js';
+import { routeToFunctionName, extractPathParams } from './route-utils.js';
 
 export function generateApiClient(ctx: TranspileContext): string {
-  const routes = expandCrud(ctx.apiRoutes);
+  const routes = ctx.expandedRoutes;
   const lines: string[] = [];
 
   lines.push("const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001/api';");

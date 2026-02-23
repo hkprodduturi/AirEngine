@@ -7,7 +7,6 @@ import type { TranspileContext } from '../context.js';
 import type { UIAnalysis, ResolvedBind } from '../normalize-ui.js';
 import { resolveBindChain } from '../normalize-ui.js';
 import { mapElement } from '../element-map.js';
-import { expandCrud } from '../route-utils.js';
 
 // ---- Icon emoji map ----
 
@@ -617,7 +616,7 @@ export interface HookMapping {
 export function getHookableStateProps(ctx: TranspileContext): Map<string, HookMapping> {
   if (!ctx.hasBackend || !ctx.db) return new Map();
 
-  const routes = expandCrud(ctx.apiRoutes);
+  const routes = ctx.expandedRoutes;
   const result = new Map<string, HookMapping>();
 
   for (const model of ctx.db.models) {

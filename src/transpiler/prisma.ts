@@ -6,7 +6,7 @@
  * relation fields (one-to-many), and index annotations.
  */
 
-import type { AirDbBlock, AirDbField, AirDbModel, AirType } from '../parser/types.js';
+import type { AirDbBlock, AirDbField, AirDbModel, AirDbRelation, AirType } from '../parser/types.js';
 
 // ---- Type mapping ----
 
@@ -113,6 +113,15 @@ export interface ResolvedRelation {
   fkSide: 'A' | 'B';
   fkField: string;
   optional: boolean;
+  onDelete?: 'cascade' | 'setNull' | 'restrict';
+}
+
+export interface ManyToManyRelation {
+  modelA: string;
+  modelB: string;
+  fieldA: string;
+  fieldB: string;
+  name: string;
 }
 
 interface AmbiguousRelation {
@@ -121,9 +130,10 @@ interface AmbiguousRelation {
   reason: string;
 }
 
-export function resolveRelations(db: AirDbBlock): { resolved: ResolvedRelation[]; ambiguous: AmbiguousRelation[] } {
+export function resolveRelations(db: AirDbBlock): { resolved: ResolvedRelation[]; ambiguous: AmbiguousRelation[]; manyToMany: ManyToManyRelation[] } {
   const resolved: ResolvedRelation[] = [];
   const ambiguous: AmbiguousRelation[] = [];
+  const manyToMany: ManyToManyRelation[] = [];
 
   const modelMap = new Map<string, AirDbModel>();
   for (const m of db.models) modelMap.set(m.name, m);
@@ -169,6 +179,7 @@ export function resolveRelations(db: AirDbBlock): { resolved: ResolvedRelation[]
         fkSide: 'B',
         fkField: fkOnB.name,
         optional: isOptionalField(fkOnB),
+        onDelete: rel.onDelete,
       });
     } else if (fkOnA && !fkOnB) {
       // FK on side A → A belongs to B
@@ -187,15 +198,34 @@ export function resolveRelations(db: AirDbBlock): { resolved: ResolvedRelation[]
         fkSide: 'A',
         fkField: fkOnA.name,
         optional: isOptionalField(fkOnA),
+        onDelete: rel.onDelete,
       });
     } else if (fkOnA && fkOnB) {
       ambiguous.push({ from: rel.from, to: rel.to, reason: 'FK fields found on both sides' });
     } else {
-      ambiguous.push({ from: rel.from, to: rel.to, reason: 'no FK field found on either side' });
+      // No FK on either side → many-to-many (Prisma implicit junction table)
+      const aHasId = mA.fields.some(f => f.name === 'id');
+      const bHasId = mB.fields.some(f => f.name === 'id');
+      if (!aHasId || !bHasId) {
+        ambiguous.push({ from: rel.from, to: rel.to, reason: `model ${!aHasId ? modelA : modelB} has no 'id' field for many-to-many` });
+        continue;
+      }
+      if (hasFieldNameConflict(mA, relNameA) || hasFieldNameConflict(mB, relNameB)) {
+        const conflict = hasFieldNameConflict(mA, relNameA) ? `${modelA}.${relNameA}` : `${modelB}.${relNameB}`;
+        ambiguous.push({ from: rel.from, to: rel.to, reason: `relation field name '${conflict}' conflicts with existing scalar field` });
+        continue;
+      }
+      manyToMany.push({
+        modelA,
+        modelB,
+        fieldA: relNameA,
+        fieldB: relNameB,
+        name: `${modelA}_${relNameA}_${modelB}_${relNameB}`,
+      });
     }
   }
 
-  return { resolved, ambiguous };
+  return { resolved, ambiguous, manyToMany };
 }
 
 function findFkField(model: AirDbModel, relName: string, otherModel: string): AirDbField | undefined {
@@ -214,7 +244,17 @@ function hasFieldNameConflict(model: AirDbModel, relName: string): boolean {
 
 // ---- Build relation field map ----
 
-function buildRelationFieldMap(resolved: ResolvedRelation[]): Map<string, string[]> {
+/** Map Prisma onDelete action keyword from resolved relation */
+function resolveOnDelete(r: ResolvedRelation): string {
+  // Explicit onDelete from AIR syntax takes priority
+  if (r.onDelete === 'cascade') return 'Cascade';
+  if (r.onDelete === 'setNull') return 'SetNull';
+  if (r.onDelete === 'restrict') return 'Restrict';
+  // Heuristic: required FK → Cascade, optional FK → SetNull
+  return r.optional ? 'SetNull' : 'Cascade';
+}
+
+function buildRelationFieldMap(resolved: ResolvedRelation[], manyToMany: ManyToManyRelation[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
 
   const getLines = (model: string) => {
@@ -223,19 +263,27 @@ function buildRelationFieldMap(resolved: ResolvedRelation[]): Map<string, string
   };
 
   for (const r of resolved) {
+    const onDeleteAction = resolveOnDelete(r);
+
     if (r.fkSide === 'B') {
       // B belongs to A via fkField on B
       const relationName = `${r.modelA}_${r.relNameA}`;
       getLines(r.modelA).push(`  ${r.relNameA}  ${r.modelB}[]  @relation("${relationName}")`);
       const opt = r.optional ? '?' : '';
-      getLines(r.modelB).push(`  ${r.relNameB}  ${r.modelA}${opt}  @relation("${relationName}", fields: [${r.fkField}], references: [id])`);
+      getLines(r.modelB).push(`  ${r.relNameB}  ${r.modelA}${opt}  @relation("${relationName}", fields: [${r.fkField}], references: [id], onDelete: ${onDeleteAction})`);
     } else {
       // A belongs to B via fkField on A
       const relationName = `${r.modelB}_${r.relNameB}`;
       const opt = r.optional ? '?' : '';
-      getLines(r.modelA).push(`  ${r.relNameA}  ${r.modelB}${opt}  @relation("${relationName}", fields: [${r.fkField}], references: [id])`);
+      getLines(r.modelA).push(`  ${r.relNameA}  ${r.modelB}${opt}  @relation("${relationName}", fields: [${r.fkField}], references: [id], onDelete: ${onDeleteAction})`);
       getLines(r.modelB).push(`  ${r.relNameB}  ${r.modelA}[]  @relation("${relationName}")`);
     }
+  }
+
+  // Many-to-many: both sides get Model[] fields (Prisma implicit junction table)
+  for (const m of manyToMany) {
+    getLines(m.modelA).push(`  ${m.fieldA}  ${m.modelB}[]`);
+    getLines(m.modelB).push(`  ${m.fieldB}  ${m.modelA}[]`);
   }
 
   return map;
@@ -388,8 +436,8 @@ export function generatePrismaSchema(db: AirDbBlock): string {
   lines.push('}');
 
   // Resolve relations and indexes
-  const { resolved, ambiguous } = resolveRelations(db);
-  const relationFieldMap = buildRelationFieldMap(resolved);
+  const { resolved, ambiguous, manyToMany } = resolveRelations(db);
+  const relationFieldMap = buildRelationFieldMap(resolved, manyToMany);
   const { fieldAttrs, modelAttrs, todoComments } = buildIndexMap(db);
 
   // Enums not generated as Prisma enum blocks (SQLite doesn't support them).

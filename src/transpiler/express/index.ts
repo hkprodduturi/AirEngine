@@ -14,7 +14,6 @@
 import type { TranspileContext } from '../context.js';
 import type { OutputFile } from '../index.js';
 import { generatePrismaSchema } from '../prisma.js';
-import { expandCrud } from '../route-utils.js';
 import { generateTypesFile } from '../types-gen.js';
 import { generateSeedFile } from '../seed-gen.js';
 
@@ -95,7 +94,7 @@ export function generateServer(ctx: TranspileContext): OutputFile[] {
   // api.ts — Express router from @api routes
   // If 3+ model groups, split into per-resource routers
   if (ctx.apiRoutes.length > 0) {
-    const expanded = expandCrud(ctx.apiRoutes);
+    const expanded = ctx.expandedRoutes;
     const groups = groupRoutesByModel(expanded);
     if (shouldSplitRoutes(groups)) {
       // Per-resource router files

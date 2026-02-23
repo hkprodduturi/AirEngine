@@ -14,6 +14,7 @@ export function generateServerEntry(ctx: TranspileContext): string {
 
   lines.push("import express from 'express';");
   lines.push("import cors from 'cors';");
+  lines.push("import helmet from 'helmet';");
   lines.push("import 'dotenv/config';");
   lines.push("import { requestLogger, errorHandler } from './middleware.js';");
 
@@ -27,12 +28,46 @@ export function generateServerEntry(ctx: TranspileContext): string {
     lines.push("import { requireAuth } from './auth.js';");
   }
 
+  // Resolve CORS origin from @env or default
+  let corsOrigin = "'http://localhost:3000'";
+  if (ctx.env) {
+    const originVar = ctx.env.vars.find(v => v.name === 'CORS_ORIGIN' || v.name === 'CLIENT_URL');
+    if (originVar) corsOrigin = `process.env.${originVar.name} || ${corsOrigin}`;
+  }
+
   lines.push('');
   lines.push('const app = express();');
-  lines.push("app.use(cors({ exposedHeaders: ['X-Total-Count'] }));");
-  lines.push('app.use(express.json());');
+  lines.push('app.use(helmet());');
+  lines.push(`app.use(cors({ origin: ${corsOrigin}, exposedHeaders: ['X-Total-Count'] }));`);
+  lines.push("app.use(express.json({ limit: '10mb' }));");
   lines.push('app.use(requestLogger);');
   lines.push('');
+  // Simple in-memory rate limiter
+  lines.push('// Rate limiting (in-memory, no deps)');
+  lines.push('const rateLimitMap = new Map();');
+  lines.push('app.use((req, res, next) => {');
+  lines.push('  const key = req.ip;');
+  lines.push('  const now = Date.now();');
+  lines.push('  const window = 15 * 60 * 1000; // 15 minutes');
+  lines.push('  const maxRequests = 100;');
+  lines.push('  const entry = rateLimitMap.get(key) || { count: 0, start: now };');
+  lines.push('  if (now - entry.start > window) { entry.count = 0; entry.start = now; }');
+  lines.push('  entry.count++;');
+  lines.push('  rateLimitMap.set(key, entry);');
+  lines.push("  if (entry.count > maxRequests) return res.status(429).json({ error: 'Too many requests' });");
+  lines.push('  next();');
+  lines.push('});');
+  lines.push('');
+
+  // Auth middleware: protect API routes except auth endpoints
+  if (ctx.auth) {
+    lines.push('// Protect API routes except auth endpoints');
+    lines.push("app.use('/api', (req, res, next) => {");
+    lines.push("  if (req.path.startsWith('/auth/')) return next();");
+    lines.push('  requireAuth(req, res, next);');
+    lines.push('});');
+    lines.push('');
+  }
 
   if (ctx.apiRoutes.length > 0) {
     lines.push("app.use('/api', apiRouter);");
@@ -106,6 +141,7 @@ export function generateServerPackageJson(ctx: TranspileContext): string {
     dependencies: {
       express: '^4.18.2',
       cors: '^2.8.5',
+      helmet: '^7.1.0',
       dotenv: '^16.4.0',
       ...(ctx.db ? { '@prisma/client': '^5.10.0' } : {}),
     },
@@ -148,6 +184,9 @@ export function generateEnvFile(ctx: TranspileContext): string {
   // Built-in defaults
   if (ctx.db) {
     vars.set('DATABASE_URL', '"file:./dev.db"');
+  }
+  if (ctx.auth) {
+    vars.set('JWT_SECRET', '"dev-secret-change-in-production"');
   }
   vars.set('PORT', '3001');
 
@@ -203,6 +242,29 @@ export function generateValidation(): string {
   lines.push('    throw err;');
   lines.push('  }');
   lines.push('  return parsed;');
+  lines.push('}');
+  lines.push('');
+  lines.push('type FieldSchema = Record<string, "string" | "number" | "boolean" | "optional_string" | "optional_number" | "optional_boolean">;');
+  lines.push('');
+  lines.push('/**');
+  lines.push(' * Validate request body fields against a schema.');
+  lines.push(' * Returns array of error messages (empty = valid).');
+  lines.push(' */');
+  lines.push('export function validateFields(body: Record<string, unknown>, schema: FieldSchema): string[] {');
+  lines.push('  const errors: string[] = [];');
+  lines.push('  for (const [field, expected] of Object.entries(schema)) {');
+  lines.push('    const value = body[field];');
+  lines.push('    const isOptional = expected.startsWith("optional_");');
+  lines.push('    const baseType = isOptional ? expected.slice(9) : expected;');
+  lines.push('    if (value === undefined || value === null) {');
+  lines.push('      if (!isOptional) errors.push(`${field} is required`);');
+  lines.push('      continue;');
+  lines.push('    }');
+  lines.push('    if (typeof value !== baseType) {');
+  lines.push('      errors.push(`${field} must be a ${baseType}, got ${typeof value}`);');
+  lines.push('    }');
+  lines.push('  }');
+  lines.push('  return errors;');
   lines.push('}');
   lines.push('');
 

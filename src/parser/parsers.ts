@@ -942,7 +942,28 @@ export function parseDb(s: TokenStream): AirDbBlock {
         s.expect('operator', '<');
         s.expect('operator', '>');
         const to = readDottedName(s);
-        relations.push({ from, to });
+        // Optional referential action: :cascade, :set-null, :restrict
+        let onDelete: 'cascade' | 'setNull' | 'restrict' | undefined;
+        if (s.is('colon')) {
+          const save = s.save();
+          s.advance(); // consume :
+          if (s.is('identifier', 'cascade')) {
+            s.advance();
+            onDelete = 'cascade';
+          } else if (s.is('identifier', 'set-null')) {
+            // Hyphenated identifier: lexer reads set-null as single token
+            s.advance();
+            onDelete = 'setNull';
+          } else if (s.is('identifier', 'restrict')) {
+            s.advance();
+            onDelete = 'restrict';
+          } else {
+            s.restore(save);
+          }
+        }
+        const rel: AirDbRelation = { from, to };
+        if (onDelete) rel.onDelete = onDelete;
+        relations.push(rel);
         if (!s.match('comma')) break;
       }
       s.expect('close_paren');

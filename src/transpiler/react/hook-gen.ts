@@ -4,7 +4,7 @@
 
 import type { AirRoute } from '../../parser/types.js';
 import type { TranspileContext } from '../context.js';
-import { expandCrud, routeToFunctionName } from '../route-utils.js';
+import { routeToFunctionName } from '../route-utils.js';
 
 // ---- Hook Effects ----
 
@@ -13,7 +13,7 @@ export function generateHookEffects(ctx: TranspileContext): string[] {
 
   const canWireApi = ctx.hasBackend && ctx.apiRoutes.length > 0;
   // Pre-expand routes for matching
-  const expandedRoutes = canWireApi ? expandCrud(ctx.apiRoutes) : [];
+  const expandedRoutes = canWireApi ? ctx.expandedRoutes : [];
 
   const lines: string[] = [];
   for (const hook of ctx.hooks) {

@@ -7,10 +7,8 @@
 
 import type { TranspileContext } from './context.js';
 import type { AirRoute, AirType, AirField } from '../parser/types.js';
-import { expandCrud } from './route-utils.js';
-
 export function generateTypesFile(ctx: TranspileContext): string {
-  const routes = expandCrud(ctx.apiRoutes);
+  const routes = ctx.expandedRoutes;
   const lines: string[] = [];
 
   lines.push('// Auto-generated request body types');
@@ -85,7 +83,7 @@ export function airTypeToTS(type: AirType): string {
 
 /** Get all type names that would be generated for a set of routes */
 export function getGeneratedTypeNames(ctx: TranspileContext): Map<AirRoute, string> {
-  const routes = expandCrud(ctx.apiRoutes);
+  const routes = ctx.expandedRoutes;
   const map = new Map<AirRoute, string>();
   for (const route of routes) {
     if (!route.params || route.params.length === 0) continue;

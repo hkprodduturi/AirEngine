@@ -51,12 +51,11 @@ cd my-fullstack-app/server && npm install && npx prisma generate && npx prisma d
 
 | Input | Output |
 |-------|--------|
-| `todo.air` (11 lines) | 7 files, 138 lines — Vite + React + Tailwind |
-| `fullstack-todo.air` (18 lines) | 14 files, 310 lines — React client + Express/Prisma server |
-| `projectflow.air` (298 lines) | 21 files, 868 lines — 5 DB models, 18 API routes, 5 pages |
-| `airengine-site.air` (73 lines) | 8 files, 321 lines — Marketing landing page with code blocks |
+| `todo.air` (12 lines) | 9 files, ~270 lines — Vite + React + Tailwind |
+| `fullstack-todo.air` (18 lines) | ~20 files, ~600 lines — React client + Express/Prisma server |
+| `projectflow.air` (302 lines) | 50 files, ~2500 lines — 5 DB models, 18 API routes, 5 pages |
 
-Every generated app builds and runs. Frontend apps use Vite + React + Tailwind. Full-stack apps add Express + Prisma with SQLite.
+Every generated app builds and runs. Frontend apps use Vite + React + Tailwind. Full-stack apps add Express + Prisma with SQLite. Generated servers include JWT auth, request validation, rate limiting, and helmet security headers.
 
 ---
 
@@ -69,7 +68,7 @@ Every generated app builds and runs. Frontend apps use Vite + React + Tailwind. 
 
 ---
 
-## Supported Blocks (15)
+## Supported Blocks (16)
 
 | Block | Purpose |
 |-------|---------|
@@ -88,6 +87,7 @@ Every generated app builds and runs. Frontend apps use Vite + React + Tailwind. 
 | `@nav(...)` | Client-side routing with guards |
 | `@persist:x(...)` | Data persistence (localStorage, cookie) |
 | `@hook(...)` | Lifecycle hooks and side effects |
+| `@deploy(...)` | Deployment config (Docker Compose generation) |
 
 ---
 
@@ -131,7 +131,20 @@ Eight example apps ship with the package in `examples/`:
 
 AirEngine includes an MCP server for use with Claude and other AI assistants. See [docs/MCP_SETUP.md](docs/MCP_SETUP.md) for setup instructions.
 
-The MCP server exposes four tools: `air_validate`, `air_transpile`, `air_explain`, and `air_generate`.
+The MCP server exposes six tools: `air_validate`, `air_transpile`, `air_explain`, `air_generate`, `air_lint`, and `air_capabilities`.
+
+---
+
+## CLI Commands
+
+```bash
+air transpile app.air -o ./out     # Transpile to working app (incremental by default)
+air transpile app.air --target client  # Client-only output
+air init                           # Generate a starter .air file (interactive)
+air dev app.air                    # Watch mode with hot reload
+air doctor app.air                 # Check environment (Node, npm, ports, Prisma)
+air validate app.air               # Parse + validate without transpiling
+```
 
 ---
 
@@ -142,7 +155,7 @@ git clone https://github.com/hkprodduturi/AirEngine.git
 cd AirEngine
 npm install
 npm run build
-npm test          # 372 tests
+npm test          # 579 tests
 ```
 
 ## License

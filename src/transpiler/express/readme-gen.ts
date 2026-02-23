@@ -7,7 +7,6 @@
 
 import type { TranspileContext } from '../context.js';
 import type { AirType } from '../../parser/types.js';
-import { expandCrud } from '../route-utils.js';
 
 export function generateReadme(ctx: TranspileContext): string {
   const lines: string[] = [];
@@ -41,7 +40,7 @@ export function generateReadme(ctx: TranspileContext): string {
 
   // API routes table
   if (ctx.apiRoutes.length > 0) {
-    const routes = expandCrud(ctx.apiRoutes);
+    const routes = ctx.expandedRoutes;
     lines.push('## API Routes');
     lines.push('');
     lines.push('| Method | Path | Handler |');

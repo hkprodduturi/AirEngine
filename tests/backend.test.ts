@@ -6,6 +6,9 @@ import { extractContext } from '../src/transpiler/context.js';
 import { generatePrismaSchema, resolveRelations } from '../src/transpiler/prisma.js';
 import { generateServer } from '../src/transpiler/express.js';
 import { routeToFunctionName, expandCrud } from '../src/transpiler/route-utils.js';
+import { hashContent, computeIncremental, saveManifest } from '../src/transpiler/cache.js';
+import { generateInitTemplate } from '../src/cli/templates.js';
+import { runDoctorChecks } from '../src/cli/doctor.js';
 import type { AirDbBlock } from '../src/parser/types.js';
 
 // ---- Helpers ----
@@ -101,7 +104,7 @@ describe('Prisma schema generation', () => {
     expect(schema).toContain('// pending, done, archived');
   });
 
-  it('generates TODO comments for ambiguous relations (no FK)', () => {
+  it('generates many-to-many relation fields when no FK exists', () => {
     const db: AirDbBlock = {
       kind: 'db',
       models: [
@@ -112,9 +115,11 @@ describe('Prisma schema generation', () => {
       indexes: [],
     };
     const schema = generatePrismaSchema(db);
-    expect(schema).toContain('// TODO: Ambiguous relations');
-    expect(schema).toContain('User.posts <-> Post.author');
-    expect(schema).toContain('no FK field found');
+    // Many-to-many: both sides get Model[] fields
+    expect(schema).toContain('posts  Post[]');
+    expect(schema).toContain('author  User[]');
+    // No ambiguous TODO for this relation
+    expect(schema).not.toContain('// TODO: Ambiguous relations');
   });
 });
 
@@ -900,12 +905,15 @@ describe('page component extraction', () => {
     expect(result.stats.pages).toBeGreaterThanOrEqual(3);
   });
 
-  it('App.jsx imports page components', () => {
+  it('App.jsx imports page components (static or lazy)', () => {
     const result = transpileFile('projectflow');
     const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
-    expect(app).toContain("import DashboardPage from './pages/DashboardPage.js'");
-    expect(app).toContain("import ProjectsPage from './pages/ProjectsPage.js'");
-    expect(app).toContain("import TasksPage from './pages/TasksPage.js'");
+    // With 3+ pages, lazy imports are used
+    for (const name of ['DashboardPage', 'ProjectsPage', 'TasksPage']) {
+      const hasStatic = app.includes(`import ${name} from './pages/${name}.js'`);
+      const hasLazy = app.includes(`const ${name} = lazy(() => import('./pages/${name}.js'))`);
+      expect(hasStatic || hasLazy).toBe(true);
+    }
   });
 
   it('App.jsx renders page components with props', () => {
@@ -1015,10 +1023,16 @@ describe('resource hooks', () => {
 // ---- No Dead Code Rule ----
 
 describe('no dead code', () => {
-  it('does NOT generate reusable components (not wired)', () => {
+  it('generates reusable components when patterns detected (wired)', () => {
     const result = transpileFile('projectflow');
     const componentFiles = result.files.filter(f => f.path.includes('/components/'));
-    expect(componentFiles.length).toBe(0);
+    expect(componentFiles.length).toBeGreaterThan(0);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
+    // Components should be imported in App.jsx
+    for (const cf of componentFiles) {
+      const name = cf.path.split('/').pop()!.replace('.jsx', '');
+      expect(app).toContain(`import ${name} from`);
+    }
   });
 
   it('only generates hooks that have matching array state vars', () => {
@@ -1051,10 +1065,12 @@ describe('page wiring integration (projectflow)', () => {
   const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
   const pageFiles = result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('Page.jsx'));
 
-  it('App.jsx imports every extracted page component', () => {
+  it('App.jsx imports every extracted page component (static or lazy)', () => {
     for (const pf of pageFiles) {
       const name = pf.path.split('/').pop()!.replace('.jsx', '');
-      expect(app).toContain(`import ${name} from './pages/${name}.js'`);
+      const hasStaticImport = app.includes(`import ${name} from './pages/${name}.js'`);
+      const hasLazyImport = app.includes(`const ${name} = lazy(() => import('./pages/${name}.js'))`);
+      expect(hasStaticImport || hasLazyImport).toBe(true);
     }
   });
 
@@ -1223,7 +1239,7 @@ describe('E1: relation resolution', () => {
     expect(schema).not.toContain('// TODO: Ambiguous');
   });
 
-  it('marks ambiguous relations as TODO (no FK field)', () => {
+  it('classifies no-FK relations as many-to-many (not ambiguous)', () => {
     const db: AirDbBlock = {
       kind: 'db',
       models: [
@@ -1234,11 +1250,11 @@ describe('E1: relation resolution', () => {
       indexes: [],
     };
     const schema = generatePrismaSchema(db);
-    expect(schema).toContain('// TODO: Ambiguous relations');
-    expect(schema).toContain('no FK field found');
-    // No relation fields should be generated in models
-    expect(schema).not.toContain('groups  Group');
-    expect(schema).not.toContain('members  User');
+    // Many-to-many: both sides get Model[] fields
+    expect(schema).toContain('groups  Group[]');
+    expect(schema).toContain('members  User[]');
+    // No ambiguous TODO
+    expect(schema).not.toContain('// TODO: Ambiguous relations');
   });
 
   it('generates optional relation field for optional FK', () => {
@@ -1262,7 +1278,7 @@ describe('E1: relation resolution', () => {
     expect(schema).toContain('assigned  Task[]');
   });
 
-  it('resolveRelations returns correct resolved/ambiguous split', () => {
+  it('resolveRelations returns correct resolved/manyToMany/ambiguous split', () => {
     const db: AirDbBlock = {
       kind: 'db',
       models: [
@@ -1279,12 +1295,14 @@ describe('E1: relation resolution', () => {
       ],
       indexes: [],
     };
-    const { resolved, ambiguous } = resolveRelations(db);
+    const { resolved, ambiguous, manyToMany } = resolveRelations(db);
     expect(resolved.length).toBe(1);
     expect(resolved[0].modelA).toBe('Workspace');
     expect(resolved[0].fkField).toBe('workspace_id');
-    expect(ambiguous.length).toBe(1);
-    expect(ambiguous[0].from).toBe('User.workspaces');
+    expect(ambiguous.length).toBe(0);
+    expect(manyToMany.length).toBe(1);
+    expect(manyToMany[0].modelA).toBe('User');
+    expect(manyToMany[0].modelB).toBe('Workspace');
   });
 
   it('skips relation when target model has no id field', () => {
@@ -1547,7 +1565,7 @@ describe('E1: FK-safe seeding', () => {
 // ---- E1: projectflow schema integration ----
 
 describe('E1: projectflow schema integration', () => {
-  it('schema has real relation fields + @unique + @@index + 1 ambiguous TODO', () => {
+  it('schema has real relation fields + m:n + @unique + @@index', () => {
     const schema = getServerFile('projectflow', 'server/prisma/schema.prisma')!;
 
     // Real relation fields (not TODO comments)
@@ -1564,6 +1582,15 @@ describe('E1: projectflow schema integration', () => {
     expect(schema).toContain('assignee  User?');
     expect(schema).toContain('fields: [assignee_id]');
 
+    // Many-to-many relation (User.workspaces<>Workspace.members → both sides get [])
+    expect(schema).toContain('workspaces  Workspace[]');
+    expect(schema).toContain('members  User[]');
+
+    // onDelete cascading for required FK relations
+    expect(schema).toContain('onDelete: Cascade');
+    // onDelete SetNull for optional FK (assignee)
+    expect(schema).toContain('onDelete: SetNull');
+
     // @unique indexes
     expect(schema).toContain('@unique');
     const emailLine = schema.split('\n').find(l => l.trim().startsWith('email') && l.includes('@unique'));
@@ -1574,9 +1601,8 @@ describe('E1: projectflow schema integration', () => {
     // @@index composite
     expect(schema).toContain('@@index([status, project_id])');
 
-    // 1 ambiguous relation (User.workspaces<>Workspace.members)
-    expect(schema).toContain('// TODO: Ambiguous relations');
-    expect(schema).toContain('User.workspaces <-> Workspace.members');
+    // No ambiguous relations anymore
+    expect(schema).not.toContain('// TODO: Ambiguous relations');
   });
 
   it('schema has no leftover "TODO: Prisma relation fields" from old format', () => {
@@ -1716,5 +1742,557 @@ describe('E2: deploy wiring', () => {
     expect(readme.content).toContain('aws');
     expect(result.files.find(f => f.path === 'server/Dockerfile')).toBeUndefined();
     expect(result.files.find(f => f.path === 'docker-compose.yml')).toBeUndefined();
+  });
+});
+
+// ---- Batch 2: Runtime Quality Tests ----
+
+describe('Batch 2: mutation wiring (update/save/archive/done)', () => {
+  it('update mutation matches PUT route', () => {
+    const ast = parse('@app:t\n@state{items:[{id:int,name:str}]}\n@db{\nItem{id:int:primary:auto,name:str}\n}\n@api(\nCRUD:/items>~db.Item\n)\n@ui(\nbtn:!update\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('const update = async');
+    expect(app.content).toContain('api.updateItem');
+  });
+
+  it('archive mutation sets archived:true via PUT', () => {
+    const ast = parse('@app:t\n@state{items:[{id:int,archived:bool}]}\n@db{\nItem{id:int:primary:auto,archived:bool}\n}\n@api(\nCRUD:/items>~db.Item\n)\n@ui(\nbtn:!archive\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('const archive = async');
+    expect(app.content).toContain('archived: true');
+  });
+
+  it('done mutation sets done:true via PUT', () => {
+    const ast = parse('@app:t\n@state{items:[{id:int,done:bool}]}\n@db{\nItem{id:int:primary:auto,done:bool}\n}\n@api(\nCRUD:/items>~db.Item\n)\n@ui(\nbtn:!done\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('const done = async');
+    expect(app.content).toContain('done: true');
+  });
+
+  it('archive without API or array falls back to console.log', () => {
+    const ast = parse('@app:t\n@state{x:int}\n@api(\nGET:/data>handler\n)\n@ui(\nbtn:!archive\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain("console.log('archive'");
+  });
+});
+
+describe('Batch 2: AbortController in resource hooks', () => {
+  it('resource hook includes AbortController cleanup', () => {
+    const result = transpileFile('projectflow');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    expect(hookFiles.length).toBeGreaterThan(0);
+    const hookFile = hookFiles[0];
+    expect(hookFile.content).toContain('AbortController');
+    expect(hookFile.content).toContain('controller.abort');
+    expect(hookFile.content).toContain("err.name === 'AbortError'");
+    expect(hookFile.content).toContain('signal');
+  });
+});
+
+describe('Batch 2: reusable components wired into output', () => {
+  it('fullstack app with iterations generates EmptyState component', () => {
+    const result = transpileFile('projectflow');
+    const emptyState = result.files.find(f => f.path.includes('EmptyState.jsx'));
+    expect(emptyState).toBeDefined();
+  });
+
+  it('App.jsx imports generated components', () => {
+    const result = transpileFile('projectflow');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    const componentFiles = result.files.filter(f => f.path.includes('/components/'));
+    for (const cf of componentFiles) {
+      const name = cf.path.split('/').pop()!.replace('.jsx', '');
+      expect(app.content).toContain(`import ${name} from`);
+    }
+  });
+
+  it('frontend-only apps do NOT generate reusable components', () => {
+    const result = transpileFile('todo');
+    const componentFiles = result.files.filter(f => f.path.includes('/components/'));
+    expect(componentFiles.length).toBe(0);
+  });
+});
+
+describe('Batch 2: React.lazy for 3+ pages', () => {
+  it('projectflow uses lazy imports (5 pages)', () => {
+    const result = transpileFile('projectflow');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('lazy');
+    expect(app.content).toContain('Suspense');
+  });
+
+  it('apps with <3 pages use static imports', () => {
+    const ast = parse('@app:t\n@state{x:int}\n@api(\nGET:/d>h\n)\n@ui(\n@page:home(\ntext>"Home"\n)\n@page:about(\ntext>"About"\n)\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).not.toContain('lazy');
+    expect(app.content).toContain("import HomePage from");
+    expect(app.content).toContain("import AboutPage from");
+  });
+});
+
+describe('Batch 2: security hardening defaults', () => {
+  it('server.ts includes helmet', () => {
+    const result = transpileFile('fullstack-todo');
+    const server = result.files.find(f => f.path === 'server/server.ts')!;
+    expect(server.content).toContain("import helmet from 'helmet'");
+    expect(server.content).toContain('app.use(helmet())');
+  });
+
+  it('server.ts includes request body size limit', () => {
+    const result = transpileFile('fullstack-todo');
+    const server = result.files.find(f => f.path === 'server/server.ts')!;
+    expect(server.content).toContain("express.json({ limit: '10mb' })");
+  });
+
+  it('server.ts includes rate limiting', () => {
+    const result = transpileFile('fullstack-todo');
+    const server = result.files.find(f => f.path === 'server/server.ts')!;
+    expect(server.content).toContain('rateLimitMap');
+    expect(server.content).toContain('429');
+  });
+
+  it('server package.json includes helmet dep', () => {
+    const result = transpileFile('fullstack-todo');
+    const pkg = result.files.find(f => f.path === 'server/package.json')!;
+    expect(pkg.content).toContain('helmet');
+  });
+
+  it('CORS origin defaults to localhost:3000', () => {
+    const result = transpileFile('fullstack-todo');
+    const server = result.files.find(f => f.path === 'server/server.ts')!;
+    expect(server.content).toContain('localhost:3000');
+  });
+});
+
+// ---- Batch 3: Backend Fidelity ----
+
+describe('Batch 3A: JWT auth generation', () => {
+  it('auth.ts has createToken and verifyToken', () => {
+    const result = transpileFile('dashboard');
+    const auth = result.files.find(f => f.path === 'server/auth.ts')!;
+    expect(auth).toBeDefined();
+    expect(auth.content).toContain('createToken');
+    expect(auth.content).toContain('verifyToken');
+    expect(auth.content).toContain('requireAuth');
+  });
+
+  it('auth.ts has requireRole when @auth has role', () => {
+    const result = transpileFile('dashboard');
+    const auth = result.files.find(f => f.path === 'server/auth.ts')!;
+    expect(auth.content).toContain('requireRole');
+  });
+
+  it('server.ts mounts auth middleware before API routes', () => {
+    const result = transpileFile('dashboard');
+    const server = result.files.find(f => f.path === 'server/server.ts')!;
+    expect(server.content).toContain('requireAuth');
+  });
+
+  it('.env includes JWT_SECRET when @auth present', () => {
+    const result = transpileFile('dashboard');
+    const env = result.files.find(f => f.path === 'server/.env')!;
+    expect(env.content).toContain('JWT_SECRET');
+  });
+});
+
+describe('Batch 3B: request validation generation', () => {
+  it('validation.ts has validateFields function', () => {
+    const result = transpileFile('fullstack-todo');
+    const validation = result.files.find(f => f.path === 'server/validation.ts')!;
+    expect(validation.content).toContain('validateFields');
+    expect(validation.content).toContain('FieldSchema');
+  });
+
+  it('api router imports validateFields when routes have params', () => {
+    const result = transpileFile('fullstack-todo');
+    const apiFile = result.files.find(f => f.path === 'server/api.ts');
+    if (apiFile) {
+      // API file should import or contain validation logic
+      expect(apiFile.content).toContain('validateFields');
+    }
+  });
+});
+
+describe('Batch 3C: many-to-many relation support', () => {
+  it('resolveRelations classifies no-FK as many-to-many', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'Student', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'name', type: { kind: 'str' } },
+        ] },
+        { name: 'Course', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'title', type: { kind: 'str' } },
+        ] },
+      ],
+      relations: [{ from: 'Student.courses', to: 'Course.students' }],
+      indexes: [],
+    };
+    const { resolved, ambiguous, manyToMany } = resolveRelations(db);
+    expect(resolved).toHaveLength(0);
+    expect(ambiguous).toHaveLength(0);
+    expect(manyToMany).toHaveLength(1);
+    expect(manyToMany[0].modelA).toBe('Student');
+    expect(manyToMany[0].modelB).toBe('Course');
+  });
+
+  it('m:n generates both-sides arrays in schema', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'Student', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'name', type: { kind: 'str' } },
+        ] },
+        { name: 'Course', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'title', type: { kind: 'str' } },
+        ] },
+      ],
+      relations: [{ from: 'Student.courses', to: 'Course.students' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain('courses  Course[]');
+    expect(schema).toContain('students  Student[]');
+  });
+});
+
+describe('Batch 3D: cascading deletes for required relations', () => {
+  it('required FK gets onDelete: Cascade', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'name', type: { kind: 'str' } },
+        ] },
+        { name: 'Post', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'title', type: { kind: 'str' } },
+          { name: 'user_id', type: { kind: 'int' } },
+        ] },
+      ],
+      relations: [{ from: 'User.posts', to: 'Post.author' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain('onDelete: Cascade');
+  });
+
+  it('optional FK gets onDelete: SetNull', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'name', type: { kind: 'str' } },
+        ] },
+        { name: 'Post', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'title', type: { kind: 'str' } },
+          { name: 'user_id', type: { kind: 'optional', of: { kind: 'int' } } },
+        ] },
+      ],
+      relations: [{ from: 'User.posts', to: 'Post.author' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain('onDelete: SetNull');
+  });
+});
+
+describe('Batch 3E: referential actions in AIR syntax', () => {
+  it('parses :cascade modifier on @relation', () => {
+    const source = `@app:test
+  @db{
+    User{id:int:primary:auto,name:str}
+    Post{id:int:primary:auto,title:str,userId:int}
+    @relation(User.posts<>Post.author:cascade)
+  }`;
+    const ast = parse(source);
+    const db = ast.app.blocks.find(b => b.kind === 'db') as AirDbBlock;
+    expect(db.relations[0].onDelete).toBe('cascade');
+  });
+
+  it('parses :set-null modifier on @relation', () => {
+    const source = `@app:test
+  @db{
+    User{id:int:primary:auto,name:str}
+    Post{id:int:primary:auto,title:str,userId:int}
+    @relation(User.posts<>Post.author:set-null)
+  }`;
+    const ast = parse(source);
+    const db = ast.app.blocks.find(b => b.kind === 'db') as AirDbBlock;
+    expect(db.relations[0].onDelete).toBe('setNull');
+  });
+
+  it('parses :restrict modifier on @relation', () => {
+    const source = `@app:test
+  @db{
+    User{id:int:primary:auto,name:str}
+    Post{id:int:primary:auto,title:str,userId:int}
+    @relation(User.posts<>Post.author:restrict)
+  }`;
+    const ast = parse(source);
+    const db = ast.app.blocks.find(b => b.kind === 'db') as AirDbBlock;
+    expect(db.relations[0].onDelete).toBe('restrict');
+  });
+
+  it('explicit :cascade overrides heuristic', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'name', type: { kind: 'str' } },
+        ] },
+        { name: 'Post', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'title', type: { kind: 'str' } },
+          { name: 'user_id', type: { kind: 'optional', of: { kind: 'int' } } },
+        ] },
+      ],
+      relations: [{ from: 'User.posts', to: 'Post.author', onDelete: 'cascade' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    // Optional FK would normally get SetNull, but :cascade overrides
+    expect(schema).toContain('onDelete: Cascade');
+    expect(schema).not.toContain('onDelete: SetNull');
+  });
+});
+
+// ---- Batch 4: CLI Workflow ----
+
+describe('Batch 4A: incremental transpilation cache', () => {
+  it('hashContent returns consistent 16-char hex', () => {
+    const h1 = hashContent('hello');
+    const h2 = hashContent('hello');
+    const h3 = hashContent('world');
+    expect(h1).toBe(h2);
+    expect(h1).toHaveLength(16);
+    expect(h3).not.toBe(h1);
+  });
+
+  it('computeIncremental returns all files on first run', () => {
+    const files = [
+      { path: 'a.ts', content: 'console.log("a");' },
+      { path: 'b.ts', content: 'console.log("b");' },
+    ];
+    const result = computeIncremental('source', files, '/tmp/air-test-nonexistent-cache-' + Date.now());
+    expect(result.changedFiles).toHaveLength(2);
+    expect(result.removedPaths).toHaveLength(0);
+    expect(result.skipped).toBe(0);
+  });
+
+  it('computeIncremental skips unchanged files on second run', () => {
+    const outDir = '/tmp/air-test-cache-' + Date.now();
+    const files = [
+      { path: 'a.ts', content: 'console.log("a");' },
+      { path: 'b.ts', content: 'console.log("b");' },
+    ];
+    const fileHashes: Record<string, string> = {};
+    for (const f of files) fileHashes[f.path] = hashContent(f.content);
+    saveManifest(outDir, { version: 1, sourceHash: hashContent('source'), files: fileHashes, timestamp: Date.now() });
+
+    const result = computeIncremental('source', files, outDir);
+    expect(result.changedFiles).toHaveLength(0);
+    expect(result.skipped).toBe(2);
+  });
+
+  it('computeIncremental detects removed files', () => {
+    const outDir = '/tmp/air-test-cache-removed-' + Date.now();
+    const files = [
+      { path: 'a.ts', content: 'console.log("a");' },
+      { path: 'b.ts', content: 'console.log("b");' },
+    ];
+    const fileHashes: Record<string, string> = {};
+    for (const f of files) fileHashes[f.path] = hashContent(f.content);
+    saveManifest(outDir, { version: 1, sourceHash: hashContent('source'), files: fileHashes, timestamp: Date.now() });
+
+    const result = computeIncremental('source', [files[0]], outDir);
+    expect(result.removedPaths).toContain('b.ts');
+  });
+
+  it('_airengine_manifest.json is always in changedFiles (never skipped)', () => {
+    const outDir = '/tmp/air-test-cache-manifest-' + Date.now();
+    const files = [
+      { path: 'a.ts', content: 'console.log("a");' },
+      { path: '_airengine_manifest.json', content: '{"timestamp":"2025-01-01"}' },
+    ];
+    // Seed cache with same content hashes for a.ts
+    const fileHashes: Record<string, string> = { 'a.ts': hashContent(files[0].content) };
+    saveManifest(outDir, { version: 1, sourceHash: hashContent('source'), files: fileHashes, timestamp: Date.now() });
+
+    const result = computeIncremental('source', files, outDir);
+    // a.ts unchanged → skipped; manifest always changed
+    expect(result.skipped).toBe(1);
+    expect(result.changedFiles.some(f => f.path === '_airengine_manifest.json')).toBe(true);
+  });
+});
+
+describe('Batch 4C: init templates', () => {
+  it('frontend-only template parses and transpiles', () => {
+    const template = generateInitTemplate('myapp', false);
+    const ast = parse(template);
+    const result = transpile(ast);
+    expect(result.files.length).toBeGreaterThan(0);
+    expect(result.files.some(f => f.path.includes('App.jsx'))).toBe(true);
+  });
+
+  it('fullstack template parses and transpiles with server files', () => {
+    const template = generateInitTemplate('myapp', true);
+    const ast = parse(template);
+    const result = transpile(ast);
+    expect(result.files.some(f => f.path.startsWith('server/'))).toBe(true);
+    expect(result.files.some(f => f.path.includes('schema.prisma'))).toBe(true);
+  });
+});
+
+describe('Batch 4D: doctor checks', () => {
+  it('runDoctorChecks returns checks for Node and npm', async () => {
+    const checks = await runDoctorChecks();
+    const nodeCheck = checks.find(c => c.name === 'Node.js');
+    const npmCheck = checks.find(c => c.name === 'npm');
+    expect(nodeCheck).toBeDefined();
+    expect(nodeCheck!.status).toBe('pass');
+    expect(npmCheck).toBeDefined();
+    expect(npmCheck!.status).toBe('pass');
+  });
+
+  it('checks .air file parsing when provided', async () => {
+    const checks = await runDoctorChecks('examples/todo.air');
+    const parseCheck = checks.find(c => c.name === '.air parse');
+    expect(parseCheck).toBeDefined();
+    expect(parseCheck!.status).toBe('pass');
+  });
+});
+
+describe('Batch 4E: selective generation modes', () => {
+  it('target=client skips server files', () => {
+    const ast = parseFile('fullstack-todo');
+    const result = transpile(ast, { target: 'client' });
+    expect(result.files.some(f => f.path.startsWith('client/'))).toBe(true);
+    expect(result.files.some(f => f.path.startsWith('server/'))).toBe(false);
+  });
+
+  it('target=server skips client files', () => {
+    const ast = parseFile('fullstack-todo');
+    const result = transpile(ast, { target: 'server' });
+    expect(result.files.some(f => f.path.startsWith('server/'))).toBe(true);
+    expect(result.files.some(f => f.path.startsWith('client/'))).toBe(false);
+  });
+
+  it('target=docs generates README and types but no server/client app code', () => {
+    const ast = parseFile('fullstack-todo');
+    const result = transpile(ast, { target: 'docs' });
+    expect(result.files.some(f => f.path.includes('README.md'))).toBe(true);
+    // Docs mode should not include server application files
+    expect(result.files.some(f => f.path.includes('server.ts'))).toBe(false);
+    expect(result.files.some(f => f.path.includes('api.ts'))).toBe(false);
+  });
+
+  it('target=all generates everything (default)', () => {
+    const ast = parseFile('fullstack-todo');
+    const result = transpile(ast);
+    expect(result.files.some(f => f.path.startsWith('client/'))).toBe(true);
+    expect(result.files.some(f => f.path.startsWith('server/'))).toBe(true);
+  });
+
+  it('target=docs generates NO client scaffold/app files', () => {
+    const ast = parseFile('fullstack-todo');
+    const result = transpile(ast, { target: 'docs' });
+    // Should NOT have App.jsx, scaffold, pages, hooks
+    expect(result.files.some(f => f.path.includes('App.jsx'))).toBe(false);
+    expect(result.files.some(f => f.path.includes('main.jsx'))).toBe(false);
+    expect(result.files.some(f => f.path.includes('vite.config'))).toBe(false);
+    expect(result.files.some(f => f.path.includes('package.json'))).toBe(false);
+    // Should still have README and types
+    expect(result.files.some(f => f.path.includes('README.md'))).toBe(true);
+    expect(result.files.some(f => f.path.includes('types.ts'))).toBe(true);
+  });
+});
+
+// ---- Codex Findings Regression Tests ----
+
+describe('Codex finding: JWT verifyToken handles malformed signatures', () => {
+  it('generated verifyToken has length check before timingSafeEqual', () => {
+    const ast = parseFile('dashboard');
+    const result = transpile(ast);
+    const authFile = result.files.find(f => f.path.includes('auth.ts'));
+    expect(authFile).toBeDefined();
+    const content = authFile!.content;
+    // Must check buffer lengths before timingSafeEqual
+    expect(content).toContain('sigBuf.length !== expBuf.length');
+    expect(content).toContain('timingSafeEqual');
+  });
+
+  it('generated verifyToken wraps everything in try/catch', () => {
+    const ast = parseFile('dashboard');
+    const result = transpile(ast);
+    const authFile = result.files.find(f => f.path.includes('auth.ts'));
+    expect(authFile).toBeDefined();
+    // The entire body of verifyToken should be inside a try block
+    const content = authFile!.content;
+    const fnStart = content.indexOf('function verifyToken');
+    const afterFn = content.slice(fnStart);
+    // First { after function sig, then try { should follow quickly
+    expect(afterFn).toMatch(/function verifyToken[^{]*\{[\s\S]*?try \{/);
+  });
+});
+
+describe('Codex finding: outputLines counts all generated content', () => {
+  it('outputLines includes provenance headers', () => {
+    const ast = parseFile('todo');
+    const result = transpile(ast);
+    // Count actual lines across all files
+    const actualLines = result.files.reduce((sum, f) => sum + f.content.split('\n').length, 0);
+    expect(result.stats.outputLines).toBe(actualLines);
+  });
+
+  it('outputLines includes manifest file', () => {
+    const ast = parseFile('fullstack-todo');
+    const result = transpile(ast);
+    const manifestFile = result.files.find(f => f.path === '_airengine_manifest.json');
+    expect(manifestFile).toBeDefined();
+    const actualLines = result.files.reduce((sum, f) => sum + f.content.split('\n').length, 0);
+    expect(result.stats.outputLines).toBe(actualLines);
+  });
+});
+
+describe('Codex finding: incremental cache excludes manifest from hashing', () => {
+  it('manifest.json is excluded from incremental file hashes', () => {
+    // Simulate: hash a manifest with different timestamps → should produce same incremental result
+    const ast = parseFile('todo');
+    const r1 = transpile(ast);
+    const r2 = transpile(ast);
+
+    // Manifest timestamps will differ, but other files should hash identically
+    for (const f1 of r1.files) {
+      if (f1.path === '_airengine_manifest.json') continue;
+      const f2 = r2.files.find(f => f.path === f1.path);
+      expect(f2).toBeDefined();
+      expect(hashContent(f1.content)).toBe(hashContent(f2!.content));
+    }
+  });
+});
+
+describe('Codex finding: MCP transpileReturned tracks first-call correctly', () => {
+  it('MCP server uses transpileReturned set separate from astCache', () => {
+    const serverSource = readFileSync('src/mcp/server.ts', 'utf-8');
+    // Must have a separate tracking set for transpile-returned
+    expect(serverSource).toContain('transpileReturned');
+    // Must check transpileReturned, NOT cached, for incremental decision
+    expect(serverSource).toContain('transpileReturned.has(sourceHash)');
+    // Must mark as returned after sending full files
+    expect(serverSource).toContain('transpileReturned.add(sourceHash)');
   });
 });

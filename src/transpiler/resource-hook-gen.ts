@@ -9,8 +9,6 @@
 
 import type { TranspileContext } from './context.js';
 import type { OutputFile } from './index.js';
-import { expandCrud } from './route-utils.js';
-
 /**
  * Generate one use{Model}s.js hook file per @db model that has a
  * matching GET route with a ~db.{Model}.findMany handler.
@@ -18,7 +16,7 @@ import { expandCrud } from './route-utils.js';
 export function generateResourceHooks(ctx: TranspileContext): OutputFile[] {
   if (!ctx.hasBackend || !ctx.db) return [];
 
-  const routes = expandCrud(ctx.apiRoutes);
+  const routes = ctx.expandedRoutes;
   const files: OutputFile[] = [];
 
   for (const model of ctx.db.models) {
@@ -88,12 +86,12 @@ function generateHookFile(
   lines.push("    return qs ? '?' + qs : '';");
   lines.push('  };');
   lines.push('');
-  lines.push('  const fetchData = useCallback(async () => {');
+  lines.push('  const fetchData = useCallback(async (signal) => {');
   lines.push('    setLoading(true);');
   lines.push('    setError(null);');
   lines.push('    try {');
   lines.push('      const qs = buildQueryString(options);');
-  lines.push(`      const res = await fetch(\`\${API_BASE}${routePath}\${qs}\`);`);
+  lines.push(`      const res = await fetch(\`\${API_BASE}${routePath}\${qs}\`, { signal });`);
   lines.push(
     `      if (!res.ok) throw new Error(\`GET ${routePath} failed: \${res.status}\`);`,
   );
@@ -102,6 +100,7 @@ function generateHookFile(
   lines.push('      const json = await res.json();');
   lines.push('      setData(json);');
   lines.push('    } catch (err) {');
+  lines.push("      if (err.name === 'AbortError') return;");
   lines.push('      setError(err);');
   lines.push('    } finally {');
   lines.push('      setLoading(false);');
@@ -109,7 +108,9 @@ function generateHookFile(
   lines.push('  }, [options.page, options.limit, options.search]);');
   lines.push('');
   lines.push('  useEffect(() => {');
-  lines.push('    fetchData();');
+  lines.push('    const controller = new AbortController();');
+  lines.push('    fetchData(controller.signal);');
+  lines.push('    return () => controller.abort();');
   lines.push('  }, [fetchData]);');
   lines.push('');
   lines.push('  return { data, loading, error, total, refetch: fetchData };');

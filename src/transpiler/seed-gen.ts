@@ -9,7 +9,7 @@
 
 import type { TranspileContext } from './context.js';
 import type { AirDbModel, AirDbField } from '../parser/types.js';
-import { resolveRelations, type ResolvedRelation } from './prisma.js';
+import { resolveRelations, type ResolvedRelation, type ManyToManyRelation } from './prisma.js';
 
 // ---- FK edge types ----
 
@@ -27,20 +27,25 @@ export function generateSeedFile(ctx: TranspileContext): string {
 
   const models = ctx.db.models;
 
-  // Resolve relations to get FK edges
-  const { resolved } = resolveRelations(ctx.db);
+  // Resolve relations to get FK edges and many-to-many
+  const { resolved, manyToMany } = resolveRelations(ctx.db);
   const fkEdges = buildFkEdges(resolved);
 
   // Topological sort with FK awareness
   const { sorted, brokenEdges } = topologicalSort(models, fkEdges);
   const reversed = [...sorted].reverse();
 
-  // Determine which models need sequential creates (has FK or is a parent)
+  // Determine which models need sequential creates (has FK, is a parent, or in m:n)
   const parentModels = new Set(fkEdges.map(e => e.parentModel));
   const childModels = new Set(fkEdges.map(e => e.childModel));
+  const m2mModels = new Set<string>();
+  for (const m of manyToMany) {
+    m2mModels.add(m.modelA);
+    m2mModels.add(m.modelB);
+  }
   const needsSequential = new Set<string>();
   for (const m of models) {
-    if (parentModels.has(m.name) || childModels.has(m.name)) {
+    if (parentModels.has(m.name) || childModels.has(m.name) || m2mModels.has(m.name)) {
       needsSequential.add(m.name);
     }
   }
@@ -147,6 +152,21 @@ export function generateSeedFile(ctx: TranspileContext): string {
       }
       lines.push('    ],');
       lines.push('  });');
+    }
+    lines.push('');
+  }
+
+  // Many-to-many connect calls
+  if (manyToMany.length > 0) {
+    lines.push('  // Connect many-to-many relations');
+    for (const m of manyToMany) {
+      const varA = m.modelA.charAt(0).toLowerCase() + m.modelA.slice(1);
+      const varB = m.modelB.charAt(0).toLowerCase() + m.modelB.slice(1);
+      const fieldA = m.fieldA;
+      // Connect records: A1↔B1, A2↔B2, A3↔B3, A4↔B4, A5↔B5
+      for (let n = 1; n <= 5; n++) {
+        lines.push(`  await prisma.${varA}.update({ where: { id: ${varA}${n}.id }, data: { ${fieldA}: { connect: { id: ${varB}${n}.id } } } });`);
+      }
     }
     lines.push('');
   }

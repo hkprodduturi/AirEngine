@@ -6,7 +6,7 @@
 import type { AirRoute } from '../../parser/types.js';
 import type { TranspileContext } from '../context.js';
 import type { UIAnalysis } from '../normalize-ui.js';
-import { expandCrud, routeToFunctionName } from '../route-utils.js';
+import { routeToFunctionName } from '../route-utils.js';
 import { capitalize, setter } from './helpers.js';
 
 // ---- Mutation-to-Route Matching ----
@@ -40,6 +40,14 @@ export function findMatchingRoute(
   } else if (mutName === 'toggle') {
     matchedRoute = expandedRoutes.find(r =>
       r.method === 'PUT' && /~db\.\w+\.update/.test(r.handler)
+    );
+  } else if (mutName === 'update' || mutName === 'save' || mutName === 'updateProfile') {
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'PUT' && /\.update$/.test(r.handler)
+    );
+  } else if (mutName === 'archive' || mutName === 'done') {
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'PUT' && /\.update$/.test(r.handler)
     );
   } else if (mutName === 'login') {
     matchedRoute = expandedRoutes.find(r =>
@@ -86,6 +94,23 @@ export function findMatchingRoute(
   return { fnName, method: matchedRoute.method, refetchFnName, refetchSetter };
 }
 
+/**
+ * Try to match a generic mutation name to any API route by converting
+ * camelCase name to kebab-case path segment.
+ * e.g., !processPayment → find POST /.../process-payment
+ */
+function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]): string | null {
+  // Convert camelCase to kebab-case
+  const kebab = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+  const route = expandedRoutes.find(r =>
+    r.method === 'POST' && r.path.endsWith(`/${kebab}`)
+  );
+  if (route) {
+    return routeToFunctionName(route.method, route.path);
+  }
+  return null;
+}
+
 // ---- Mutation Functions ----
 
 export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): string[] {
@@ -94,7 +119,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
   const arrayName = arrayField?.name;
 
   const canWireApi = ctx.hasBackend && ctx.apiRoutes.length > 0;
-  const expandedRoutes = canWireApi ? expandCrud(ctx.apiRoutes) : [];
+  const expandedRoutes = canWireApi ? ctx.expandedRoutes : [];
 
   for (const mut of analysis.mutations) {
     const name = mut.name;
@@ -237,11 +262,68 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`  }`);
         lines.push('};');
       }
+    } else if (name === 'update' || name === 'save' || name === 'updateProfile') {
+      if (match) {
+        lines.push(`const ${name} = async (id, data) => {`);
+        lines.push(`  try {`);
+        lines.push(`    await api.${match.fnName}(id, data);`);
+        if (match.refetchFnName && match.refetchSetter) {
+          lines.push(`    const updated = await api.${match.refetchFnName}();`);
+          lines.push(`    ${match.refetchSetter}(updated);`);
+        }
+        lines.push(`  } catch (err) {`);
+        lines.push(`    console.error('${name} failed:', err);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else if (arrayName) {
+        lines.push(`const ${name} = (id, data) => {`);
+        lines.push(`  ${setter(arrayName)}(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));`);
+        lines.push('};');
+      } else {
+        lines.push(`const ${name} = (...args) => {`);
+        lines.push(`  console.log('${name}', ...args);`);
+        lines.push('};');
+      }
+    } else if (name === 'archive' || name === 'done') {
+      const field = name === 'archive' ? 'archived' : 'done';
+      if (match) {
+        lines.push(`const ${name} = async (id) => {`);
+        lines.push(`  try {`);
+        lines.push(`    await api.${match.fnName}(id, { ${field}: true });`);
+        if (match.refetchFnName && match.refetchSetter) {
+          lines.push(`    const updated = await api.${match.refetchFnName}();`);
+          lines.push(`    ${match.refetchSetter}(updated);`);
+        }
+        lines.push(`  } catch (err) {`);
+        lines.push(`    console.error('${name} failed:', err);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else if (arrayName) {
+        lines.push(`const ${name} = (id) => {`);
+        lines.push(`  ${setter(arrayName)}(prev => prev.map(item => item.id === id ? { ...item, ${field}: true } : item));`);
+        lines.push('};');
+      } else {
+        lines.push(`const ${name} = (...args) => {`);
+        lines.push(`  console.log('${name}', ...args);`);
+        lines.push('};');
+      }
     } else {
-      // Generic mutation stub
-      lines.push(`const ${name.replace(/\./g, '_')} = (...args) => {`);
-      lines.push(`  console.log('${name}', ...args);`);
-      lines.push('};');
+      // Generic mutation — try to match by name to any API route
+      const genericMatch = canWireApi ? findGenericRouteMatch(name, expandedRoutes) : null;
+      if (genericMatch) {
+        lines.push(`const ${name.replace(/\./g, '_')} = async (data) => {`);
+        lines.push(`  try {`);
+        lines.push(`    const result = await api.${genericMatch}(data);`);
+        lines.push(`    return result;`);
+        lines.push(`  } catch (err) {`);
+        lines.push(`    console.error('${name} failed:', err);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else {
+        lines.push(`const ${name.replace(/\./g, '_')} = (...args) => {`);
+        lines.push(`  console.log('${name}', ...args);`);
+        lines.push('};');
+      }
     }
     lines.push('');
   }

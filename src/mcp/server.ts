@@ -42,19 +42,61 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { readFileSync } from 'fs';
+import { createHash } from 'crypto';
 import { join } from 'path';
 import { parse } from '../parser/index.js';
 import { validate } from '../validator/index.js';
 import { transpile } from '../transpiler/index.js';
 import { extractContext } from '../transpiler/context.js';
+import { analyzeUI } from '../transpiler/normalize-ui.js';
 import { AirParseError, AirLexError } from '../parser/errors.js';
-import type {
-  AirAST, AirDbBlock, AirAPIBlock, AirAuthBlock,
-  AirCronBlock, AirWebhookBlock, AirQueueBlock,
-  AirEmailBlock, AirEnvBlock, AirDeployBlock,
-} from '../parser/types.js';
+import type { AirAST } from '../parser/types.js';
+import type { TranspileContext } from '../transpiler/context.js';
+import type { TranspileResult } from '../transpiler/index.js';
 
 const ROOT = join(__dirname, '..', '..');
+
+// ---- Session-Level AST Cache (5A) ----
+
+interface CacheEntry {
+  ast: AirAST;
+  ctx: TranspileContext;
+  result: TranspileResult;
+  timestamp: number;
+}
+
+const astCache = new Map<string, CacheEntry>();
+const transpileReturned = new Set<string>(); // tracks source hashes whose full transpile has been sent
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function hashSource(source: string): string {
+  return createHash('sha256').update(source).digest('hex').slice(0, 16);
+}
+
+function evictStale(): void {
+  const now = Date.now();
+  for (const [key, entry] of astCache) {
+    if (now - entry.timestamp > CACHE_TTL) {
+      astCache.delete(key);
+      transpileReturned.delete(key);
+    }
+  }
+}
+
+function getCachedOrParse(source: string): { ast: AirAST; ctx: TranspileContext; result: TranspileResult; cached: boolean } {
+  evictStale();
+  const hash = hashSource(source);
+  const existing = astCache.get(hash);
+  if (existing) {
+    existing.timestamp = Date.now(); // refresh TTL
+    return { ast: existing.ast, ctx: existing.ctx, result: existing.result, cached: true };
+  }
+  const ast = parse(source);
+  const ctx = extractContext(ast);
+  const result = transpile(ast);
+  astCache.set(hash, { ast, ctx, result, timestamp: Date.now() });
+  return { ast, ctx, result, cached: false };
+}
 
 // ---- AIR Language Spec (embedded for the LLM context) ----
 
@@ -297,11 +339,10 @@ Generate the AIR code now:`;
       source: z.string().describe('AIR source code to validate'),
     },
     async ({ source }) => {
-      // Step 1: Parse
+      // Use cache for parse + context
       const parseResult = safeParse(source);
 
       if ('error' in parseResult) {
-        const loc = parseResult.line ? ` (line ${parseResult.line}:${parseResult.col})` : '';
         return {
           content: [{
             type: 'text' as const,
@@ -314,12 +355,17 @@ Generate the AIR code now:`;
         };
       }
 
-      const ast = parseResult.ast;
+      const { ast, cached } = (() => {
+        try {
+          const c = getCachedOrParse(source);
+          return { ast: c.ast, cached: c.cached };
+        } catch {
+          return { ast: parseResult.ast, cached: false };
+        }
+      })();
 
-      // Step 2: Validate
       const validation = validate(ast);
 
-      // Step 3: Collect stats
       const blockCount = ast.app.blocks.length;
       const blockTypes = ast.app.blocks.map(b => b.kind);
       const fieldCount = countStateFields(ast);
@@ -336,6 +382,7 @@ Generate the AIR code now:`;
         dbModels: modelCount,
         errors: validation.errors,
         warnings: validation.warnings,
+        cached,
       };
 
       return {
@@ -347,16 +394,27 @@ Generate the AIR code now:`;
     }
   );
 
-  // Tool: Transpile AIR to React
+  // Tool: Transpile AIR to React (5B: diff-first responses)
   server.tool(
     'air_transpile',
-    'Transpile AIR source code into a working React application. Returns the full React component code.',
+    'Transpile AIR source code into a working React application. Returns changed files on repeated calls for the same source.',
     {
       source: z.string().describe('AIR source code to transpile'),
-      framework: z.enum(['react', 'html']).optional().describe('Target framework (default: react)'),
+      framework: z.enum(['react']).optional().describe('Target framework (default: react)'),
     },
     async ({ source, framework }) => {
-      // Step 1: Parse
+      if (framework && framework !== 'react') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: `Unsupported framework '${framework}'. Only 'react' is currently supported.`,
+            }, null, 2),
+          }],
+        };
+      }
+
       const parseResult = safeParse(source);
 
       if ('error' in parseResult) {
@@ -372,25 +430,39 @@ Generate the AIR code now:`;
         };
       }
 
-      const ast = parseResult.ast;
-
-      // Step 2: Transpile
       try {
-        const result = transpile(ast);
-        const ctx = extractContext(ast);
-
-        // Build file metadata
-        const fileMeta = result.files.map(f => ({
-          path: f.path,
-          lines: f.content.split('\n').length,
-        }));
+        const { ast, ctx, result } = getCachedOrParse(source);
+        const sourceHash = hashSource(source);
 
         const totalLines = result.stats.outputLines;
-
-        // Determine which blocks were processed
         const processedBlocks = ast.app.blocks.map(b => b.kind);
 
-        // Include full contents only if under 5000 lines
+        // Only return incremental (empty diff) if we've already sent full files for this source
+        if (transpileReturned.has(sourceHash)) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                success: true,
+                incremental: true,
+                changedFiles: [],
+                removedFiles: [],
+                unchangedCount: result.files.length,
+                stats: {
+                  fileCount: result.files.length,
+                  totalLines,
+                  hasBackend: ctx.hasBackend,
+                  processedBlocks,
+                  components: result.stats.components,
+                  timing: result.stats.timing,
+                },
+              }, null, 2),
+            }],
+          };
+        }
+
+        // First transpile call for this source — return all files
+        transpileReturned.add(sourceHash);
         let files: Array<{ path: string; lines: number; content?: string; preview?: string }>;
         if (totalLines <= 5000) {
           files = result.files.map(f => ({
@@ -409,22 +481,22 @@ Generate the AIR code now:`;
           });
         }
 
-        const output = {
-          success: true,
-          stats: {
-            fileCount: result.files.length,
-            totalLines,
-            hasBackend: ctx.hasBackend,
-            processedBlocks,
-            components: result.stats.components,
-          },
-          files,
-        };
-
         return {
           content: [{
             type: 'text' as const,
-            text: JSON.stringify(output, null, 2),
+            text: JSON.stringify({
+              success: true,
+              incremental: false,
+              stats: {
+                fileCount: result.files.length,
+                totalLines,
+                hasBackend: ctx.hasBackend,
+                processedBlocks,
+                components: result.stats.components,
+                timing: result.stats.timing,
+              },
+              files,
+            }, null, 2),
           }],
         };
       } catch (err) {
@@ -449,7 +521,6 @@ Generate the AIR code now:`;
       source: z.string().describe('AIR source code to explain'),
     },
     async ({ source }) => {
-      // Step 1: Parse
       const parseResult = safeParse(source);
 
       if ('error' in parseResult) {
@@ -464,42 +535,185 @@ Generate the AIR code now:`;
         };
       }
 
-      const ast = parseResult.ast;
+      try {
+        const { ast, ctx, cached } = getCachedOrParse(source);
 
-      // Step 2: Analyze
-      const blockTypes = ast.app.blocks.map(b => b.kind);
-      const stateFields = ast.app.blocks
-        .filter(b => b.kind === 'state')
-        .flatMap(b => b.kind === 'state' ? b.fields.map(f => f.name) : []);
+        const blockTypes = ast.app.blocks.map(b => b.kind);
+        const stateFields = ast.app.blocks
+          .filter(b => b.kind === 'state')
+          .flatMap(b => b.kind === 'state' ? b.fields.map(f => f.name) : []);
 
-      const routeCount = countRoutes(ast);
-      const modelCount = countDbModels(ast);
-      const dbModels = ast.app.blocks
-        .filter(b => b.kind === 'db')
-        .flatMap(b => b.kind === 'db' ? b.models.map(m => m.name) : []);
+        const dbModels = ast.app.blocks
+          .filter(b => b.kind === 'db')
+          .flatMap(b => b.kind === 'db' ? b.models.map(m => m.name) : []);
 
-      const hooks = ast.app.blocks
-        .filter(b => b.kind === 'hook')
-        .flatMap(b => b.kind === 'hook' ? b.hooks.map(h => h.trigger) : []);
+        const hooks = ast.app.blocks
+          .filter(b => b.kind === 'hook')
+          .flatMap(b => b.kind === 'hook' ? b.hooks.map(h => h.trigger) : []);
 
-      const ctx = extractContext(ast);
+        const analysis = {
+          appName: ast.app.name,
+          blockTypes,
+          stateFields,
+          apiRoutes: countRoutes(ast),
+          dbModels,
+          hooks,
+          hasBackend: ctx.hasBackend,
+          persistMethod: ctx.persistKeys.length > 0 ? ctx.persistMethod : null,
+          persistKeys: ctx.persistKeys,
+          cached,
+        };
 
-      const analysis = {
-        appName: ast.app.name,
-        blockTypes,
-        stateFields,
-        apiRoutes: routeCount,
-        dbModels,
-        hooks,
-        hasBackend: ctx.hasBackend,
-        persistMethod: ctx.persistKeys.length > 0 ? ctx.persistMethod : null,
-        persistKeys: ctx.persistKeys,
-      };
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(analysis, null, 2),
+          }],
+        };
+      } catch {
+        // Fall back to non-cached path
+        const ast = parseResult.ast;
+        const ctx = extractContext(ast);
+        const blockTypes = ast.app.blocks.map(b => b.kind);
 
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ appName: ast.app.name, blockTypes, hasBackend: ctx.hasBackend }, null, 2),
+          }],
+        };
+      }
+    }
+  );
+
+  // Tool: Lint AIR source (5C)
+  server.tool(
+    'air_lint',
+    'Detect common issues in AIR source before transpiling. Checks for unused state, missing API routes, ambiguous relations, and other patterns.',
+    {
+      source: z.string().describe('AIR source code to lint'),
+    },
+    async ({ source }) => {
+      const parseResult = safeParse(source);
+
+      if ('error' in parseResult) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              hints: [{ level: 'error', message: parseResult.error }],
+            }, null, 2),
+          }],
+        };
+      }
+
+      try {
+        const { ast, ctx } = getCachedOrParse(source);
+        const hints: Array<{ level: 'info' | 'warn' | 'error'; message: string }> = [];
+
+        // Check: unused state fields (state fields not referenced in @ui)
+        const uiSource = JSON.stringify(ast.app.blocks.filter(b => b.kind === 'ui'));
+        for (const block of ast.app.blocks) {
+          if (block.kind === 'state') {
+            for (const field of block.fields) {
+              if (!uiSource.includes(field.name) && !uiSource.includes(`#${field.name}`)) {
+                hints.push({ level: 'warn', message: `State field '${field.name}' may be unused in @ui` });
+              }
+            }
+          }
+        }
+
+        // Check: @api routes without matching @db models
+        if (ctx.apiRoutes.length > 0 && ctx.db) {
+          const modelNames = new Set(ctx.db.models.map(m => m.name));
+          for (const route of ctx.expandedRoutes) {
+            const match = route.handler.match(/~db\.(\w+)\./);
+            if (match && !modelNames.has(match[1])) {
+              hints.push({ level: 'error', message: `API route ${route.method} ${route.path} references unknown model '${match[1]}'` });
+            }
+          }
+        }
+
+        // Check: @db models without @api routes
+        if (ctx.db && ctx.apiRoutes.length === 0) {
+          hints.push({ level: 'warn', message: '@db models defined but no @api routes — models won\'t be accessible' });
+        }
+
+        // Check: missing @persist on stateful apps
+        const hasState = ast.app.blocks.some(b => b.kind === 'state');
+        const hasPersist = ast.app.blocks.some(b => b.kind === 'persist');
+        if (hasState && !hasPersist && !ctx.hasBackend) {
+          hints.push({ level: 'info', message: 'Frontend-only app with @state but no @persist — data won\'t survive page refresh' });
+        }
+
+        // Check: ambiguous relations
+        if (ctx.db) {
+          const { resolveRelations } = await import('../transpiler/prisma.js');
+          const { ambiguous } = resolveRelations(ctx.db);
+          for (const a of ambiguous) {
+            hints.push({ level: 'warn', message: `Ambiguous relation ${a.from}<>${a.to}: ${a.reason}` });
+          }
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ hints }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              hints: [{ level: 'error', message: err instanceof Error ? err.message : String(err) }],
+            }, null, 2),
+          }],
+        };
+      }
+    }
+  );
+
+  // Tool: Capabilities introspection (5D)
+  server.tool(
+    'air_capabilities',
+    'Returns supported AIR blocks, targets, options, and version. Use this to check what features are available before generating AIR code.',
+    {},
+    async () => {
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify(analysis, null, 2),
+          text: JSON.stringify({
+            version: '0.1.6',
+            blocks: [
+              'app', 'state', 'style', 'ui', 'api', 'auth', 'nav', 'persist', 'hook',
+              'db', 'cron', 'webhook', 'queue', 'email', 'env', 'deploy',
+            ],
+            targets: ['all', 'client', 'server', 'docs'],
+            frameworks: ['react'],
+            dbFieldModifiers: ['primary', 'required', 'auto', 'default'],
+            referentialActions: ['cascade', 'set-null', 'restrict'],
+            uiElements: [
+              'header', 'footer', 'main', 'sidebar', 'row', 'grid',
+              'input', 'select', 'tabs', 'toggle', 'btn', 'text', 'h1', 'h2', 'p',
+              'list', 'table', 'card', 'badge', 'alert', 'chart', 'stat',
+              'progress', 'spinner', 'img', 'icon', 'search', 'pagination',
+              'daterange', 'form', 'check', 'logo', 'nav', 'slot',
+            ],
+            operators: {
+              '>': 'flow',
+              '|': 'pipe',
+              '+': 'compose',
+              ':': 'bind',
+              '?': 'conditional',
+              '*': 'iterate',
+              '!': 'mutate',
+              '#': 'reference',
+              '~': 'async',
+              '^': 'emit',
+            },
+            persistMethods: ['localStorage', 'cookie'],
+          }, null, 2),
         }],
       };
     }

@@ -190,6 +190,7 @@ export interface AirDbModel {
 export interface AirDbRelation {
   from: string;
   to: string;
+  onDelete?: 'cascade' | 'setNull' | 'restrict';
 }
 
 export interface AirDbIndex {

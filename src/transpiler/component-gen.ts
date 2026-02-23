@@ -18,7 +18,7 @@ import type { UIAnalysis } from './normalize-ui.js';
 
 // ---- Detection Flags ----
 
-interface ComponentFlags {
+export interface ComponentFlags {
   hasTable: boolean;
   hasIteration: boolean;
   hasStat: boolean;
@@ -67,7 +67,7 @@ function walkNode(node: AirUINode, flags: ComponentFlags): void {
 /**
  * Walk all UI nodes and return detection flags.
  */
-function detectPatterns(nodes: AirUINode[]): ComponentFlags {
+export function detectPatterns(nodes: AirUINode[]): ComponentFlags {
   const flags: ComponentFlags = {
     hasTable: false,
     hasIteration: false,

@@ -9,6 +9,7 @@ import type {
   AirDbBlock, AirWebhookBlock, AirCronBlock, AirQueueBlock,
   AirEmailBlock, AirEnvBlock, AirDeployBlock,
 } from '../parser/types.js';
+import { expandCrud } from './route-utils.js';
 
 export interface TranspileContext {
   appName: string;
@@ -31,6 +32,8 @@ export interface TranspileContext {
   env: AirEnvBlock | null;
   deploy: AirDeployBlock | null;
   hasBackend: boolean;
+  /** Pre-expanded API routes (CRUD → GET/POST/PUT/DELETE). Computed once eagerly. */
+  expandedRoutes: AirRoute[];
 }
 
 export function extractContext(ast: AirAST): TranspileContext {
@@ -54,6 +57,7 @@ export function extractContext(ast: AirAST): TranspileContext {
     env: null,
     deploy: null,
     hasBackend: false,
+    expandedRoutes: [],
   };
 
   for (const block of ast.app.blocks) {
@@ -113,6 +117,9 @@ export function extractContext(ast: AirAST): TranspileContext {
     ctx.db || ctx.apiRoutes.length > 0 || ctx.webhooks ||
     ctx.cron || ctx.queue || ctx.email || ctx.env || ctx.deploy
   );
+
+  // Pre-expand CRUD routes once
+  ctx.expandedRoutes = expandCrud(ctx.apiRoutes);
 
   return ctx;
 }
