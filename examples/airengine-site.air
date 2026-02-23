@@ -1,0 +1,64 @@
+@app:airengine-site
+  @style(theme:dark,accent:#7c5cfc,radius:12,font:sans)
+  @ui(
+    @section:hero(
+      h1>"The language AI thinks in when it builds software"
+      p>"One .air file. Full-stack apps. Instant compilation. 300 lines of AIR replaces 5,000+ lines of React, Express, and Prisma."
+      row(btn:primary>"Get Started"+btn:ghost>"View on GitHub")
+    )
+    @section:stats(
+      grid:4(
+        card(h2>"298"+p>"Lines of AIR")
+        card(h2>"21"+p>"Generated Files")
+        card(h2>"346"+p>"Tests Passing")
+        card(h2>"5000+"+p>"Lines Generated")
+      )
+    )
+    @section:how(
+      h1>"How It Works"
+      grid:3(
+        card(h2>"1. Describe"+p>"You or AI writes a compact .air file defining your entire app — frontend, backend, database, auth, and more.")
+        card(h2>"2. Compile"+p>"AirEngine transpiles in milliseconds. Pure code, no AI inference. Deterministic, zero hallucination.")
+        card(h2>"3. Ship"+p>"Complete React + Express + Prisma app. Run npm dev and your full-stack app is live.")
+      )
+    )
+    @section:features(
+      h1>"Why AirEngine?"
+      grid:3(
+        card(h2>"10x Faster"+p>"AI generates 300 lines of AIR in 3 seconds. Transpiler outputs 5000+ lines in 50ms. Total: under 4 seconds.")
+        card(h2>"Zero Errors"+p>"Schema-guaranteed output. No syntax errors, no hallucinated imports, no broken builds. Every time.")
+        card(h2>"AI Native"+p>"MCP server lets Claude generate, validate, and transpile AIR natively. No manual coding required.")
+      )
+    )
+    @section:blocks(
+      h1>"15 Supported Blocks"
+      p>"One language covers your entire stack."
+      grid:3(
+        card(p>"@state — Reactive state")
+        card(p>"@style — Theme and design tokens")
+        card(p>"@ui — Component tree")
+        card(p>"@nav — Page routing")
+        card(p>"@api — REST endpoints")
+        card(p>"@db — Database schema")
+        card(p>"@auth — Authentication")
+        card(p>"@env — Environment config")
+        card(p>"@webhook — Incoming webhooks")
+        card(p>"@cron — Scheduled jobs")
+        card(p>"@queue — Background workers")
+        card(p>"@email — Email templates")
+        card(p>"@persist — Local storage")
+        card(p>"@hook — Side effects")
+        card(p>"@deploy — Deployment config")
+      )
+    )
+    @section:start(
+      h1>"Get Started in 30 Seconds"
+      card(p>"npm install -g airengine")
+      card(p>"air transpile app.air -o ./my-app")
+      card(p>"cd my-app && npm install && npm run dev")
+    )
+    @section:footer(
+      p>"Built by Harish Prodduturi"
+      row(btn:ghost>"GitHub"+btn:ghost>"npm"+btn:ghost>"Docs")
+    )
+  )
