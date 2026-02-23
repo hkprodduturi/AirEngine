@@ -4,13 +4,15 @@
 
 // ---- Primitive Types ----
 
+export type AirLiteral = string | number | boolean;
+
 export type AirType =
-  | { kind: 'str' }
-  | { kind: 'int' }
-  | { kind: 'float'; default?: number }
-  | { kind: 'bool' }
-  | { kind: 'date' }
-  | { kind: 'enum'; values: string[] }
+  | { kind: 'str'; default?: AirLiteral }
+  | { kind: 'int'; default?: AirLiteral }
+  | { kind: 'float'; default?: AirLiteral }
+  | { kind: 'bool'; default?: AirLiteral }
+  | { kind: 'date'; default?: AirLiteral }
+  | { kind: 'enum'; values: string[]; default?: AirLiteral }
   | { kind: 'array'; of: AirType }
   | { kind: 'object'; fields: AirField[] }
   | { kind: 'optional'; of: AirType }
@@ -35,6 +37,54 @@ export type AirOperator =
   | '~'   // async
   | '^';  // emit
 
+// ---- UI Node Types (discriminated union for tree representation) ----
+
+export type AirUINode =
+  | AirUIElementNode
+  | AirUIScopedNode
+  | AirUITextNode
+  | AirUIValueNode
+  | AirUIUnaryNode
+  | AirUIBinaryNode;
+
+export interface AirUIElementNode {
+  kind: 'element';
+  element: string;
+  modifier?: string;
+  children?: AirUINode[];
+  args?: AirUINode[];
+}
+
+export interface AirUIScopedNode {
+  kind: 'scoped';
+  scope: 'page' | 'section';
+  name: string;
+  children: AirUINode[];
+}
+
+export interface AirUITextNode {
+  kind: 'text';
+  text: string;
+}
+
+export interface AirUIValueNode {
+  kind: 'value';
+  value: string | number | boolean;
+}
+
+export interface AirUIUnaryNode {
+  kind: 'unary';
+  operator: string;
+  operand: AirUINode;
+}
+
+export interface AirUIBinaryNode {
+  kind: 'binary';
+  operator: string;
+  left: AirUINode;
+  right: AirUINode;
+}
+
 // ---- Blocks ----
 
 export interface AirApp {
@@ -50,7 +100,14 @@ export type AirBlock =
   | AirAuthBlock
   | AirNavBlock
   | AirPersistBlock
-  | AirHookBlock;
+  | AirHookBlock
+  | AirDbBlock
+  | AirCronBlock
+  | AirWebhookBlock
+  | AirQueueBlock
+  | AirEmailBlock
+  | AirEnvBlock
+  | AirDeployBlock;
 
 export interface AirStateBlock {
   kind: 'state';
@@ -59,22 +116,12 @@ export interface AirStateBlock {
 
 export interface AirStyleBlock {
   kind: 'style';
-  properties: Record<string, string | number>;
+  properties: Record<string, AirLiteral>;
 }
 
 export interface AirUIBlock {
   kind: 'ui';
   children: AirUINode[];
-}
-
-export interface AirUINode {
-  element: string;
-  modifier?: string;
-  operator?: AirOperator;
-  target?: string;
-  children?: AirUINode[];
-  props?: Record<string, string | number | boolean>;
-  text?: string;
 }
 
 export interface AirAPIBlock {
@@ -92,7 +139,7 @@ export interface AirRoute {
 export interface AirAuthBlock {
   kind: 'auth';
   required: boolean;
-  role?: { kind: 'enum'; values: string[] };
+  role?: string | { kind: 'enum'; values: string[] };
   redirect?: string;
 }
 
@@ -112,13 +159,102 @@ export interface AirPersistBlock {
   kind: 'persist';
   method: 'localStorage' | 'cookie' | 'session';
   keys: string[];
-  options?: Record<string, string | number | boolean>;
+  options?: Record<string, AirLiteral>;
 }
 
 export interface AirHookBlock {
   kind: 'hook';
+  hooks: AirHook[];
+}
+
+export interface AirHook {
   trigger: string;
   actions: string[];
+}
+
+// ---- Full-Stack Block Types ----
+
+export interface AirDbModel {
+  name: string;
+  fields: AirField[];
+}
+
+export interface AirDbRelation {
+  from: string;
+  to: string;
+}
+
+export interface AirDbIndex {
+  fields: string[];
+  unique: boolean;
+}
+
+export interface AirDbBlock {
+  kind: 'db';
+  models: AirDbModel[];
+  relations: AirDbRelation[];
+  indexes: AirDbIndex[];
+}
+
+export interface AirCronJob {
+  name: string;
+  schedule: string;
+  handler: string;
+}
+
+export interface AirCronBlock {
+  kind: 'cron';
+  jobs: AirCronJob[];
+}
+
+export interface AirWebhookRoute {
+  method: 'POST' | 'PUT';
+  path: string;
+  handler: string;
+}
+
+export interface AirWebhookBlock {
+  kind: 'webhook';
+  routes: AirWebhookRoute[];
+}
+
+export interface AirQueueJob {
+  name: string;
+  params?: AirField[];
+  handler: string;
+}
+
+export interface AirQueueBlock {
+  kind: 'queue';
+  jobs: AirQueueJob[];
+}
+
+export interface AirEmailTemplate {
+  name: string;
+  params?: AirField[];
+  subject: string;
+}
+
+export interface AirEmailBlock {
+  kind: 'email';
+  templates: AirEmailTemplate[];
+}
+
+export interface AirEnvVar {
+  name: string;
+  type: 'str' | 'int' | 'float' | 'bool';
+  required: boolean;
+  default?: AirLiteral;
+}
+
+export interface AirEnvBlock {
+  kind: 'env';
+  vars: AirEnvVar[];
+}
+
+export interface AirDeployBlock {
+  kind: 'deploy';
+  properties: Record<string, AirLiteral>;
 }
 
 // ---- Top-level AST ----
