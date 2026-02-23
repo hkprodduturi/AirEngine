@@ -24,18 +24,19 @@
 
 ```bash
 npm install -g airengine
+```
 
-# Transpile a frontend app
-air transpile examples/todo.air -o ./my-app
+Save the example above as `todo.air`, then transpile and run:
 
-# Run it
+```bash
+air transpile todo.air -o ./my-app
 cd my-app && npm install && npm run dev
 ```
 
 For full-stack apps (with `@db` or `@api` blocks), AirEngine generates a `client/` + `server/` structure:
 
 ```bash
-air transpile examples/fullstack-todo.air -o ./my-fullstack-app
+air transpile app.air -o ./my-fullstack-app
 
 # Client
 cd my-fullstack-app/client && npm install && npm run dev
@@ -43,6 +44,8 @@ cd my-fullstack-app/client && npm install && npm run dev
 # Server
 cd my-fullstack-app/server && npm install && npx prisma generate && npx prisma db push && npx tsx server.ts
 ```
+
+Bundled examples are included in the npm package. To use them, clone the repo or find them at `$(npm root -g)/airengine/examples/`.
 
 ## What It Generates
 
