@@ -63,7 +63,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
       secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors' },
       ghost: { className: 'bg-transparent hover:bg-[var(--hover)] px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors' },
       icon: { className: 'p-2 rounded-full hover:bg-[var(--hover)] cursor-pointer transition-colors' },
-      submit: { className: 'bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors' },
+      submit: { className: 'w-full bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors' },
     },
   },
   input: {
@@ -141,11 +141,11 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   spinner: {
     tag: 'div',
-    className: 'animate-spin h-6 w-6 border-2 border-current border-t-transparent rounded-full',
+    className: 'animate-spin h-6 w-6 border-2 border-current border-t-transparent rounded-full mx-auto',
   },
   link: {
     tag: 'a',
-    className: 'text-[var(--accent)] hover:underline cursor-pointer',
+    className: 'text-[var(--accent)] hover:underline cursor-pointer block text-center text-sm',
   },
   form: {
     tag: 'form',

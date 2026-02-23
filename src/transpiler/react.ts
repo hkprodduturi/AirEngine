@@ -541,9 +541,23 @@ function generateScopedJSX(
   const pad = ' '.repeat(ind);
 
   if (node.scope === 'page') {
+    // Detect if page is form-centric (login, signup, register, etc.) — center with card
+    const isFormPage = pageHasFormContent(node);
+
     const childJsx = node.children.map(c =>
-      generateJSX(c, ctx, analysis, scope, ind + 4)
+      generateJSX(c, ctx, analysis, scope, isFormPage ? ind + 8 : ind + 4)
     ).filter(Boolean).join('\n');
+
+    if (isFormPage) {
+      return `${pad}{currentPage === '${node.name}' && (\n`
+        + `${pad}  <div className="flex items-center justify-center min-h-screen p-4">\n`
+        + `${pad}    <div className="w-full max-w-md space-y-6">\n`
+        + `${pad}      <h2 className="text-2xl font-bold text-center">${capitalize(node.name)}</h2>\n`
+        + `${childJsx}\n`
+        + `${pad}    </div>\n`
+        + `${pad}  </div>\n`
+        + `${pad})}`;
+    }
 
     return `${pad}{currentPage === '${node.name}' && (\n${pad}  <div>\n${childJsx}\n${pad}  </div>\n${pad})}`;
   }
@@ -557,6 +571,21 @@ function generateScopedJSX(
   }
 
   return '';
+}
+
+function pageHasFormContent(node: AirUINode & { kind: 'scoped' }): boolean {
+  for (const child of node.children) {
+    if (child.kind === 'element' && child.element === 'form') return true;
+    // form > !action pattern
+    if (child.kind === 'binary' && child.operator === '>') {
+      const left = child.left;
+      if (left.kind === 'element' && left.element === 'form') return true;
+      // Also check resolved element
+      const resolved = tryResolveElement(left);
+      if (resolved && resolved.element === 'form') return true;
+    }
+  }
+  return false;
 }
 
 // ---- Unary JSX ----
@@ -659,6 +688,19 @@ function generateComposeJSX(
   scope: Scope,
   ind: number,
 ): string {
+  const pad = ' '.repeat(ind);
+
+  // Pattern: header>text + btn → merge button into the header
+  if (node.left.kind === 'binary' && node.left.operator === '>') {
+    const leftResolved = tryResolveElement(node.left.left);
+    if (leftResolved && leftResolved.element === 'header') {
+      const mapping = mapElement('header', []);
+      const textContent = generateJSX(node.left.right, ctx, analysis, scope, ind + 2);
+      const rightContent = generateJSX(node.right, ctx, analysis, scope, ind + 2);
+      return `${pad}<${mapping.tag} className="${mapping.className}">\n${textContent}\n${rightContent}\n${pad}</${mapping.tag}>`;
+    }
+  }
+
   const left = generateJSX(node.left, ctx, analysis, scope, ind);
   const right = generateJSX(node.right, ctx, analysis, scope, ind);
   return [left, right].filter(Boolean).join('\n');
@@ -875,7 +917,11 @@ function generateBindJSX(
       scope,
     );
     if (mapping.tag === 'button') {
-      return `${pad}<button className="${mapping.className}" onClick={() => ${actionName}(${actionArgs})}>${getButtonLabel(resolved)}</button>`;
+      // Action-only button with no modifiers → use ghost style
+      const btnClass = resolved.element === 'btn' && resolved.modifiers.length === 0
+        ? mapElement('btn', ['ghost']).className
+        : mapping.className;
+      return `${pad}<button className="${btnClass}" onClick={() => ${actionName}(${actionArgs})}>${getButtonLabel(resolved)}</button>`;
     }
     return `${pad}<${mapping.tag} className="${mapping.className}" onClick={() => ${actionName}(${actionArgs})} />`;
   }
@@ -1996,7 +2042,7 @@ function getButtonLabel(resolved: ResolvedBind): string {
       ? extractActionName(resolved.action.operand)
       : extractActionName(resolved.action);
     if (actionName === 'del' || actionName === 'delete' || actionName === 'remove') return '\u2715';
-    return actionName;
+    return capitalize(actionName);
   }
   if (resolved.element === 'btn') return 'Submit';
   return resolved.element;
