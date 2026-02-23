@@ -23,11 +23,11 @@ interface MappingEntry {
 const ELEMENT_MAP: Record<string, MappingEntry> = {
   header: {
     tag: 'header',
-    className: 'flex items-center justify-between p-4 border-b border-white/10',
+    className: 'flex items-center justify-between p-4 border-b border-[var(--border)]',
   },
   footer: {
     tag: 'footer',
-    className: 'p-4 text-center text-sm opacity-70',
+    className: 'p-4 text-center text-sm text-[var(--muted)]',
   },
   main: {
     tag: 'main',
@@ -35,7 +35,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   sidebar: {
     tag: 'aside',
-    className: 'w-64 border-r border-white/10 p-4 flex flex-col gap-4',
+    className: 'w-64 border-r border-[var(--border)] p-4 flex flex-col gap-4',
   },
   row: {
     tag: 'div',
@@ -53,22 +53,22 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   card: {
     tag: 'div',
-    className: 'rounded-xl border border-white/10 p-4 shadow-sm',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] p-4 shadow-sm',
   },
   btn: {
     tag: 'button',
-    className: 'px-4 py-2 rounded-lg cursor-pointer transition-colors',
+    className: 'px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors',
     modifiers: {
-      primary: { className: 'bg-[var(--accent)] text-white px-4 py-2 rounded-lg cursor-pointer hover:opacity-90 transition-colors' },
-      secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-4 py-2 rounded-lg cursor-pointer hover:opacity-90 transition-colors' },
-      ghost: { className: 'bg-transparent hover:bg-white/10 px-4 py-2 rounded-lg cursor-pointer transition-colors' },
-      icon: { className: 'p-2 rounded-full hover:bg-white/10 cursor-pointer transition-colors' },
-      submit: { className: 'bg-[var(--accent)] text-white px-4 py-2 rounded-lg cursor-pointer hover:opacity-90 transition-colors' },
+      primary: { className: 'bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors' },
+      secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors' },
+      ghost: { className: 'bg-transparent hover:bg-[var(--hover)] px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors' },
+      icon: { className: 'p-2 rounded-full hover:bg-[var(--hover)] cursor-pointer transition-colors' },
+      submit: { className: 'bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors' },
     },
   },
   input: {
     tag: 'input',
-    className: 'w-full border border-white/20 rounded-lg px-3 py-2 bg-transparent focus:outline-none focus:border-[var(--accent)]',
+    className: 'w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent focus:outline-none focus:border-[var(--accent)]',
     selfClosing: true,
     modifiers: {
       text: { inputType: 'text' },
@@ -80,7 +80,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   select: {
     tag: 'select',
-    className: 'border border-white/20 rounded-lg px-3 py-2 bg-transparent focus:outline-none',
+    className: 'border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent focus:outline-none',
   },
   h1: {
     tag: 'h1',
@@ -153,18 +153,18 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   stat: {
     tag: 'div',
-    className: 'rounded-xl border border-white/10 p-4 text-center',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] p-4 text-center',
   },
   progress: {
     tag: 'div',
-    className: 'w-full bg-white/10 rounded-full h-3 overflow-hidden',
+    className: 'w-full bg-[var(--hover)] rounded-full h-3 overflow-hidden',
     modifiers: {
-      bar: { className: 'w-full bg-white/10 rounded-full h-3 overflow-hidden' },
+      bar: { className: 'w-full bg-[var(--hover)] rounded-full h-3 overflow-hidden' },
     },
   },
   chart: {
     tag: 'div',
-    className: 'w-full h-64 border border-white/10 rounded-xl flex items-center justify-center opacity-50',
+    className: 'w-full h-64 border border-[var(--border)] rounded-[var(--radius)] flex items-center justify-center text-[var(--muted)]',
     modifiers: {
       line: {},
       bar: {},
@@ -172,7 +172,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   search: {
     tag: 'input',
-    className: 'w-full border border-white/20 rounded-lg px-3 py-2 bg-transparent focus:outline-none focus:border-[var(--accent)]',
+    className: 'w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent focus:outline-none focus:border-[var(--accent)]',
     selfClosing: true,
     modifiers: {
       input: { inputType: 'search' },
@@ -184,7 +184,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   img: {
     tag: 'img',
-    className: 'max-w-full rounded-lg',
+    className: 'max-w-full rounded-[var(--radius)]',
     selfClosing: true,
   },
   icon: {
@@ -211,7 +211,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   plan: {
     tag: 'div',
-    className: 'rounded-xl border border-white/10 p-6 flex flex-col items-center gap-4',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] p-6 flex flex-col items-center gap-4',
   },
   section: {
     tag: 'section',

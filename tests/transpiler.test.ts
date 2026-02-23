@@ -278,8 +278,9 @@ describe('transpile: todo.air', () => {
     expect(jsx).toContain('setItem');
   });
 
-  it('generates dark theme styling', () => {
-    expect(jsx).toContain('bg-gray-950');
+  it('generates themed root div with CSS variables', () => {
+    expect(jsx).toContain('bg-[var(--bg)]');
+    expect(jsx).toContain('text-[var(--fg)]');
   });
 
   it('generates filter tabs', () => {
@@ -311,9 +312,10 @@ describe('transpile: expense-tracker.air', () => {
     expect(jsx).toContain('grid');
   });
 
-  it('generates progress bar', () => {
+  it('generates progress bar with CSS variable styling', () => {
     expect(jsx).toContain('overflow-hidden');
     expect(jsx).toContain('width:');
+    expect(jsx).toContain('bg-[var(--accent)]');
   });
 
   it('generates stat cards', () => {
@@ -399,9 +401,9 @@ describe('transpile: landing.air', () => {
     expect(jsx).toContain('grid-cols-3');
   });
 
-  it('generates light theme', () => {
-    expect(jsx).toContain('bg-white');
-    expect(jsx).toContain('text-gray-900');
+  it('generates themed root div with CSS variables', () => {
+    expect(jsx).toContain('bg-[var(--bg)]');
+    expect(jsx).toContain('text-[var(--fg)]');
   });
 
   it('generates hero text', () => {
@@ -497,12 +499,18 @@ describe('semantics: supported features', () => {
     expect(getAppJsx('todo')).toContain('useState');
   });
 
-  it('@style → theme classes + CSS variables', () => {
-    const result = transpileFile('todo');
-    const css = result.files.find(f => f.path === 'src/index.css')!.content;
-    expect(css).toContain('--accent');
-    expect(getAppJsx('todo')).toContain('bg-gray-950'); // dark theme
-    expect(getAppJsx('landing')).toContain('bg-white');  // light theme
+  it('@style → theme-aware CSS variables (dark/light palette)', () => {
+    const todoCss = transpileFile('todo').files.find(f => f.path === 'src/index.css')!.content;
+    expect(todoCss).toContain('--accent: #6366f1');
+    expect(todoCss).toContain('--bg: #030712');  // dark theme
+    expect(todoCss).toContain('--fg: #f3f4f6');
+    expect(todoCss).toContain('--border:');
+    expect(todoCss).toContain('--hover:');
+    const landingCss = transpileFile('landing').files.find(f => f.path === 'src/index.css')!.content;
+    expect(landingCss).toContain('--bg: #ffffff');  // light theme
+    expect(landingCss).toContain('--fg: #111827');
+    expect(getAppJsx('todo')).toContain('bg-[var(--bg)]');
+    expect(getAppJsx('landing')).toContain('bg-[var(--bg)]');
   });
 
   it('@persist:localStorage → useEffect load/save', () => {
@@ -634,12 +642,33 @@ describe('transpile: output structure', () => {
     expect(paths).toContain('src/App.jsx');
   });
 
-  it('generates index.css with accent variable', () => {
+  it('generates index.css with full theme token palette', () => {
     const result = transpileFile('todo');
-    const css = result.files.find(f => f.path === 'src/index.css');
-    expect(css).toBeDefined();
-    expect(css!.content).toContain('--accent: #6366f1');
-    expect(css!.content).toContain('@tailwind');
+    const css = result.files.find(f => f.path === 'src/index.css')!.content;
+    expect(css).toContain('--accent: #6366f1');
+    expect(css).toContain('--radius: 12px');
+    expect(css).toContain('--bg:');
+    expect(css).toContain('--fg:');
+    expect(css).toContain('--muted:');
+    expect(css).toContain('--border:');
+    expect(css).toContain('--border-input:');
+    expect(css).toContain('--hover:');
+    expect(css).toContain('--card-shadow:');
+    expect(css).toContain('background: var(--bg)');
+    expect(css).toContain('color: var(--fg)');
+    expect(css).toContain('@tailwind');
+  });
+
+  it('App.jsx uses CSS variables for component styling', () => {
+    const jsx = getAppJsx('todo');
+    expect(jsx).toContain('var(--bg)');
+    expect(jsx).toContain('var(--fg)');
+    expect(jsx).toContain('var(--accent)');
+    expect(jsx).toContain('var(--radius)');
+    expect(jsx).toContain('var(--border)');
+    // No hardcoded theme colors
+    expect(jsx).not.toContain('bg-gray-950');
+    expect(jsx).not.toContain('bg-white text-gray-900');
   });
 
   it('reports stats', () => {

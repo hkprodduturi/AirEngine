@@ -113,6 +113,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 function generateIndexCss(ctx: TranspileContext): string {
   const accent = typeof ctx.style.accent === 'string' ? ctx.style.accent : '#6366f1';
   const radius = typeof ctx.style.radius === 'number' ? ctx.style.radius : 12;
+  const isDark = ctx.style.theme === 'dark' || ctx.style.theme === undefined;
 
   // Collect extra color variables from style
   const extraVars: string[] = [];
@@ -124,9 +125,31 @@ function generateIndexCss(ctx: TranspileContext): string {
     }
   }
 
+  // Theme-aware surface, border, and text palette
+  const themeVars = isDark ? [
+    '  --bg: #030712;',
+    '  --bg-secondary: rgba(255,255,255,0.03);',
+    '  --fg: #f3f4f6;',
+    '  --muted: rgba(255,255,255,0.5);',
+    '  --border: rgba(255,255,255,0.1);',
+    '  --border-input: rgba(255,255,255,0.2);',
+    '  --hover: rgba(255,255,255,0.08);',
+    '  --card-shadow: 0 1px 3px rgba(0,0,0,0.4);',
+  ] : [
+    '  --bg: #ffffff;',
+    '  --bg-secondary: #f9fafb;',
+    '  --fg: #111827;',
+    '  --muted: rgba(0,0,0,0.5);',
+    '  --border: #e5e7eb;',
+    '  --border-input: #d1d5db;',
+    '  --hover: rgba(0,0,0,0.05);',
+    '  --card-shadow: 0 1px 3px rgba(0,0,0,0.1);',
+  ];
+
   const vars = [
     `  --accent: ${accent};`,
     `  --radius: ${radius}px;`,
+    ...themeVars,
     ...extraVars,
   ].join('\n');
 
@@ -142,6 +165,8 @@ body {
   margin: 0;
   font-family: ${getFontFamily(ctx)};
   -webkit-font-smoothing: antialiased;
+  background: var(--bg);
+  color: var(--fg);
 }
 
 * {

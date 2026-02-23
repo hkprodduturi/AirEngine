@@ -354,12 +354,7 @@ function generateHookEffects(ctx: TranspileContext): string[] {
 // ---- Root JSX ----
 
 function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis): string[] {
-  const theme = ctx.style.theme;
-  const isDark = theme === 'dark' || theme === undefined;
-
-  const rootClasses = isDark
-    ? 'min-h-screen bg-gray-950 text-gray-100'
-    : 'min-h-screen bg-white text-gray-900';
+  const rootClasses = 'min-h-screen bg-[var(--bg)] text-[var(--fg)]';
 
   const maxWidth = ctx.style.maxWidth;
   const wrapperClass = maxWidth ? ` max-w-[${maxWidth}px] mx-auto` : '';
@@ -446,7 +441,7 @@ function generateElementJSX(
     return generateTabsElement(node, ctx, analysis, scope, ind);
   }
   if (node.element === 'pagination') {
-    return `${pad}<div className="flex gap-2 items-center justify-center mt-4">\n${pad}  <button className="px-3 py-1 rounded border border-white/20 hover:bg-white/10">&laquo; Prev</button>\n${pad}  <span className="px-3 py-1">1</span>\n${pad}  <button className="px-3 py-1 rounded border border-white/20 hover:bg-white/10">Next &raquo;</button>\n${pad}</div>`;
+    return `${pad}<div className="flex gap-2 items-center justify-center mt-4">\n${pad}  <button className="px-3 py-1 rounded border border-[var(--border-input)] hover:bg-[var(--hover)]">&laquo; Prev</button>\n${pad}  <span className="px-3 py-1">1</span>\n${pad}  <button className="px-3 py-1 rounded border border-[var(--border-input)] hover:bg-[var(--hover)]">Next &raquo;</button>\n${pad}</div>`;
   }
   if (node.element === 'spinner') {
     return `${pad}<div className="${mapping.className}"></div>`;
@@ -531,7 +526,7 @@ function generateUnaryJSX(
       // Mutation — render as button with onClick
       const name = extractActionName(node.operand);
       const args = extractActionArgs(node.operand, scope);
-      return `${pad}<button className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white cursor-pointer hover:opacity-90" onClick={() => ${name}(${args})}>${name}</button>`;
+      return `${pad}<button className="bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" onClick={() => ${name}(${args})}>${name}</button>`;
     }
 
     case '*': {
@@ -674,7 +669,7 @@ function generateFlowJSX(
         const bindInfo = resolveBindChain(node.left);
         if (bindInfo?.label) {
           const mapping = mapElement('stat', []);
-          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm opacity-70">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
+          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm text-[var(--muted)]">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
         }
       }
       return generateFlowBoundElement(leftResolved, ref, ctx, scope, ind);
@@ -696,7 +691,7 @@ function generateFlowJSX(
       if (leftResolved.element === 'stat') {
         const resolved = node.left.kind === 'binary' && node.left.operator === ':' ? resolveBindChain(node.left) : null;
         const label = resolved?.label || '';
-        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm opacity-70">${escapeText(label)}</div>\n${pad}  <div className="text-2xl font-bold">{${expr}}</div>\n${pad}</div>`;
+        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm text-[var(--muted)]">${escapeText(label)}</div>\n${pad}  <div className="text-2xl font-bold">{${expr}}</div>\n${pad}</div>`;
       }
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{${expr}}</${mapping.tag}>`;
     }
@@ -712,7 +707,7 @@ function generateFlowJSX(
     const stateVar = node.right.element.replace('.select', '');
     const stateField = findStateField(stateVar, ctx);
     const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
-    return `${pad}<select className="border border-white/20 rounded-lg px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
+    return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
       + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
       + `${pad}</select>`;
   }
@@ -757,7 +752,7 @@ function generatePipeJSX(
       const valueNode = resolved.binding || resolved.action || node.left;
       const pipeExpr = resolvePipeExpr({ kind: 'binary', operator: '|', left: valueNode, right: node.right }, ctx, scope);
       if (resolved.element === 'stat') {
-        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm opacity-70">${escapeText(resolved.label || '')}</div>\n${pad}  <div className="text-2xl font-bold">{${pipeExpr}}</div>\n${pad}</div>`;
+        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm text-[var(--muted)]">${escapeText(resolved.label || '')}</div>\n${pad}  <div className="text-2xl font-bold">{${pipeExpr}}</div>\n${pad}</div>`;
       }
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{${pipeExpr}}</${mapping.tag}>`;
     }
@@ -810,7 +805,7 @@ function generateBindJSX(
   // Element with label (stat:"Total")
   if (resolved.label !== undefined) {
     if (resolved.element === 'stat') {
-      return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm opacity-70">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">--</div>\n${pad}</div>`;
+      return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm text-[var(--muted)]">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">--</div>\n${pad}</div>`;
     }
     return `${pad}<${mapping.tag} className="${mapping.className}">${escapeText(resolved.label)}</${mapping.tag}>`;
   }
@@ -880,7 +875,7 @@ function generateProgressBar(
       }
     }
   }
-  return `${pad}<div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">\n`
+  return `${pad}<div className="w-full bg-[var(--hover)] rounded-full h-3 overflow-hidden">\n`
     + `${pad}  <div className="h-full bg-[var(--accent)] rounded-full transition-all" style={{ width: \`\${Math.min(100, (${valueExpr}) / (${maxExpr}) * 100)}%\` }}></div>\n`
     + `${pad}</div>`;
 }
@@ -954,7 +949,7 @@ function generateBoundElement(
   // Stat element with label and value
   if (resolved.element === 'stat' && resolved.label !== undefined) {
     const ref = resolveRefNode(binding, scope);
-    return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm opacity-70">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
+    return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm text-[var(--muted)]">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
   }
 
   // Image with src
@@ -1149,7 +1144,7 @@ function generateFlowBoundElement(
       const optionsStr = enumValues.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-2">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-lg cursor-pointer transition-colors \${${stateRef} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-white/10'}\`} onClick={() => ${setterExpr}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${${stateRef} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-[var(--hover)]'}\`} onClick={() => ${setterExpr}(_tab)}>{_tab}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }
@@ -1240,13 +1235,13 @@ function generateSetterElement(
     const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
     return `${pad}<div className="flex gap-2">\n`
       + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-      + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-lg cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-white/10'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+      + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-[var(--hover)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
       + `${pad}  ))}\n`
       + `${pad}</div>`;
   }
 
   if (leftResolved?.element === 'select') {
-    return `${pad}<select className="border border-white/20 rounded-lg px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
+    return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
       + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
       + `${pad}</select>`;
   }
@@ -1255,7 +1250,7 @@ function generateSetterElement(
   const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
   return `${pad}<div className="flex gap-2">\n`
     + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-    + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-lg cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-white/10'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+    + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-[var(--hover)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
     + `${pad}  ))}\n`
     + `${pad}</div>`;
 }
@@ -1280,7 +1275,7 @@ function generateFlowWithDot(
       const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-2">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-lg cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-white/10'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-[var(--hover)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }
@@ -1300,7 +1295,7 @@ function generateFlowWithDot(
     if (stateVar) {
       const stateField = findStateField(stateVar, ctx);
       const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
-      return `${pad}<select className="border border-white/20 rounded-lg px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
+      return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
         + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
         + `${pad}</select>`;
     }
@@ -1421,7 +1416,7 @@ function generateTabsElement(
       const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-2">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-lg cursor-pointer transition-colors \${${filterField.name} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-white/10'}\`} onClick={() => set${capitalize(filterField.name)}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${${filterField.name} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent hover:bg-[var(--hover)]'}\`} onClick={() => set${capitalize(filterField.name)}(_tab)}>{_tab}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }
