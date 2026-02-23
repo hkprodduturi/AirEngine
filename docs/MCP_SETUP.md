@@ -8,6 +8,8 @@ The AirEngine MCP server gives Claude (Desktop or Code) native AIR language capa
 - **`air_validate`** — Validate AIR source code
 - **`air_transpile`** — Convert AIR to working React apps
 - **`air_explain`** — Explain what an AIR file does
+- **`air_lint`** — Detect common issues (unused state, missing routes, ambiguous relations)
+- **`air_capabilities`** — Query supported blocks, targets, operators, and version
 
 Plus resources:
 - **`air://spec`** — Full AIR language specification
@@ -38,7 +40,7 @@ npm install
 }
 ```
 
-4. Restart Claude Desktop. You should see the 🔨 hammer icon with 4 tools.
+4. Restart Claude Desktop. You should see the 🔨 hammer icon with 6 tools.
 
 5. Try it:
    > "Generate an AIR file for a task management app with projects and deadlines"

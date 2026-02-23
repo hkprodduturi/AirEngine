@@ -112,7 +112,7 @@ describe('Codegen manifest (6B)', () => {
     const manifest = JSON.parse(result.files.find(f => f.path === '_airengine_manifest.json')!.content);
 
     expect(manifest.generatedBy).toBe('AirEngine');
-    expect(manifest.version).toBe('0.1.6');
+    expect(manifest.version).toBe('0.1.7');
     expect(manifest.sourceHash).toHaveLength(16);
     expect(manifest.files).toBeInstanceOf(Array);
     expect(manifest.files.length).toBeGreaterThan(0);

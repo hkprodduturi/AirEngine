@@ -25,7 +25,7 @@ const program = new Command();
 program
   .name('air')
   .description('AirEngine — AI-native Intermediate Representation Engine')
-  .version('0.1.6');
+  .version('0.1.7');
 
 program
   .command('generate')
@@ -45,11 +45,17 @@ program
   .description('Transpile .air file to React application')
   .argument('<file>', 'Path to .air file')
   .option('-o, --output <dir>', 'Output directory', './output')
-  .option('-f, --framework <fw>', 'Target framework', 'react')
+  .option('-f, --framework <fw>', 'Target framework (only "react" supported)', 'react')
   .option('--target <mode>', 'Generation target: all, client, server, docs', 'all')
   .option('--no-incremental', 'Skip incremental cache')
   .action((file, options) => {
     console.log(`\n  ⚡ AirEngine Transpile\n`);
+
+    if (options.framework !== 'react') {
+      console.error(`  ❌ Unsupported framework '${options.framework}'. Only 'react' is currently supported.\n`);
+      process.exit(1);
+    }
+
     try {
       const source = readFileSync(file, 'utf-8');
       const ast = parse(source);

@@ -138,12 +138,18 @@ The MCP server exposes six tools: `air_validate`, `air_transpile`, `air_explain`
 ## CLI Commands
 
 ```bash
-air transpile app.air -o ./out     # Transpile to working app (incremental by default)
-air transpile app.air --target client  # Client-only output
-air init                           # Generate a starter .air file (interactive)
-air dev app.air                    # Watch mode with hot reload
-air doctor app.air                 # Check environment (Node, npm, ports, Prisma)
-air validate app.air               # Parse + validate without transpiling
+air transpile app.air -o ./out              # Transpile (incremental by default)
+air transpile app.air --target client       # Client-only output
+air transpile app.air --target server       # Server-only output
+air transpile app.air --target docs         # README + types only
+air transpile app.air --no-incremental      # Force full rebuild
+air init                                    # Interactive starter .air file
+air init --name myapp --fullstack           # Non-interactive fullstack template
+air dev app.air                             # Watch mode with hot reload
+air dev app.air -p 3000 --server-port 3001  # Custom ports
+air doctor                                  # Check environment
+air doctor app.air                          # Check env + validate .air file
+air validate app.air                        # Parse + validate without transpiling
 ```
 
 ---
@@ -155,7 +161,7 @@ git clone https://github.com/hkprodduturi/AirEngine.git
 cd AirEngine
 npm install
 npm run build
-npm test          # 579 tests
+npm test          # all tests
 ```
 
 ## License

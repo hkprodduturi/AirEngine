@@ -249,7 +249,7 @@ function countDbModels(ast: AirAST): number {
 async function main() {
   const server = new McpServer({
     name: 'AirEngine',
-    version: '0.1.0',
+    version: '0.1.7',
   });
 
   const examples = loadExamples();
@@ -684,7 +684,7 @@ Generate the AIR code now:`;
         content: [{
           type: 'text' as const,
           text: JSON.stringify({
-            version: '0.1.6',
+            version: '0.1.7',
             blocks: [
               'app', 'state', 'style', 'ui', 'api', 'auth', 'nav', 'persist', 'hook',
               'db', 'cron', 'webhook', 'queue', 'email', 'env', 'deploy',
@@ -761,7 +761,7 @@ First generate the .air file, then use the air_transpile tool to create the work
 
   // Log to stderr (stdout is reserved for MCP protocol)
   console.error('AirEngine MCP Server running');
-  console.error('   Tools: air_generate, air_validate, air_transpile, air_explain');
+  console.error('   Tools: air_generate, air_validate, air_transpile, air_explain, air_lint, air_capabilities');
   console.error('   Resources: air://spec, air://examples');
 }
 
