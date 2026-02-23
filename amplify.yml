@@ -1,0 +1,19 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm install
+        - npm run build
+    build:
+      commands:
+        - node dist/cli/index.js transpile examples/airengine-site.air -o ./site
+        - cd site && npm install && npx vite build
+  artifacts:
+    baseDirectory: site/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+      - site/node_modules/**/*
