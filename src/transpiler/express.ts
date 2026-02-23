@@ -15,6 +15,9 @@ import type { TranspileContext } from './context.js';
 import type { OutputFile } from './index.js';
 import type { AirRoute, AirDbBlock, AirDbModel } from '../parser/types.js';
 import { generatePrismaSchema } from './prisma.js';
+import { expandCrud } from './route-utils.js';
+import { generateTypesFile, getGeneratedTypeNames } from './types-gen.js';
+import { generateSeedFile } from './seed-gen.js';
 
 // ---- Main entry ----
 
@@ -38,6 +41,16 @@ export function generateServer(ctx: TranspileContext): OutputFile[] {
   // prisma.ts — PrismaClient singleton (avoids circular imports)
   if (ctx.db) {
     files.push({ path: 'server/prisma.ts', content: generatePrismaClient() });
+  }
+
+  // seed.ts — database seeding (only if @db exists)
+  if (ctx.db) {
+    files.push({ path: 'server/seed.ts', content: generateSeedFile(ctx) });
+  }
+
+  // types.ts — request body / DTO types
+  if (ctx.apiRoutes.length > 0) {
+    files.push({ path: 'server/types.ts', content: generateTypesFile(ctx) });
   }
 
   // api.ts — Express router from @api routes
@@ -179,12 +192,29 @@ function generateApiRouter(ctx: TranspileContext): string {
   if (ctx.db) {
     lines.push("import { prisma } from './prisma.js';");
   }
-  lines.push('');
-  lines.push('export const apiRouter = Router();');
-  lines.push('');
 
   // Expand CRUD shortcut into individual routes
   const routes = expandCrud(ctx.apiRoutes);
+
+  // Collect type names used by routes in this file
+  const typeNames = getGeneratedTypeNames(ctx);
+  const usedTypes: string[] = [];
+  for (const route of routes) {
+    // Find matching original route (expanded routes share params reference)
+    for (const [origRoute, typeName] of typeNames) {
+      if (origRoute === route || (origRoute.params === route.params && route.params && route.params.length > 0)) {
+        if (!usedTypes.includes(typeName)) usedTypes.push(typeName);
+      }
+    }
+  }
+
+  if (usedTypes.length > 0) {
+    lines.push(`import type { ${usedTypes.join(', ')} } from './types.js';`);
+  }
+
+  lines.push('');
+  lines.push('export const apiRouter = Router();');
+  lines.push('');
 
   for (const route of routes) {
     const method = route.method.toLowerCase();
@@ -194,8 +224,24 @@ function generateApiRouter(ctx: TranspileContext): string {
     lines.push(`apiRouter.${method}('${path}', async (req, res) => {`);
     lines.push('  try {');
 
-    const prismaCall = mapHandlerToPrisma(handler, route, ctx.db);
+    // Get body type name for typed destructuring
+    let bodyTypeName: string | undefined;
+    if (route.params && route.params.length > 0) {
+      for (const [origRoute, typeName] of typeNames) {
+        if (origRoute === route || origRoute.params === route.params) {
+          bodyTypeName = typeName;
+          break;
+        }
+      }
+    }
+
+    const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
     if (prismaCall) {
+      // Add typed destructuring if we have params and a body type
+      if (bodyTypeName && route.params && route.params.length > 0) {
+        const paramNames = route.params.map(p => p.name).join(', ');
+        lines.push(`    const { ${paramNames} } = req.body as ${bodyTypeName};`);
+      }
       lines.push(`    const result = ${prismaCall};`);
       lines.push('    res.json(result);');
     } else {
@@ -219,6 +265,7 @@ function mapHandlerToPrisma(
   handler: string,
   route: AirRoute,
   db: AirDbBlock | null,
+  bodyTypeName?: string,
 ): string | null {
   // Pattern: ~db.Model.operation
   const match = handler.match(/^~db\.(\w+)\.(\w+)$/);
@@ -231,6 +278,12 @@ function mapHandlerToPrisma(
   const hasIdParam = route.path.includes(':id');
   const idExpr = getIdExpression(modelName, db);
 
+  // Use destructured param names if typed body is available
+  const hasTypedBody = bodyTypeName && route.params && route.params.length > 0;
+  const dataExpr = hasTypedBody
+    ? `{ ${route.params!.map(p => p.name).join(', ')} }`
+    : 'req.body';
+
   switch (operation) {
     case 'findMany':
       return `await prisma.${modelVar}.findMany()`;
@@ -239,10 +292,10 @@ function mapHandlerToPrisma(
         ? `await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } })`
         : `await prisma.${modelVar}.findUnique({ where: req.body })`;
     case 'create':
-      return `await prisma.${modelVar}.create({ data: req.body })`;
+      return `await prisma.${modelVar}.create({ data: ${dataExpr} })`;
     case 'update':
       return hasIdParam
-        ? `await prisma.${modelVar}.update({ where: { id: ${idExpr} }, data: req.body })`
+        ? `await prisma.${modelVar}.update({ where: { id: ${idExpr} }, data: ${dataExpr} })`
         : `await prisma.${modelVar}.update({ where: req.body.where, data: req.body.data })`;
     case 'delete':
       return hasIdParam
@@ -274,23 +327,6 @@ function unwrapKind(type: { kind: string; of?: unknown }): string {
     return unwrapKind(type.of as { kind: string; of?: unknown });
   }
   return type.kind;
-}
-
-/** Expand CRUD shortcut into GET, POST, PUT, DELETE */
-function expandCrud(routes: AirRoute[]): AirRoute[] {
-  const result: AirRoute[] = [];
-  for (const route of routes) {
-    if (route.method === 'CRUD') {
-      const handlerBase = route.handler.replace(/\.\w+$/, '');
-      result.push({ method: 'GET', path: route.path, handler: `${handlerBase}.findMany` });
-      result.push({ method: 'POST', path: route.path, handler: `${handlerBase}.create`, params: route.params });
-      result.push({ method: 'PUT', path: `${route.path}/:id`, handler: `${handlerBase}.update`, params: route.params });
-      result.push({ method: 'DELETE', path: `${route.path}/:id`, handler: `${handlerBase}.delete` });
-    } else {
-      result.push(route);
-    }
-  }
-  return result;
 }
 
 // ---- server.ts (entry point) ----

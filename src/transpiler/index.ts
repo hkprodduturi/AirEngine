@@ -15,6 +15,7 @@ import { analyzeUI } from './normalize-ui.js';
 import { generateApp } from './react.js';
 import { generateScaffold } from './scaffold.js';
 import { generateServer } from './express.js';
+import { generateApiClient } from './api-client-gen.js';
 
 export interface TranspileOptions {
   framework?: 'react';
@@ -61,6 +62,9 @@ export function transpile(
     // Fullstack: client/ + server/
     files.push(...scaffoldFiles.map(f => ({ ...f, path: `client/${f.path}` })));
     files.push({ path: 'client/src/App.jsx', content: appCode });
+    if (ctx.apiRoutes.length > 0) {
+      files.push({ path: 'client/src/api.js', content: generateApiClient(ctx) });
+    }
     files.push(...generateServer(ctx));
   } else {
     // Frontend-only: flat (backward compatible)

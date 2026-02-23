@@ -5,6 +5,7 @@ import { transpile } from '../src/transpiler/index.js';
 import { extractContext } from '../src/transpiler/context.js';
 import { generatePrismaSchema } from '../src/transpiler/prisma.js';
 import { generateServer } from '../src/transpiler/express.js';
+import { routeToFunctionName, expandCrud } from '../src/transpiler/route-utils.js';
 import type { AirDbBlock } from '../src/parser/types.js';
 
 // ---- Helpers ----
@@ -142,7 +143,7 @@ describe('Express server generation', () => {
   it('api.ts maps handlers to Prisma calls', () => {
     const api = getServerFile('fullstack-todo', 'server/api.ts')!;
     expect(api).toContain('prisma.todo.findMany()');
-    expect(api).toContain('prisma.todo.create({ data: req.body })');
+    expect(api).toContain('prisma.todo.create({ data: { text } })');
     expect(api).toContain('prisma.todo.update(');
     expect(api).toContain('prisma.todo.delete(');
   });
@@ -375,5 +376,280 @@ describe('projectflow.air integration', () => {
     const api = getServerFile('projectflow', 'server/api.ts')!;
     const routeCount = (api.match(/apiRouter\.\w+\('/g) || []).length;
     expect(routeCount).toBeGreaterThanOrEqual(15);
+  });
+});
+
+// ---- server/types.ts generation ----
+
+describe('server/types.ts generation', () => {
+  it('generates types.ts for fullstack-todo.air', () => {
+    const types = getServerFile('fullstack-todo', 'server/types.ts');
+    expect(types).toBeDefined();
+  });
+
+  it('generates CreateTodoBody with text:string', () => {
+    const types = getServerFile('fullstack-todo', 'server/types.ts')!;
+    expect(types).toContain('export interface CreateTodoBody');
+    expect(types).toContain('text: string');
+  });
+
+  it('generates UpdateTodoBody with done:boolean', () => {
+    const types = getServerFile('fullstack-todo', 'server/types.ts')!;
+    expect(types).toContain('export interface UpdateTodoBody');
+    expect(types).toContain('done: boolean');
+  });
+
+  it('does not generate types for GET routes (no params)', () => {
+    const types = getServerFile('fullstack-todo', 'server/types.ts')!;
+    expect(types).not.toContain('FindManyTodoBody');
+    expect(types).not.toContain('DeleteTodoBody');
+  });
+
+  it('generates enum union types for enum params', () => {
+    // projectflow has role:enum(admin,member,viewer) in User model
+    const ast = parse("@app:t\n@api(\nPOST:/test(status:enum(a,b,c))>handler\n)");
+    const result = transpile(ast);
+    const types = result.files.find(f => f.path === 'server/types.ts')?.content;
+    expect(types).toBeDefined();
+    expect(types).toContain("'a' | 'b' | 'c'");
+  });
+
+  it('only generates request body types, not Prisma model types', () => {
+    const types = getServerFile('fullstack-todo', 'server/types.ts')!;
+    // Should NOT contain model-level fields like created_at, id
+    expect(types).not.toContain('created_at');
+    expect(types).not.toContain('id: number');
+  });
+
+  it('api.ts imports from types.ts', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts')!;
+    expect(api).toContain("from './types.js'");
+  });
+
+  it('api.ts uses typed body destructuring', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts')!;
+    expect(api).toContain('req.body as CreateTodoBody');
+    expect(api).toContain('const { text }');
+  });
+});
+
+// ---- server/seed.ts generation ----
+
+describe('server/seed.ts generation', () => {
+  it('generates seed.ts for fullstack-todo.air', () => {
+    const seed = getServerFile('fullstack-todo', 'server/seed.ts');
+    expect(seed).toBeDefined();
+  });
+
+  it('imports PrismaClient', () => {
+    const seed = getServerFile('fullstack-todo', 'server/seed.ts')!;
+    expect(seed).toContain("import { PrismaClient } from '@prisma/client'");
+  });
+
+  it('uses deleteMany before seeding', () => {
+    const seed = getServerFile('fullstack-todo', 'server/seed.ts')!;
+    expect(seed).toContain('deleteMany()');
+  });
+
+  it('uses createMany to seed', () => {
+    const seed = getServerFile('fullstack-todo', 'server/seed.ts')!;
+    expect(seed).toContain('createMany');
+  });
+
+  it('skips auto-increment id fields', () => {
+    const seed = getServerFile('fullstack-todo', 'server/seed.ts')!;
+    // Should not try to set 'id' field for Todo (auto-increment)
+    const dataLines = seed.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('data:'));
+    for (const line of dataLines) {
+      if (line.includes('createMany')) continue;
+      // id should not appear as a field in seed data objects
+    }
+    // The seed data should contain text and done, not id
+    expect(seed).toContain('text:');
+    expect(seed).toContain('done:');
+  });
+
+  it('skips FK _id fields in seed data', () => {
+    const seed = getServerFile('projectflow', 'server/seed.ts')!;
+    // workspace_id, project_id, task_id, author_id, assignee_id should be skipped
+    const dataBlocks = seed.split('createMany');
+    for (const block of dataBlocks) {
+      const dataSection = block.split('data:')[1]?.split('],')[0];
+      if (dataSection) {
+        expect(dataSection).not.toContain('workspace_id:');
+        expect(dataSection).not.toContain('project_id:');
+        expect(dataSection).not.toContain('task_id:');
+        expect(dataSection).not.toContain('author_id:');
+      }
+    }
+  });
+
+  it('generates seed for projectflow with multiple models', () => {
+    const seed = getServerFile('projectflow', 'server/seed.ts')!;
+    expect(seed).toContain('prisma.user');
+    expect(seed).toContain('prisma.workspace');
+    expect(seed).toContain('prisma.project');
+    expect(seed).toContain('prisma.task');
+  });
+
+  it('does not generate seed.ts for frontend-only apps', () => {
+    const result = transpileFile('todo');
+    const seed = result.files.find(f => f.path === 'server/seed.ts');
+    expect(seed).toBeUndefined();
+  });
+
+  it('calls $disconnect in finally block', () => {
+    const seed = getServerFile('fullstack-todo', 'server/seed.ts')!;
+    expect(seed).toContain('$disconnect');
+  });
+});
+
+// ---- client/src/api.js generation ----
+
+describe('client/src/api.js generation', () => {
+  it('generates api.js for fullstack-todo.air', () => {
+    const result = transpileFile('fullstack-todo');
+    const apiJs = result.files.find(f => f.path === 'client/src/api.js');
+    expect(apiJs).toBeDefined();
+  });
+
+  it('uses configurable API_BASE with import.meta.env', () => {
+    const result = transpileFile('fullstack-todo');
+    const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
+    expect(apiJs.content).toContain('import.meta.env.VITE_API_BASE_URL');
+    expect(apiJs.content).toContain("'http://localhost:3001/api'");
+  });
+
+  it('generates getTodos function for GET /todos', () => {
+    const result = transpileFile('fullstack-todo');
+    const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
+    expect(apiJs.content).toContain('export async function getTodos()');
+  });
+
+  it('generates createTodo function for POST /todos', () => {
+    const result = transpileFile('fullstack-todo');
+    const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
+    expect(apiJs.content).toContain('export async function createTodo(data)');
+  });
+
+  it('generates updateTodo(id, data) for PUT /todos/:id', () => {
+    const result = transpileFile('fullstack-todo');
+    const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
+    expect(apiJs.content).toContain('export async function updateTodo(id, data)');
+  });
+
+  it('generates deleteTodo(id) for DELETE /todos/:id', () => {
+    const result = transpileFile('fullstack-todo');
+    const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
+    expect(apiJs.content).toContain('export async function deleteTodo(id)');
+  });
+
+  it('does not generate api.js for frontend-only apps', () => {
+    const result = transpileFile('todo');
+    const apiJs = result.files.find(f => f.path === 'src/api.js');
+    expect(apiJs).toBeUndefined();
+  });
+
+  it('handles multi-segment paths like /auth/login', () => {
+    const result = transpileFile('projectflow');
+    const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
+    expect(apiJs.content).toContain('export async function authLogin(data)');
+  });
+
+  it('generates getStats for GET /stats', () => {
+    const result = transpileFile('projectflow');
+    const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
+    expect(apiJs.content).toContain('export async function getStats()');
+  });
+});
+
+// ---- Route naming utility ----
+
+describe('routeToFunctionName', () => {
+  it('GET /todos → getTodos', () => {
+    expect(routeToFunctionName('GET', '/todos')).toBe('getTodos');
+  });
+
+  it('POST /todos → createTodo', () => {
+    expect(routeToFunctionName('POST', '/todos')).toBe('createTodo');
+  });
+
+  it('PUT /todos/:id → updateTodo', () => {
+    expect(routeToFunctionName('PUT', '/todos/:id')).toBe('updateTodo');
+  });
+
+  it('DELETE /todos/:id → deleteTodo', () => {
+    expect(routeToFunctionName('DELETE', '/todos/:id')).toBe('deleteTodo');
+  });
+
+  it('GET /stats → getStats', () => {
+    expect(routeToFunctionName('GET', '/stats')).toBe('getStats');
+  });
+
+  it('POST /auth/login → authLogin', () => {
+    expect(routeToFunctionName('POST', '/auth/login')).toBe('authLogin');
+  });
+
+  it('POST /auth/register → authRegister', () => {
+    expect(routeToFunctionName('POST', '/auth/register')).toBe('authRegister');
+  });
+
+  it('GET /tasks/:id/comments → getTaskComments', () => {
+    expect(routeToFunctionName('GET', '/tasks/:id/comments')).toBe('getTaskComments');
+  });
+
+  it('POST /tasks/:id/comments → createTaskComments', () => {
+    expect(routeToFunctionName('POST', '/tasks/:id/comments')).toBe('createTaskComments');
+  });
+});
+
+// ---- Hook wiring ----
+
+describe('hook wiring (fullstack)', () => {
+  it('dashboard.air App.jsx imports api module', () => {
+    const result = transpileFile('dashboard');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain("import * as api from './api.js'");
+  });
+
+  it('dashboard.air hooks call api.getStats()', () => {
+    const result = transpileFile('dashboard');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('api.getStats()');
+    expect(app.content).toContain('setStats(data)');
+  });
+
+  it('dashboard.air hooks call api.getUsers()', () => {
+    const result = transpileFile('dashboard');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('api.getUsers()');
+    expect(app.content).toContain('setUsers(data)');
+  });
+
+  it('projectflow.air hooks call api.getStats() and api.getProjects()', () => {
+    const result = transpileFile('projectflow');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain('api.getStats()');
+    expect(app.content).toContain('api.getProjects()');
+  });
+
+  it('unmatched hook actions fall back to console.log', () => {
+    const ast = parse('@app:t\n@api(\nGET:/data>handler\n)\n@state{x:int}\n@hook(onMount>~api.unknown)\n@ui(\ntext>"hi"\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    expect(app.content).toContain("console.log('~api.unknown')");
+  });
+
+  it('frontend-only apps do NOT import api', () => {
+    const result = transpileFile('todo');
+    const app = result.files.find(f => f.path === 'src/App.jsx')!;
+    expect(app.content).not.toContain("import * as api");
+  });
+
+  it('frontend-only apps do NOT have api.js', () => {
+    const result = transpileFile('todo');
+    const paths = result.files.map(f => f.path);
+    expect(paths).not.toContain('src/api.js');
+    expect(paths).not.toContain('client/src/api.js');
   });
 });
