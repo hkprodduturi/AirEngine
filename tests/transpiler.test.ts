@@ -950,3 +950,53 @@ describe('transpile: output structure', () => {
     expect(result.stats.components).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ---- D1: Visual Semantics ----
+
+describe('D1: visual semantics', () => {
+  it('input > !add renders both input and visible button (todo.air)', () => {
+    const jsx = getAppJsx('todo');
+    expect(jsx).toContain('<input');
+    expect(jsx).toContain('<button');
+    expect(jsx).toContain('previousElementSibling');
+  });
+
+  it('button label matches action name', () => {
+    const jsx = getAppJsx('todo');
+    expect(jsx).toContain('>Add</button>');
+  });
+
+  it('binding-only inputs do NOT get extra buttons', () => {
+    // input:text>#search should NOT produce a sibling button
+    const ast = parse('@app:t\n@state{search:str}\n@ui(\ninput:text>#search\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'src/App.jsx')!;
+    expect(app.content).toContain('<input');
+    expect(app.content).not.toContain('previousElementSibling');
+  });
+
+  it('list iteration includes empty state check (todo.air)', () => {
+    const jsx = getAppJsx('todo');
+    expect(jsx).toContain('length === 0');
+    expect(jsx).toContain('empty-state');
+    expect(jsx).toContain('No items yet');
+  });
+
+  it('content wrapper has space-y-6 (todo.air)', () => {
+    const jsx = getAppJsx('todo');
+    expect(jsx).toContain('space-y-6');
+  });
+
+  it('main element has space-y-6 (dashboard.air)', () => {
+    const jsx = getAppJsx('dashboard');
+    expect(jsx).toContain('space-y-6');
+  });
+
+  it('auth login form has card container (auth.air)', () => {
+    const jsx = getAppJsx('auth');
+    expect(jsx).toContain('bg-[var(--surface)]');
+    expect(jsx).toContain('border border-[var(--border)]');
+    expect(jsx).toContain('rounded-[var(--radius)]');
+    expect(jsx).toContain('p-8');
+  });
+});

@@ -596,10 +596,10 @@ function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis): string[] 
 
   // Determine wrapper: explicit maxWidth > sidebar (no wrapper) > default 900px container
   const wrapperClass = maxWidth
-    ? `max-w-[${maxWidth}px] mx-auto`
+    ? `max-w-[${maxWidth}px] mx-auto space-y-6`
     : hasSidebar
       ? ''
-      : 'max-w-[900px] mx-auto px-6 py-8';
+      : 'max-w-[900px] mx-auto px-6 py-8 space-y-6';
 
   const lines: string[] = [];
   lines.push(`<div className="${rootClasses}">`);
@@ -726,6 +726,30 @@ function generateElementJSX(
     return generatePlanElement(node, ctx, analysis, scope, ind);
   }
 
+  // Stat grid: row of all stat children → responsive grid
+  if (node.element === 'row' && node.children && node.children.length > 1) {
+    const allStats = node.children.every(c => {
+      const resolved = tryResolveElement(c);
+      if (resolved && resolved.element === 'stat') return true;
+      // Walk through flow (>) chains to detect stat
+      if (c.kind === 'binary' && c.operator === '>') {
+        const leftResolved = tryResolveElement(c.left);
+        if (leftResolved && leftResolved.element === 'stat') return true;
+      }
+      return false;
+    });
+    if (allStats) {
+      const cols = node.children.length;
+      const gridClass = cols <= 2 ? 'grid grid-cols-2 gap-4'
+        : cols <= 3 ? 'grid grid-cols-1 md:grid-cols-3 gap-4'
+        : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4';
+      const childJsx = node.children.map(c =>
+        generateJSX(c, ctx, analysis, scope, ind + 2)
+      ).filter(Boolean).join('\n');
+      return `${pad}<div className="${gridClass}">\n${childJsx}\n${pad}</div>`;
+    }
+  }
+
   // Element with children
   if (node.children && node.children.length > 0) {
     const childScope = node.element === 'form' ? { ...scope, insideForm: true } : scope;
@@ -774,7 +798,7 @@ function generateScopedJSX(
     if (isFormPage) {
       return `${pad}{currentPage === '${node.name}' && (\n`
         + `${pad}  <div className="flex items-center justify-center min-h-screen p-4">\n`
-        + `${pad}    <div className="w-full max-w-md space-y-6">\n`
+        + `${pad}    <div className="w-full max-w-md space-y-6 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-8">\n`
         + `${pad}      <h2 className="text-2xl font-bold text-center">${capitalize(node.name)}</h2>\n`
         + `${childJsx}\n`
         + `${pad}    </div>\n`
@@ -1416,10 +1440,14 @@ function generateElementWithAction(
     return `${pad}<button className="${mapping.className}" onClick={() => ${actionName}(${actionArgs})}>${label || actionName}</button>`;
   }
 
-  // Input with onKeyDown enter handler
+  // Input with onKeyDown enter handler + visible action button
   if (mapping.tag === 'input') {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    return `${pad}<input${typeAttr} className="${mapping.className}" placeholder="Add..." onKeyDown={(e) => { if (e.key === 'Enter' && e.target.value) { ${actionName}(${actionArgs || 'e.target.value'}); e.target.value = ''; } }} />`;
+    const btnLabel = capitalize(actionName);
+    return `${pad}<div className="flex gap-2">\n`
+      + `${pad}  <input${typeAttr} className="${mapping.className} flex-1" placeholder="Add..." onKeyDown={(e) => { if (e.key === 'Enter' && e.target.value) { ${actionName}(${actionArgs || 'e.target.value'}); e.target.value = ''; } }} />\n`
+      + `${pad}  <button className="bg-[var(--accent)] text-white px-4 py-2.5 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" onClick={(e) => { const _inp = e.currentTarget.previousElementSibling; if (_inp?.value) { ${actionName}(${actionArgs || '_inp.value'}); _inp.value = ''; } }}>${btnLabel}</button>\n`
+      + `${pad}</div>`;
   }
 
   // Generic element with onClick
@@ -1454,7 +1482,7 @@ function generateIterationJSX(
     generateJSX(c, ctx, analysis, newScope, ind + 4)
   ).filter(Boolean).join('\n');
 
-  return `${pad}{${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id} className="flex gap-4 items-center">\n${childJsx}\n${pad}  </div>\n${pad}))}`;
+  return `${pad}{${dataExpr}.length === 0 ? (\n${pad}  <div className="empty-state">No items yet</div>\n${pad}) : ${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id} className="flex gap-4 items-center">\n${childJsx}\n${pad}  </div>\n${pad}))}`;
 }
 
 function generateContainerWithIteration(
@@ -1506,7 +1534,9 @@ function generateContainerWithIteration(
   ).filter(Boolean).join('\n');
 
   return `${pad}<${containerElement}${classAttr(containerClass)}>\n`
-    + `${pad}  {${dataSource}.map((${iterVar}) => (\n`
+    + `${pad}  {${dataSource}.length === 0 ? (\n`
+    + `${pad}    <div className="empty-state">No items yet</div>\n`
+    + `${pad}  ) : ${dataSource}.map((${iterVar}) => (\n`
     + `${pad}    <div key={${iterVar}.id} className="flex gap-2 items-center">\n`
     + `${childJsx}\n`
     + `${pad}    </div>\n`
@@ -1784,8 +1814,11 @@ function generateFlowChain(
       generateJSX(c, ctx, analysis, iterScope, ind + 4)
     ).filter(Boolean).join('\n');
 
+    const iterDataExpr = dataExpr || 'items';
     return `${pad}<${containerMapping.tag}${classAttr(containerMapping.className)}>\n`
-      + `${pad}  {${dataExpr || 'items'}.map((${iterVar}) => (\n`
+      + `${pad}  {${iterDataExpr}.length === 0 ? (\n`
+      + `${pad}    <div className="empty-state">No items yet</div>\n`
+      + `${pad}  ) : ${iterDataExpr}.map((${iterVar}) => (\n`
       + `${pad}    <div key={${iterVar}.id} className="flex gap-2 items-center">\n`
       + `${childJsx}\n`
       + `${pad}    </div>\n`

@@ -31,7 +31,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   main: {
     tag: 'main',
-    className: 'flex-1 p-6',
+    className: 'flex-1 p-6 space-y-6',
   },
   sidebar: {
     tag: 'aside',
