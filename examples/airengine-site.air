@@ -1,18 +1,23 @@
 @app:airengine-site
-  @style(theme:dark,accent:#7c5cfc,radius:12,font:sans)
+  @style(theme:dark,accent:#7c5cfc,radius:12,font:sans,maxWidth:1100)
   @ui(
     @section:hero(
-      h1>"The language AI thinks in when it builds software"
-      p>"One .air file. Full-stack apps. Instant compilation. 300 lines of AIR replaces 5,000+ lines of React, Express, and Prisma."
-      row(btn:primary>"Get Started"+btn:ghost>"View on GitHub")
+      h1:hero>"The language AI thinks in when it builds software"
+      p:lead>"One .air file. Full-stack apps. Instant compilation. 300 lines of AIR replaces 5,000+ lines of React, Express, and Prisma."
+      row(btn:primary>"Get Started"+btn:secondary>"View on GitHub")
     )
     @section:stats(
       grid:4(
-        card(h2>"298"+p>"Lines of AIR")
-        card(h2>"21"+p>"Generated Files")
-        card(h2>"346"+p>"Tests Passing")
-        card(h2>"5000+"+p>"Lines Generated")
+        card(h2>"298"+p:muted>"Lines of AIR")
+        card(h2>"21"+p:muted>"Generated Files")
+        card(h2>"346"+p:muted>"Tests Passing")
+        card(h2>"5000+"+p:muted>"Lines Generated")
       )
+    )
+    @section:code(
+      h1>"See It In Action"
+      p:lead>"A complete todo app in 13 lines of AIR"
+      code:block("@app:todo","  @state{items:list,filter:all|active|done}","  @style(theme:dark,accent:#6366f1,radius:12)","  @ui(","    header(h1>\"Todo\")","    input:text>#items>!add","    tabs>filter.set","    *items(","      row(check:#item.done+text:#item.text+btn:icon>!del)","    )","  )","  @persist:localStorage(items)")
     )
     @section:how(
       h1>"How It Works"
@@ -32,7 +37,7 @@
     )
     @section:blocks(
       h1>"15 Supported Blocks"
-      p>"One language covers your entire stack."
+      p:lead>"One language covers your entire stack."
       grid:3(
         card(p>"@state — Reactive state")
         card(p>"@style — Theme and design tokens")
@@ -53,12 +58,15 @@
     )
     @section:start(
       h1>"Get Started in 30 Seconds"
-      card(p>"npm install -g airengine")
-      card(p>"air transpile app.air -o ./my-app")
-      card(p>"cd my-app && npm install && npm run dev")
+      code:block("npm install -g airengine","air transpile app.air -o ./my-app","cd my-app && npm install && npm run dev")
+    )
+    @section:cta(
+      h1>"Ready to Build?"
+      p:lead>"Start building full-stack apps with a single file."
+      row(btn:primary>"Get Started"+btn:secondary>"Read the Docs")
     )
     @section:footer(
-      p>"Built by Harish Prodduturi"
+      p:small>"Built by Harish Prodduturi"
       row(btn:ghost>"GitHub"+btn:ghost>"npm"+btn:ghost>"Docs")
     )
   )

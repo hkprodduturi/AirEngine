@@ -85,6 +85,10 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   h1: {
     tag: 'h1',
     className: 'text-3xl font-bold',
+    modifiers: {
+      hero: { className: 'text-5xl md:text-6xl font-extrabold tracking-tight leading-tight' },
+      display: { className: 'text-4xl md:text-5xl font-bold tracking-tight' },
+    },
   },
   h2: {
     tag: 'h2',
@@ -97,6 +101,12 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   p: {
     tag: 'p',
     className: '',
+    modifiers: {
+      muted: { className: 'text-[var(--muted)]' },
+      center: { className: 'text-center' },
+      small: { className: 'text-sm text-[var(--muted)]' },
+      lead: { className: 'text-lg text-[var(--muted)] leading-relaxed max-w-2xl mx-auto' },
+    },
   },
   text: {
     tag: 'span',
@@ -216,6 +226,22 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   section: {
     tag: 'section',
     className: 'py-16 px-6 space-y-6',
+  },
+  code: {
+    tag: 'code',
+    className: 'font-mono text-sm bg-[var(--surface)] px-1.5 py-0.5 rounded',
+    modifiers: {
+      block: { tag: 'pre', className: 'font-mono text-sm bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5 overflow-x-auto whitespace-pre leading-relaxed' },
+    },
+  },
+  pre: {
+    tag: 'pre',
+    className: 'font-mono text-sm bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5 overflow-x-auto whitespace-pre leading-relaxed',
+  },
+  divider: {
+    tag: 'hr',
+    className: 'border-t border-[var(--border)] my-8',
+    selfClosing: true,
   },
 };
 

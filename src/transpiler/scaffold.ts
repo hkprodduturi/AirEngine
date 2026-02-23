@@ -231,6 +231,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; }
 h2 { font-size: 1.25rem; font-weight: 600; }
 
+/* Code blocks */
+code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
+pre { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; margin: 0; }
+pre code { background: none; padding: 0; font-size: inherit; }
+hr { border: none; }
+
 /* Sidebar base */
 aside { background: var(--surface); }
 `;

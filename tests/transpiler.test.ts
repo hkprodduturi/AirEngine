@@ -1000,3 +1000,182 @@ describe('D1: visual semantics', () => {
     expect(jsx).toContain('p-8');
   });
 });
+
+// ---- New elements & modifiers ----
+
+describe('element-map: new elements', () => {
+  it('code maps to <code> with mono styling', () => {
+    const m = mapElement('code', []);
+    expect(m.tag).toBe('code');
+    expect(m.className).toContain('font-mono');
+  });
+
+  it('code:block maps to <pre>', () => {
+    const m = mapElement('code', ['block']);
+    expect(m.tag).toBe('pre');
+    expect(m.className).toContain('whitespace-pre');
+    expect(m.className).toContain('overflow-x-auto');
+  });
+
+  it('pre maps to <pre>', () => {
+    const m = mapElement('pre', []);
+    expect(m.tag).toBe('pre');
+    expect(m.className).toContain('font-mono');
+  });
+
+  it('divider maps to self-closing <hr>', () => {
+    const m = mapElement('divider', []);
+    expect(m.tag).toBe('hr');
+    expect(m.selfClosing).toBe(true);
+    expect(m.className).toContain('border-t');
+  });
+});
+
+describe('element-map: p modifiers', () => {
+  it('p:muted has muted color', () => {
+    const m = mapElement('p', ['muted']);
+    expect(m.className).toContain('text-[var(--muted)]');
+  });
+
+  it('p:center has text-center', () => {
+    const m = mapElement('p', ['center']);
+    expect(m.className).toContain('text-center');
+  });
+
+  it('p:small has text-sm and muted', () => {
+    const m = mapElement('p', ['small']);
+    expect(m.className).toContain('text-sm');
+    expect(m.className).toContain('text-[var(--muted)]');
+  });
+
+  it('p:lead has text-lg and max-w-2xl', () => {
+    const m = mapElement('p', ['lead']);
+    expect(m.className).toContain('text-lg');
+    expect(m.className).toContain('max-w-2xl');
+  });
+});
+
+describe('element-map: h1 modifiers', () => {
+  it('h1:hero has extra-large bold text', () => {
+    const m = mapElement('h1', ['hero']);
+    expect(m.className).toContain('text-5xl');
+    expect(m.className).toContain('font-extrabold');
+  });
+
+  it('h1:display has large bold text', () => {
+    const m = mapElement('h1', ['display']);
+    expect(m.className).toContain('text-4xl');
+    expect(m.className).toContain('font-bold');
+  });
+});
+
+// ---- Section-aware styling ----
+
+describe('section-name-aware styling', () => {
+  it('hero section gets centered + larger padding', () => {
+    const jsx = getAppJsx('landing');
+    expect(jsx).toContain('id="hero"');
+    expect(jsx).toMatch(/id="hero"[^>]*py-24/);
+    expect(jsx).toMatch(/id="hero"[^>]*text-center/);
+  });
+
+  it('cta section gets centered styling', () => {
+    const jsx = getAppJsx('landing');
+    expect(jsx).toContain('id="cta"');
+    expect(jsx).toMatch(/id="cta"[^>]*py-20/);
+    expect(jsx).toMatch(/id="cta"[^>]*text-center/);
+  });
+
+  it('regular sections keep default styling', () => {
+    const jsx = getAppJsx('landing');
+    expect(jsx).toMatch(/id="features"[^>]*py-16/);
+  });
+});
+
+// ---- Pre child text rendering ----
+
+describe('pre/code:block text rendering', () => {
+  it('code:block with children renders joined text in template literal', () => {
+    const ast = parse('@app:t\n@ui(\ncode:block("line 1","line 2","line 3")\n)');
+    const result = transpile(ast);
+    const app = result.files.find(f => f.path === 'src/App.jsx')!;
+    expect(app.content).toContain('<pre');
+    expect(app.content).toContain('line 1');
+    expect(app.content).toContain('line 2');
+    expect(app.content).toContain('line 3');
+  });
+});
+
+// ---- Base CSS ----
+
+describe('scaffold: code/pre/hr CSS', () => {
+  it('index.css includes code/pre font-family', () => {
+    const result = transpileFile('todo');
+    const css = result.files.find(f => f.path === 'src/index.css')!.content;
+    expect(css).toContain("code { font-family: 'SF Mono'");
+    expect(css).toContain("pre { font-family: 'SF Mono'");
+    expect(css).toContain('hr { border: none; }');
+  });
+});
+
+// ---- airengine-site.air integration ----
+
+describe('airengine-site.air integration', () => {
+  const result = transpileFile('airengine-site');
+  const appFile = result.files.find(f => f.path === 'src/App.jsx');
+  const jsx = appFile?.content ?? '';
+  const css = result.files.find(f => f.path === 'src/index.css')!.content;
+
+  it('transpiles successfully', () => {
+    expect(result.files.length).toBeGreaterThan(0);
+    expect(appFile).toBeDefined();
+  });
+
+  it('uses 1100px container', () => {
+    expect(jsx).toContain('max-w-[1100px]');
+  });
+
+  it('hero section has centered styling', () => {
+    expect(jsx).toMatch(/id="hero"[^>]*text-center/);
+  });
+
+  it('h1:hero modifier produces large heading', () => {
+    expect(jsx).toContain('text-5xl');
+    expect(jsx).toContain('font-extrabold');
+  });
+
+  it('p:lead modifier produces lead text', () => {
+    expect(jsx).toContain('text-lg');
+    expect(jsx).toContain('max-w-2xl');
+  });
+
+  it('p:muted modifier produces muted text', () => {
+    expect(jsx).toContain('text-[var(--muted)]');
+  });
+
+  it('code:block renders as <pre> with code content', () => {
+    expect(jsx).toContain('<pre');
+    expect(jsx).toContain('@app:todo');
+  });
+
+  it('has all expected sections', () => {
+    const sections = ['hero', 'stats', 'code', 'how', 'features', 'blocks', 'start', 'cta', 'footer'];
+    for (const s of sections) {
+      expect(jsx).toContain(`id="${s}"`);
+    }
+  });
+
+  it('footer section has compact styling', () => {
+    expect(jsx).toMatch(/id="footer"[^>]*py-8/);
+    expect(jsx).toMatch(/id="footer"[^>]*border-t/);
+  });
+
+  it('p:small modifier produces small muted text', () => {
+    expect(jsx).toContain('text-sm');
+  });
+
+  it('CSS uses dark theme and accent', () => {
+    expect(css).toContain('--accent: #7c5cfc');
+    expect(css).toContain('--bg: #030712');
+  });
+});

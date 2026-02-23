@@ -810,11 +810,19 @@ function generateScopedJSX(
   }
 
   if (node.scope === 'section') {
+    const sectionClasses = (() => {
+      switch (node.name) {
+        case 'hero': return 'py-24 px-6 space-y-6 text-center';
+        case 'footer': return 'py-8 px-6 space-y-4 border-t border-[var(--border)] text-center';
+        case 'cta': return 'py-20 px-6 space-y-6 text-center';
+        default: return 'py-16 px-6 space-y-6';
+      }
+    })();
     const childJsx = node.children.map(c =>
       generateJSX(c, ctx, analysis, scope, ind + 2)
     ).filter(Boolean).join('\n');
 
-    return `${pad}<section id="${node.name}" className="py-16 px-6 space-y-6">\n${childJsx}\n${pad}</section>`;
+    return `${pad}<section id="${node.name}" className="${sectionClasses}">\n${childJsx}\n${pad}</section>`;
   }
 
   return '';
@@ -1234,6 +1242,17 @@ function generateBindJSX(
   // Chart — render placeholder
   if (resolved.element === 'chart') {
     return `${pad}<div className="${mapping.className}">${capitalize(resolved.modifiers[0] || 'chart')} chart placeholder</div>`;
+  }
+
+  // Pre/code:block — join text children as multi-line code block
+  if (mapping.tag === 'pre' && resolved.children && resolved.children.length > 0) {
+    const lines: string[] = [];
+    for (const c of resolved.children) {
+      if (c.kind === 'text') lines.push((c as any).text ?? (c as any).value ?? '');
+      else if (c.kind === 'element') lines.push(c.element);
+    }
+    const joined = lines.join('\n');
+    return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{\`${joined.replace(/`/g, '\\`')}\`}</${mapping.tag}>`;
   }
 
   // Element with children from resolved bind
