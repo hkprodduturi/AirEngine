@@ -19,9 +19,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
-      - run: npm ci
+      - run: npm install
 
       - name: Build TypeScript
         run: npm run build
@@ -47,9 +46,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
-      - run: npm ci
+      - run: npm install
 
       - name: Transpile fullstack-todo.air
         run: npx tsx src/cli/index.ts transpile examples/fullstack-todo.air -o /tmp/fst
