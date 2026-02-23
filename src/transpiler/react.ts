@@ -650,7 +650,18 @@ function generateFlowJSX(
       }
       if (mapping.tag === 'a') {
         const textContent = node.right.text;
-        return `${pad}<a href="${textContent}"${classAttr(mapping.className)}>${escapeText(textContent)}</a>`;
+        // Extract href from bind label (link:/signup > "Create account" → href="/signup", text="Create account")
+        let href = '#';
+        if (node.left.kind === 'binary' && node.left.operator === ':') {
+          const bindInfo = resolveBindChain(node.left);
+          if (bindInfo?.label) href = bindInfo.label;
+        }
+        // For page-based navigation, internal paths use setCurrentPage
+        if (href.startsWith('/') && analysis.hasPages) {
+          const pageName = href.slice(1);
+          return `${pad}<a href="#"${classAttr(mapping.className)} onClick={(e) => { e.preventDefault(); setCurrentPage('${pageName}'); }}>${escapeText(textContent)}</a>`;
+        }
+        return `${pad}<a href="${href}"${classAttr(mapping.className)}>${escapeText(textContent)}</a>`;
       }
       const textContent = node.right.text.includes('#')
         ? `{${interpolateText(node.right.text, ctx, scope)}}`
@@ -821,7 +832,10 @@ function generateBindJSX(
   // Simple styled element
   if (mapping.selfClosing) {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    return `${pad}<${mapping.tag}${typeAttr}${classAttr(mapping.className)} />`;
+    const placeholder = mapping.inputType && resolved.element === 'input'
+      ? ` placeholder="${capitalize(mapping.inputType)}..."`
+      : '';
+    return `${pad}<${mapping.tag}${typeAttr}${classAttr(mapping.className)}${placeholder} />`;
   }
 
   return `${pad}<${mapping.tag}${classAttr(mapping.className)}></${mapping.tag}>`;

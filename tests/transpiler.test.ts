@@ -357,6 +357,21 @@ describe('transpile: auth.air', () => {
   it('generates cookie persistence', () => {
     expect(jsx).toContain('document.cookie');
   });
+
+  it('generates input placeholders', () => {
+    expect(jsx).toContain('placeholder="Email..."');
+    expect(jsx).toContain('placeholder="Password..."');
+  });
+
+  it('generates page navigation link', () => {
+    expect(jsx).toContain('setCurrentPage');
+    expect(jsx).toContain('Create account');
+  });
+
+  it('generates login and logout mutations', () => {
+    expect(jsx).toContain('const login');
+    expect(jsx).toContain('const logout');
+  });
 });
 
 // ---- Integration: dashboard.air ----
