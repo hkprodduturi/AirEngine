@@ -42,10 +42,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..', '..');
 
 // ---- AIR Language Spec (embedded for the LLM context) ----
@@ -372,13 +370,9 @@ Generate the transpiled code now:`;
   server.prompt(
     'air-new-app',
     'Generate a new app using AIR language',
-    [
-      {
-        name: 'description',
-        description: 'What kind of app do you want to build?',
-        required: true,
-      },
-    ],
+    {
+      description: z.string().describe('What kind of app do you want to build?'),
+    },
     async ({ description }) => ({
       messages: [{
         role: 'user',
