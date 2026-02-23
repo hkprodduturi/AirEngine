@@ -43,7 +43,7 @@ export function generateSeedFile(ctx: TranspileContext): string {
     lines.push(`  await prisma.${varName}.createMany({`);
     lines.push('    data: [');
 
-    for (let n = 1; n <= 3; n++) {
+    for (let n = 1; n <= 5; n++) {
       const fieldValues = seedableFields.map(f => {
         const val = generateFieldValue(f, model.name, n);
         return `${f.name}: ${val}`;
@@ -114,17 +114,21 @@ function generateFieldValue(field: AirDbField, modelName: string, n: number): st
   }
 }
 
+const NAMES = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'];
+const EMAILS = ['alice', 'bob', 'charlie', 'diana', 'eve'];
+
 /** Generate smart string values based on field name heuristics */
 function generateStringValue(fieldName: string, modelName: string, n: number): string {
   const lower = fieldName.toLowerCase();
-  if (lower === 'email') return `'${modelName.toLowerCase()}${n}@example.com'`;
-  if (lower === 'name') return `'${modelName} ${n}'`;
+  const idx = (n - 1) % NAMES.length;
+  if (lower === 'email') return `'${EMAILS[idx]}@example.com'`;
+  if (lower === 'name') return `'${NAMES[idx]}'`;
   if (lower === 'slug') return `'sample-${modelName.toLowerCase()}-${n}'`;
   if (lower === 'password') return `'password${n}'`;
   if (lower === 'title') return `'${modelName} ${fieldName} ${n}'`;
   if (lower === 'description' || lower === 'bio') return `'${modelName} description for record ${n}.'`;
   if (lower === 'url' || lower === 'website') return `'https://example.com/${modelName.toLowerCase()}/${n}'`;
-  if (lower === 'avatar' || lower === 'image') return `'https://api.dicebear.com/7.x/initials/svg?seed=${modelName}${n}'`;
+  if (lower === 'avatar' || lower === 'image') return `'https://api.dicebear.com/7.x/initials/svg?seed=${NAMES[idx]}'`;
   if (lower === 'phone') return `'+1555000100${n}'`;
   if (lower === 'address') return `'${n}00 Main St, City, ST'`;
   if (lower === 'content' || lower === 'body' || lower === 'text') return `'Sample content for ${modelName.toLowerCase()} ${n}.'`;
@@ -137,6 +141,8 @@ function generateIntValue(fieldName: string, n: number): string {
   if (lower === 'age') return `${20 + 5 * n}`;
   if (lower === 'quantity' || lower === 'count') return `${n * 3}`;
   if (lower === 'rating') return `${Math.min(5, n + 2)}`;
+  if (lower === 'priority' || lower === 'order' || lower === 'position') return `${n}`;
+  if (lower === 'views' || lower === 'likes') return `${n * 42}`;
   return `${n * 10}`;
 }
 

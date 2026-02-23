@@ -142,7 +142,7 @@ describe('Express server generation', () => {
 
   it('api.ts maps handlers to Prisma calls', () => {
     const api = getServerFile('fullstack-todo', 'server/api.ts')!;
-    expect(api).toContain('prisma.todo.findMany()');
+    expect(api).toContain('prisma.todo.findMany(');
     expect(api).toContain('prisma.todo.create({ data: { text } })');
     expect(api).toContain('prisma.todo.update(');
     expect(api).toContain('prisma.todo.delete(');
@@ -372,9 +372,16 @@ describe('projectflow.air integration', () => {
     expect(modelCount).toBeGreaterThanOrEqual(5);
   });
 
-  it('generates 15+ API routes', () => {
-    const api = getServerFile('projectflow', 'server/api.ts')!;
-    const routeCount = (api.match(/apiRouter\.\w+\('/g) || []).length;
+  it('generates 15+ API routes (across all route files)', () => {
+    const result = transpileFile('projectflow');
+    // Count routes across api.ts and any resource router files
+    let routeCount = 0;
+    for (const file of result.files) {
+      if (file.path === 'server/api.ts' || file.path.startsWith('server/routes/')) {
+        const matches = file.content.match(/Router\.\w+\('/g) || [];
+        routeCount += matches.length;
+      }
+    }
     expect(routeCount).toBeGreaterThanOrEqual(15);
   });
 });
@@ -523,7 +530,7 @@ describe('client/src/api.js generation', () => {
   it('generates getTodos function for GET /todos', () => {
     const result = transpileFile('fullstack-todo');
     const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
-    expect(apiJs.content).toContain('export async function getTodos()');
+    expect(apiJs.content).toContain('export async function getTodos(');
   });
 
   it('generates createTodo function for POST /todos', () => {
@@ -709,9 +716,13 @@ describe('mutation wiring (fullstack)', () => {
   });
 
   it('auth.air form inputs have name attributes', () => {
-    const app = getClientApp('auth');
-    expect(app).toContain('name="email"');
-    expect(app).toContain('name="password"');
+    const result = transpileFile('auth');
+    const allJsx = [
+      result.files.find(f => f.path === 'client/src/App.jsx')?.content ?? '',
+      ...result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('.jsx')).map(f => f.content),
+    ].join('\n');
+    expect(allJsx).toContain('name="email"');
+    expect(allJsx).toContain('name="password"');
   });
 
   it('unknown mutation still gets console.log stub', () => {
@@ -783,7 +794,7 @@ describe('D2: backend hardening', () => {
     const result = transpile(ast);
     const seed = result.files.find(f => f.path === 'server/seed.ts')?.content;
     expect(seed).toBeDefined();
-    expect(seed).toContain('user1@example.com');
+    expect(seed).toContain('alice@example.com');
   });
 
   it('api client is .js not .ts (no regression)', () => {
@@ -803,9 +814,10 @@ describe('D2: backend hardening', () => {
   it('findMany returns raw array (no pagination wrapper)', () => {
     const api = getServerFile('fullstack-todo', 'server/api.ts');
     expect(api).toBeDefined();
-    expect(api).toContain('prisma.todo.findMany()');
+    expect(api).toContain('prisma.todo.findMany');
     expect(api).not.toContain('pagination');
-    expect(api).not.toContain('page');
+    // Note: 'page' now appears as a query param for pagination support
+    expect(api).toContain('res.json(');
   });
 
   it('unknown handler still returns 501', () => {
@@ -815,5 +827,376 @@ describe('D2: backend hardening', () => {
     expect(api).toBeDefined();
     expect(api).toContain('501');
     expect(api).toContain('Not implemented');
+  });
+});
+
+// ---- Page Component Extraction ----
+
+describe('page component extraction', () => {
+  it('generates page files for projectflow.air', () => {
+    const result = transpileFile('projectflow');
+    const pageFiles = result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('Page.jsx'));
+    expect(pageFiles.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('each page file has a default export function', () => {
+    const result = transpileFile('projectflow');
+    const pageFiles = result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('Page.jsx'));
+    for (const page of pageFiles) {
+      expect(page.content).toContain('export default function');
+      expect(page.content).toContain('Page(');
+    }
+  });
+
+  it('page files accept props for state and navigation', () => {
+    const result = transpileFile('projectflow');
+    const dashboard = result.files.find(f => f.path.includes('DashboardPage.jsx'));
+    expect(dashboard).toBeDefined();
+    expect(dashboard!.content).toContain('currentPage');
+    expect(dashboard!.content).toContain('setCurrentPage');
+  });
+
+  it('form pages contain form elements', () => {
+    const result = transpileFile('projectflow');
+    const login = result.files.find(f => f.path.includes('LoginPage.jsx'));
+    expect(login).toBeDefined();
+    expect(login!.content).toContain('form');
+    expect(login!.content).toContain('LoginPage');
+  });
+
+  it('does NOT generate page files for frontend-only apps', () => {
+    const result = transpileFile('todo');
+    const pageFiles = result.files.filter(f => f.path.includes('/pages/'));
+    expect(pageFiles.length).toBe(0);
+  });
+
+  it('does NOT generate page files for landing.air (frontend-only)', () => {
+    const result = transpileFile('landing');
+    const pageFiles = result.files.filter(f => f.path.includes('/pages/'));
+    expect(pageFiles.length).toBe(0);
+  });
+
+  it('page component names are PascalCase', () => {
+    const result = transpileFile('projectflow');
+    const pageFiles = result.files.filter(f => f.path.includes('/pages/'));
+    for (const page of pageFiles) {
+      const fileName = page.path.split('/').pop()!;
+      expect(fileName[0]).toBe(fileName[0].toUpperCase());
+      expect(fileName).toMatch(/^[A-Z]\w+Page\.jsx$/);
+    }
+  });
+
+  it('auth.air generates page files (has backend)', () => {
+    const result = transpileFile('auth');
+    const pageFiles = result.files.filter(f => f.path.includes('/pages/'));
+    expect(pageFiles.length).toBeGreaterThan(0);
+  });
+
+  it('page files live under client/src/pages/', () => {
+    const result = transpileFile('projectflow');
+    const pageFiles = result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('Page.jsx'));
+    for (const page of pageFiles) {
+      expect(page.path.startsWith('client/src/pages/')).toBe(true);
+    }
+  });
+
+  it('stats.pages reflects page count', () => {
+    const result = transpileFile('projectflow');
+    expect(result.stats.pages).toBeGreaterThanOrEqual(3);
+  });
+
+  it('App.jsx imports page components', () => {
+    const result = transpileFile('projectflow');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
+    expect(app).toContain("import DashboardPage from './pages/DashboardPage.js'");
+    expect(app).toContain("import ProjectsPage from './pages/ProjectsPage.js'");
+    expect(app).toContain("import TasksPage from './pages/TasksPage.js'");
+  });
+
+  it('App.jsx renders page components with props', () => {
+    const result = transpileFile('projectflow');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
+    expect(app).toContain('<DashboardPage');
+    expect(app).toContain('<ProjectsPage');
+    expect(app).toContain('<TasksPage');
+    expect(app).toContain('currentPage={currentPage}');
+    expect(app).toContain('setCurrentPage={setCurrentPage}');
+  });
+
+  it('App.jsx does NOT contain inline page JSX for fullstack apps', () => {
+    const result = transpileFile('projectflow');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
+    // Page content should be in page components, not App.jsx
+    expect(app).not.toContain('<table');
+    expect(app).not.toContain('row.name');
+  });
+
+  it('page components import resource hooks', () => {
+    const result = transpileFile('projectflow');
+    const projects = result.files.find(f => f.path.includes('ProjectsPage.jsx'))!;
+    expect(projects.content).toContain("import useProjects from '../hooks/useProjects.js'");
+    expect(projects.content).toContain('useProjects()');
+    const tasks = result.files.find(f => f.path.includes('TasksPage.jsx'))!;
+    expect(tasks.content).toContain("import useTasks from '../hooks/useTasks.js'");
+    expect(tasks.content).toContain('useTasks()');
+  });
+
+  it('hook-covered state vars are NOT passed as props', () => {
+    const result = transpileFile('projectflow');
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
+    // ProjectsPage gets projects data from hook, not as a prop
+    const projectsRef = app.match(/<ProjectsPage[^/]*\/>/)?.[0] ?? '';
+    expect(projectsRef).not.toContain('projects={projects}');
+    expect(projectsRef).not.toContain('setProjects=');
+  });
+});
+
+// ---- Resource Hooks ----
+
+describe('resource hooks', () => {
+  it('generates hook files for projectflow.air models', () => {
+    const result = transpileFile('projectflow');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/') && f.path.startsWith('client/'));
+    expect(hookFiles.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('each hook imports useState/useEffect/useCallback', () => {
+    const result = transpileFile('projectflow');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    for (const hook of hookFiles) {
+      expect(hook.content).toContain('useState');
+      expect(hook.content).toContain('useEffect');
+      expect(hook.content).toContain('useCallback');
+    }
+  });
+
+  it('hooks return data/loading/error/total/refetch', () => {
+    const result = transpileFile('projectflow');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    for (const hook of hookFiles) {
+      expect(hook.content).toContain('data');
+      expect(hook.content).toContain('loading');
+      expect(hook.content).toContain('error');
+      expect(hook.content).toContain('total');
+      expect(hook.content).toContain('refetch');
+    }
+  });
+
+  it('hooks read X-Total-Count header', () => {
+    const result = transpileFile('projectflow');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    for (const hook of hookFiles) {
+      expect(hook.content).toContain('X-Total-Count');
+    }
+  });
+
+  it('hooks have JSDoc type annotations', () => {
+    const result = transpileFile('projectflow');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    for (const hook of hookFiles) {
+      expect(hook.content).toContain('@returns');
+      expect(hook.content).toContain("import('../types')");
+    }
+  });
+
+  it('does NOT generate hooks for frontend-only apps', () => {
+    const result = transpileFile('todo');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    expect(hookFiles.length).toBe(0);
+  });
+
+  it('fullstack-todo generates no hooks (state var "items" does not match model plural "todos")', () => {
+    const result = transpileFile('fullstack-todo');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    expect(hookFiles.length).toBe(0);
+  });
+
+  it('stats.hooks reflects hook count', () => {
+    const result = transpileFile('projectflow');
+    expect(result.stats.hooks).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ---- No Dead Code Rule ----
+
+describe('no dead code', () => {
+  it('does NOT generate reusable components (not wired)', () => {
+    const result = transpileFile('projectflow');
+    const componentFiles = result.files.filter(f => f.path.includes('/components/'));
+    expect(componentFiles.length).toBe(0);
+  });
+
+  it('only generates hooks that have matching array state vars', () => {
+    const result = transpileFile('projectflow');
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    // useUsers and useWorkspaces should NOT be generated (state has user/workspace as objects, not arrays)
+    expect(hookFiles.find(f => f.path.includes('useUsers'))).toBeUndefined();
+    expect(hookFiles.find(f => f.path.includes('useWorkspaces'))).toBeUndefined();
+    // useProjects, useTasks, useComments should exist (matching array state)
+    expect(hookFiles.find(f => f.path.includes('useProjects'))).toBeDefined();
+    expect(hookFiles.find(f => f.path.includes('useTasks'))).toBeDefined();
+    expect(hookFiles.find(f => f.path.includes('useComments'))).toBeDefined();
+  });
+
+  it('stats.deadLines is 0 for projectflow', () => {
+    const result = transpileFile('projectflow');
+    expect(result.stats.deadLines).toBe(0);
+  });
+
+  it('stats.deadLines is 0 for fullstack-todo', () => {
+    const result = transpileFile('fullstack-todo');
+    expect(result.stats.deadLines).toBe(0);
+  });
+});
+
+// ---- Page Wiring Integration ----
+
+describe('page wiring integration (projectflow)', () => {
+  const result = transpileFile('projectflow');
+  const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
+  const pageFiles = result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('Page.jsx'));
+
+  it('App.jsx imports every extracted page component', () => {
+    for (const pf of pageFiles) {
+      const name = pf.path.split('/').pop()!.replace('.jsx', '');
+      expect(app).toContain(`import ${name} from './pages/${name}.js'`);
+    }
+  });
+
+  it('App.jsx renders component refs (not inline JSX) for every page', () => {
+    for (const pf of pageFiles) {
+      const name = pf.path.split('/').pop()!.replace('.jsx', '');
+      expect(app).toContain(`<${name}`);
+    }
+  });
+
+  it('App.jsx does NOT contain inline page content', () => {
+    // Tables, forms, and iteration belong in page components, not App.jsx
+    expect(app).not.toContain('<table');
+    expect(app).not.toContain('<form');
+    expect(app).not.toContain('.map((row)');
+  });
+
+  it('every page component that uses model data imports a hook', () => {
+    const hookFiles = result.files.filter(f => f.path.includes('/hooks/'));
+    const hookNames = hookFiles.map(f => f.path.split('/').pop()!.replace('.js', ''));
+    // Every generated hook is imported by at least one page component
+    for (const hookName of hookNames) {
+      const importedBy = pageFiles.filter(pf => pf.content.includes(`import ${hookName}`));
+      expect(importedBy.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('page components call hooks and destructure data', () => {
+    for (const pf of pageFiles) {
+      const hookImports = pf.content.match(/import (use\w+) from/g) ?? [];
+      for (const imp of hookImports) {
+        const hookName = imp.match(/import (use\w+)/)?.[1];
+        if (hookName) {
+          expect(pf.content).toContain(`${hookName}()`);
+          expect(pf.content).toContain('data:');
+        }
+      }
+    }
+  });
+});
+
+// ---- Backend Resource Split ----
+
+describe('backend resource split', () => {
+  it('projectflow generates per-resource router files', () => {
+    const result = transpileFile('projectflow');
+    const routeFiles = result.files.filter(f => f.path.startsWith('server/routes/'));
+    expect(routeFiles.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('resource routers use Router() from express', () => {
+    const result = transpileFile('projectflow');
+    const routeFiles = result.files.filter(f => f.path.startsWith('server/routes/'));
+    for (const rf of routeFiles) {
+      expect(rf.content).toContain("import { Router } from 'express'");
+      expect(rf.content).toContain('Router()');
+    }
+  });
+
+  it('mount point api.ts uses apiRouter.use() for resource routers', () => {
+    const result = transpileFile('projectflow');
+    const api = result.files.find(f => f.path === 'server/api.ts')!;
+    expect(api.content).toContain('apiRouter.use(');
+  });
+
+  it('fullstack-todo does NOT split (1 model, below threshold)', () => {
+    const result = transpileFile('fullstack-todo');
+    const routeFiles = result.files.filter(f => f.path.startsWith('server/routes/'));
+    expect(routeFiles.length).toBe(0);
+  });
+
+  it('fullstack-todo api.ts still has inline routes', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts')!;
+    expect(api).toContain("apiRouter.get('/todos'");
+    expect(api).toContain("apiRouter.post('/todos'");
+  });
+
+  it('resource routers import from ../validation.js', () => {
+    const result = transpileFile('projectflow');
+    const routeFiles = result.files.filter(f => f.path.startsWith('server/routes/'));
+    for (const rf of routeFiles) {
+      expect(rf.content).toContain("from '../validation.js'");
+    }
+  });
+});
+
+// ---- Validation Helpers ----
+
+describe('validation helpers', () => {
+  it('generates validation.ts for apps with API routes', () => {
+    const result = transpileFile('fullstack-todo');
+    const validation = result.files.find(f => f.path === 'server/validation.ts');
+    expect(validation).toBeDefined();
+  });
+
+  it('validation.ts has assertRequired function', () => {
+    const result = transpileFile('fullstack-todo');
+    const validation = result.files.find(f => f.path === 'server/validation.ts')!;
+    expect(validation.content).toContain('export function assertRequired');
+    expect(validation.content).toContain('status = 400');
+  });
+
+  it('validation.ts has assertIntParam function', () => {
+    const result = transpileFile('fullstack-todo');
+    const validation = result.files.find(f => f.path === 'server/validation.ts')!;
+    expect(validation.content).toContain('export function assertIntParam');
+    expect(validation.content).toContain('parseInt');
+  });
+
+  it('does NOT generate validation.ts for frontend-only apps', () => {
+    const result = transpileFile('todo');
+    const validation = result.files.find(f => f.path === 'server/validation.ts');
+    expect(validation).toBeUndefined();
+  });
+});
+
+// ---- Stats Enhancement ----
+
+describe('stats enhancement', () => {
+  it('stats include modules count', () => {
+    const result = transpileFile('projectflow');
+    expect(result.stats.modules).toBe(result.files.length);
+  });
+
+  it('stats include pages count', () => {
+    const result = transpileFile('projectflow');
+    expect(result.stats.pages).toBeGreaterThan(0);
+  });
+
+  it('stats include hooks count', () => {
+    const result = transpileFile('projectflow');
+    expect(result.stats.hooks).toBeGreaterThan(0);
+  });
+
+  it('frontend-only stats have 0 pages and hooks', () => {
+    const result = transpileFile('todo');
+    expect(result.stats.pages).toBe(0);
+    expect(result.stats.hooks).toBe(0);
   });
 });

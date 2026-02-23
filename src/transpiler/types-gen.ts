@@ -94,6 +94,31 @@ export function getGeneratedTypeNames(ctx: TranspileContext): Map<AirRoute, stri
   return map;
 }
 
+/**
+ * Generate client/src/types.ts — model interfaces for the frontend.
+ * One `export interface` per @db model.
+ */
+export function generateClientTypesFile(ctx: TranspileContext): string {
+  if (!ctx.db) return '';
+  const lines: string[] = [];
+  lines.push('// Auto-generated model types from @db');
+  lines.push('// Do not edit — regenerate from .air source');
+  lines.push('');
+
+  for (const model of ctx.db.models) {
+    lines.push(`export interface ${model.name} {`);
+    for (const field of model.fields) {
+      const tsType = airTypeToTS(field.type);
+      const optional = field.type.kind === 'optional' ? '?' : '';
+      lines.push(`  ${field.name}${optional}: ${tsType};`);
+    }
+    lines.push('}');
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);

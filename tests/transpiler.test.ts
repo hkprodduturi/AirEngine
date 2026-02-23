@@ -25,6 +25,14 @@ function getAppJsx(name: string): string {
   return appFile?.content ?? '';
 }
 
+/** Returns App.jsx + all page component files concatenated. Use for content checks that span pages. */
+function getAllJsx(name: string): string {
+  const result = transpileFile(name);
+  const appFile = result.files.find(f => f.path === 'src/App.jsx' || f.path === 'client/src/App.jsx');
+  const pageFiles = result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('.jsx'));
+  return [appFile?.content ?? '', ...pageFiles.map(f => f.content)].join('\n');
+}
+
 // ---- Unit: extractContext ----
 
 describe('extractContext', () => {
@@ -347,6 +355,7 @@ describe('transpile: expense-tracker.air', () => {
 
 describe('transpile: auth.air', () => {
   const jsx = getAppJsx('auth');
+  const allJsx = getAllJsx('auth');
 
   it('generates page navigation state', () => {
     expect(jsx).toContain('currentPage');
@@ -362,11 +371,11 @@ describe('transpile: auth.air', () => {
   });
 
   it('generates form element', () => {
-    expect(jsx).toContain('<form');
+    expect(allJsx).toContain('<form');
   });
 
   it('generates input elements', () => {
-    expect(jsx).toMatch(/type="(email|password)"/);
+    expect(allJsx).toMatch(/type="(email|password)"/);
   });
 
   it('generates cookie persistence', () => {
@@ -374,13 +383,13 @@ describe('transpile: auth.air', () => {
   });
 
   it('generates input placeholders', () => {
-    expect(jsx).toContain('placeholder="Email..."');
-    expect(jsx).toContain('placeholder="Password..."');
+    expect(allJsx).toContain('placeholder="Email..."');
+    expect(allJsx).toContain('placeholder="Password..."');
   });
 
   it('generates page navigation link', () => {
     expect(jsx).toContain('setCurrentPage');
-    expect(jsx).toContain('Create account');
+    expect(allJsx).toContain('Create account');
   });
 
   it('generates login and logout mutations', () => {
@@ -393,6 +402,7 @@ describe('transpile: auth.air', () => {
 
 describe('transpile: dashboard.air', () => {
   const jsx = getAppJsx('dashboard');
+  const allJsx = getAllJsx('dashboard');
 
   it('generates sidebar layout', () => {
     expect(jsx).toContain('<aside');
@@ -403,7 +413,7 @@ describe('transpile: dashboard.air', () => {
   });
 
   it('generates stat cards', () => {
-    expect(jsx).toContain('Total Users');
+    expect(allJsx).toContain('Total Users');
   });
 
   it('generates useEffect for hooks', () => {
@@ -422,48 +432,48 @@ describe('transpile: dashboard.air', () => {
   });
 
   it('generates revenue stat with currency formatting', () => {
-    expect(jsx).toContain('Revenue');
-    expect(jsx).toContain("'$' + (stats.revenue).toFixed(2)");
+    expect(allJsx).toContain('Revenue');
+    expect(allJsx).toContain("'$' + (stats.revenue).toFixed(2)");
   });
 
   it('generates table with column headers', () => {
-    expect(jsx).toContain('<table');
-    expect(jsx).toContain('<thead');
-    expect(jsx).toContain('<tbody');
-    expect(jsx).toContain('>Name</th>');
-    expect(jsx).toContain('>Email</th>');
-    expect(jsx).toContain('>Role</th>');
-    expect(jsx).toContain('>Active</th>');
+    expect(allJsx).toContain('<table');
+    expect(allJsx).toContain('<thead');
+    expect(allJsx).toContain('<tbody');
+    expect(allJsx).toContain('>Name</th>');
+    expect(allJsx).toContain('>Email</th>');
+    expect(allJsx).toContain('>Role</th>');
+    expect(allJsx).toContain('>Active</th>');
   });
 
   it('generates table row mapping with data fields', () => {
-    expect(jsx).toContain('.map((row)');
-    expect(jsx).toContain('row.name');
-    expect(jsx).toContain('row.email');
-    expect(jsx).toContain('row.role');
+    expect(allJsx).toContain('.map((row)');
+    expect(allJsx).toContain('row.name');
+    expect(allJsx).toContain('row.email');
+    expect(allJsx).toContain('row.role');
   });
 
   it('generates search filter for table', () => {
-    expect(jsx).toContain('.filter(');
-    expect(jsx).toContain('search.toLowerCase()');
+    expect(allJsx).toContain('.filter(');
+    expect(allJsx).toContain('search.toLowerCase()');
   });
 
   it('generates period select dropdown', () => {
-    expect(jsx).toContain('<select');
-    expect(jsx).toContain('setPeriod');
-    expect(jsx).toContain('value="7d"');
-    expect(jsx).toContain('value="30d"');
-    expect(jsx).toContain('value="90d"');
-    expect(jsx).toContain('value="1y"');
+    expect(allJsx).toContain('<select');
+    expect(allJsx).toContain('setPeriod');
+    expect(allJsx).toContain('value="7d"');
+    expect(allJsx).toContain('value="30d"');
+    expect(allJsx).toContain('value="90d"');
+    expect(allJsx).toContain('value="1y"');
   });
 
   it('generates chart placeholder', () => {
-    expect(jsx).toContain('chart placeholder');
+    expect(allJsx).toContain('chart placeholder');
   });
 
   it('generates pagination', () => {
-    expect(jsx).toContain('Prev');
-    expect(jsx).toContain('Next');
+    expect(allJsx).toContain('Prev');
+    expect(allJsx).toContain('Next');
   });
 });
 
@@ -623,6 +633,7 @@ describe('golden: todo.air codegen shape', () => {
 describe('golden: dashboard.air codegen shape', () => {
   const result = transpileFile('dashboard');
   const jsx = result.files.find(f => f.path === 'src/App.jsx' || f.path === 'client/src/App.jsx')!.content;
+  const allJsx = getAllJsx('dashboard');
   const lines = jsx.split('\n');
 
   it('App.jsx starts with React import', () => {
@@ -654,20 +665,30 @@ describe('golden: dashboard.air codegen shape', () => {
   });
 
   it('JSX has expected structural markers in order', () => {
-    const markers = [
+    // App.jsx structural markers (component refs, not inline content)
+    const appMarkers = [
       'min-h-screen',    // root wrapper
       '<aside',          // sidebar
       'Dashboard',       // app title
       '<nav',            // navigation
       'setCurrentPage',  // page switching
       '<main',           // main content area
-      'overview',        // first page
+      'OverviewPage',    // page component ref
+      'UsersPage',       // page component ref
+    ];
+    let lastIdx = -1;
+    for (const marker of appMarkers) {
+      const idx = jsx.indexOf(marker, lastIdx + 1);
+      expect(idx).toBeGreaterThan(lastIdx);
+      lastIdx = idx;
+    }
+
+    // Page content markers exist across page component files
+    const contentMarkers = [
       'Total Users',     // stat card
       'Revenue',         // revenue stat
       'toFixed(2)',      // currency formatting
       'chart placeholder', // chart stub
-      '<select',         // period dropdown
-      'users',           // users page
       '<table',          // data table
       '<thead',          // table header
       'Name',            // column header
@@ -678,11 +699,8 @@ describe('golden: dashboard.air codegen shape', () => {
       'Prev',            // pagination
       'Next',            // pagination
     ];
-    let lastIdx = -1;
-    for (const marker of markers) {
-      const idx = jsx.indexOf(marker, lastIdx + 1);
-      expect(idx).toBeGreaterThan(lastIdx);
-      lastIdx = idx;
+    for (const marker of contentMarkers) {
+      expect(allJsx).toContain(marker);
     }
   });
 });
@@ -815,8 +833,8 @@ describe('semantics: supported features', () => {
   });
 
   it('forms (form, input:email, input:password) → HTML form elements', () => {
-    expect(getAppJsx('auth')).toContain('<form');
-    expect(getAppJsx('auth')).toMatch(/type="(email|password)"/);
+    expect(getAllJsx('auth')).toContain('<form');
+    expect(getAllJsx('auth')).toMatch(/type="(email|password)"/);
   });
 
   it('layout (sidebar+main, grid:responsive) → structural HTML', () => {
@@ -993,7 +1011,7 @@ describe('D1: visual semantics', () => {
   });
 
   it('auth login form has card container (auth.air)', () => {
-    const jsx = getAppJsx('auth');
+    const jsx = getAllJsx('auth');
     expect(jsx).toContain('bg-[var(--surface)]');
     expect(jsx).toContain('border border-[var(--border)]');
     expect(jsx).toContain('rounded-[var(--radius)]');
