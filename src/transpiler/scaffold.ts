@@ -135,7 +135,7 @@ function generateIndexCss(ctx: TranspileContext): string {
   // Theme-aware surface, border, and text palette
   const themeVars = isDark ? [
     '  --bg: #030712;',
-    '  --bg-secondary: rgba(255,255,255,0.03);',
+    '  --bg-secondary: rgba(255,255,255,0.06);',
     '  --fg: #f3f4f6;',
     '  --muted: rgba(255,255,255,0.5);',
     '  --border: rgba(255,255,255,0.1);',

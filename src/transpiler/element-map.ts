@@ -53,7 +53,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   card: {
     tag: 'div',
-    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--card-shadow)]',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-6 space-y-3 shadow-[var(--card-shadow)]',
   },
   btn: {
     tag: 'button',
@@ -61,7 +61,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
     modifiers: {
       primary: { className: 'bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium hover:brightness-110 min-w-[80px] cursor-pointer transition-colors' },
       secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors' },
-      ghost: { className: 'bg-transparent hover:bg-[var(--hover)] text-left w-full px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors' },
+      ghost: { className: 'bg-transparent hover:bg-[var(--hover)] px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors' },
       icon: { className: 'p-2 rounded-full hover:bg-[var(--hover)] cursor-pointer transition-colors' },
       submit: { className: 'w-full bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors' },
     },
@@ -215,7 +215,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   section: {
     tag: 'section',
-    className: 'py-16 px-6',
+    className: 'py-16 px-6 space-y-6',
   },
 };
 

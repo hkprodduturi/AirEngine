@@ -814,7 +814,7 @@ function generateScopedJSX(
       generateJSX(c, ctx, analysis, scope, ind + 2)
     ).filter(Boolean).join('\n');
 
-    return `${pad}<section id="${node.name}" className="py-16 px-6">\n${childJsx}\n${pad}</section>`;
+    return `${pad}<section id="${node.name}" className="py-16 px-6 space-y-6">\n${childJsx}\n${pad}</section>`;
   }
 
   return '';
