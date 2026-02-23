@@ -116,6 +116,7 @@ function defaultForType(type: AirType): string {
     case 'bool':
       return type.default !== undefined ? String(type.default) : 'false';
     case 'date':
+    case 'datetime':
       return "''";
     case 'enum':
       return type.default !== undefined

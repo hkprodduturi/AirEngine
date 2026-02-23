@@ -43,6 +43,16 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { parse } from '../parser/index.js';
+import { validate } from '../validator/index.js';
+import { transpile } from '../transpiler/index.js';
+import { extractContext } from '../transpiler/context.js';
+import { AirParseError, AirLexError } from '../parser/errors.js';
+import type {
+  AirAST, AirDbBlock, AirAPIBlock, AirAuthBlock,
+  AirCronBlock, AirWebhookBlock, AirQueueBlock,
+  AirEmailBlock, AirEnvBlock, AirDeployBlock,
+} from '../parser/types.js';
 
 const ROOT = join(__dirname, '..', '..');
 
@@ -51,7 +61,7 @@ const ROOT = join(__dirname, '..', '..');
 const AIR_SPEC = `
 AIR (AI-native Intermediate Representation) Language Reference v0.1
 
-TYPES: str, int, float, bool, date, enum(v1,v2), [type], {key:type}, ?type, #ref
+TYPES: str, int, float, bool, date, datetime, enum(v1,v2), [type], {key:type}, ?type, #ref
 
 OPERATORS:
   >  flow (input>items.push = on input, push to items)
@@ -66,15 +76,28 @@ OPERATORS:
   ^  emit (^notify("saved"))
 
 BLOCKS:
-  @app:name         — declare app
-  @state{...}       — reactive state
-  @style(...)       — theme/design tokens
-  @ui(...)          — component tree + behavior
-  @api(...)         — backend routes
-  @auth(...)        — authentication
-  @nav(...)         — routing
-  @persist:method   — data persistence
-  @hook(...)        — lifecycle/side effects
+  @app:name           — declare app
+  @state{...}         — reactive state
+  @style(...)         — theme/design tokens
+  @ui(...)            — component tree + behavior
+  @api(...)           — backend routes (GET, POST, PUT, DELETE, CRUD)
+  @auth(...)          — authentication
+  @nav(...)           — routing
+  @persist:method     — data persistence
+  @hook(...)          — lifecycle/side effects
+  @db{...}            — database models with field modifiers (:primary, :required, :auto, :default(val))
+  @cron(...)          — scheduled jobs
+  @webhook(...)       — incoming webhook endpoints
+  @queue(...)         — background job queues
+  @email(...)         — email templates
+  @env(...)           — environment variables
+  @deploy(...)        — deployment config
+
+DB FIELD MODIFIERS:
+  :primary   — primary key
+  :required  — non-nullable
+  :auto      — auto-increment (int) or auto-timestamp (datetime)
+  :default(v) — default value
 
 UI ELEMENTS:
   header, footer, main, sidebar, row, grid, grid:N, grid:responsive
@@ -97,6 +120,28 @@ EXAMPLE — Todo App:
       footer>"#items|!done.length items left"
     )
     @persist:localStorage(items)
+
+EXAMPLE — Fullstack Todo (with DB + API):
+  @app:fullstack-todo
+    @state{items:[{id:int,text:str,done:bool}],filter:enum(all,active,done)}
+    @style(theme:dark,accent:#6366f1,radius:12,font:sans)
+    @db{
+      Todo{id:int:primary:auto,text:str:required,done:bool:default(false),created_at:datetime:auto}
+    }
+    @api(
+      GET:/todos>~db.Todo.findMany
+      POST:/todos(text:str)>~db.Todo.create
+      PUT:/todos/:id(done:bool)>~db.Todo.update
+      DELETE:/todos/:id>~db.Todo.delete
+    )
+    @ui(
+      header>"Todo App"+badge:#items.length
+      input:text>!add({text:#val,done:false})
+      list>items|filter>*item(check:#item.done+text:#item.text+btn:icon:!del(#item.id))
+      tabs>filter.set(all,active,done)
+      footer>"#items|!done.length items left"
+    )
+    @persist:localStorage(items)
 `;
 
 // ---- Load example files ----
@@ -105,7 +150,7 @@ function loadExamples(): Record<string, string> {
   const examplesDir = join(ROOT, 'examples');
   const examples: Record<string, string> = {};
   try {
-    const files = ['todo.air', 'expense-tracker.air', 'auth.air', 'dashboard.air', 'landing.air'];
+    const files = ['todo.air', 'expense-tracker.air', 'auth.air', 'dashboard.air', 'landing.air', 'fullstack-todo.air'];
     for (const file of files) {
       try {
         examples[file] = readFileSync(join(examplesDir, file), 'utf-8');
@@ -117,6 +162,44 @@ function loadExamples(): Record<string, string> {
     // examples dir doesn't exist
   }
   return examples;
+}
+
+// ---- Helpers ----
+
+/** Safely parse AIR source, returning AST or structured error */
+function safeParse(source: string): { ast: AirAST } | { error: string; line?: number; col?: number } {
+  try {
+    return { ast: parse(source) };
+  } catch (err) {
+    if (err instanceof AirParseError) {
+      return { error: err.message, line: err.line, col: err.col };
+    }
+    if (err instanceof AirLexError) {
+      return { error: err.message, line: err.line, col: err.col };
+    }
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Count fields across all state blocks */
+function countStateFields(ast: AirAST): number {
+  return ast.app.blocks
+    .filter(b => b.kind === 'state')
+    .reduce((sum, b) => sum + (b.kind === 'state' ? b.fields.length : 0), 0);
+}
+
+/** Count API routes */
+function countRoutes(ast: AirAST): number {
+  return ast.app.blocks
+    .filter(b => b.kind === 'api')
+    .reduce((sum, b) => sum + (b.kind === 'api' ? b.routes.length : 0), 0);
+}
+
+/** Count DB models */
+function countDbModels(ast: AirAST): number {
+  return ast.app.blocks
+    .filter(b => b.kind === 'db')
+    .reduce((sum, b) => sum + (b.kind === 'db' ? b.models.length : 0), 0);
 }
 
 // ---- Create MCP Server ----
@@ -174,8 +257,6 @@ async function main() {
       complexity: z.enum(['simple', 'medium', 'complex']).optional().describe('Expected complexity level'),
     },
     async ({ description, complexity }) => {
-      // The LLM (Claude) will use the spec + examples as context
-      // to generate AIR code. This tool provides the structured prompt.
       const prompt = `You are an AIR language code generator. Using the AIR language specification below, generate a complete .air file for the following app:
 
 APP DESCRIPTION: ${description}
@@ -193,12 +274,15 @@ RULES:
 7. Add @api if the app needs backend routes
 8. Add @auth if the app needs authentication
 9. Add @nav if the app has multiple pages
+10. Add @db with field modifiers (:primary, :required, :auto, :default) for database models
+11. Add @cron for scheduled jobs, @webhook for incoming webhooks
+12. Add @env for environment variables, @deploy for deployment config
 
 Generate the AIR code now:`;
 
       return {
         content: [{
-          type: 'text',
+          type: 'text' as const,
           text: prompt,
         }],
       };
@@ -213,66 +297,51 @@ Generate the AIR code now:`;
       source: z.string().describe('AIR source code to validate'),
     },
     async ({ source }) => {
-      const errors: string[] = [];
-      const warnings: string[] = [];
-      const lines = source.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+      // Step 1: Parse
+      const parseResult = safeParse(source);
 
-      // Check @app declaration
-      if (!lines.some(l => l.trim().startsWith('@app:'))) {
-        errors.push('Missing @app:name declaration (must be first block)');
+      if ('error' in parseResult) {
+        const loc = parseResult.line ? ` (line ${parseResult.line}:${parseResult.col})` : '';
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              valid: false,
+              error: parseResult.error,
+              location: parseResult.line ? { line: parseResult.line, col: parseResult.col } : null,
+            }, null, 2),
+          }],
+        };
       }
 
-      // Check for required blocks
-      const hasState = lines.some(l => l.trim().startsWith('@state'));
-      const hasUI = lines.some(l => l.trim().startsWith('@ui'));
-      const hasStyle = lines.some(l => l.trim().startsWith('@style'));
+      const ast = parseResult.ast;
 
-      if (!hasUI) errors.push('Missing @ui block — app has no interface');
-      if (!hasState) warnings.push('No @state block — app has no reactive state');
-      if (!hasStyle) warnings.push('No @style block — app will use default theme');
+      // Step 2: Validate
+      const validation = validate(ast);
 
-      // Check bracket balance
-      const opens = (source.match(/\(/g) || []).length;
-      const closes = (source.match(/\)/g) || []).length;
-      if (opens !== closes) {
-        errors.push(`Unbalanced parentheses: ${opens} opening, ${closes} closing`);
-      }
+      // Step 3: Collect stats
+      const blockCount = ast.app.blocks.length;
+      const blockTypes = ast.app.blocks.map(b => b.kind);
+      const fieldCount = countStateFields(ast);
+      const routeCount = countRoutes(ast);
+      const modelCount = countDbModels(ast);
 
-      const braceOpens = (source.match(/\{/g) || []).length;
-      const braceCloses = (source.match(/\}/g) || []).length;
-      if (braceOpens !== braceCloses) {
-        errors.push(`Unbalanced braces: ${braceOpens} opening, ${braceCloses} closing`);
-      }
-
-      // Check for common operator patterns
-      const stateRefs = source.match(/#[\w.]+/g) || [];
-      const mutations = source.match(/![\w]+/g) || [];
-      const asyncOps = source.match(/~[\w.]+/g) || [];
-
-      // Stats
-      const lineCount = lines.length;
-      const tokenEstimate = source.split(/\s+/).length;
-
-      const valid = errors.length === 0;
-
-      let result = `AIR Validation ${valid ? '✅ PASSED' : '❌ FAILED'}\n\n`;
-      result += `Lines: ${lineCount}\n`;
-      result += `Est. tokens: ${tokenEstimate}\n`;
-      result += `State refs (#): ${stateRefs.length}\n`;
-      result += `Mutations (!): ${mutations.length}\n`;
-      result += `Async ops (~): ${asyncOps.length}\n`;
-
-      if (errors.length > 0) {
-        result += `\nErrors:\n${errors.map(e => `  ❌ ${e}`).join('\n')}`;
-      }
-      if (warnings.length > 0) {
-        result += `\nWarnings:\n${warnings.map(w => `  ⚠️  ${w}`).join('\n')}`;
-      }
+      const result = {
+        valid: validation.valid,
+        appName: ast.app.name,
+        blocks: blockCount,
+        blockTypes,
+        stateFields: fieldCount,
+        apiRoutes: routeCount,
+        dbModels: modelCount,
+        errors: validation.errors,
+        warnings: validation.warnings,
+      };
 
       return {
         content: [{
-          type: 'text',
-          text: result,
+          type: 'text' as const,
+          text: JSON.stringify(result, null, 2),
         }],
       };
     }
@@ -287,43 +356,88 @@ Generate the AIR code now:`;
       framework: z.enum(['react', 'html']).optional().describe('Target framework (default: react)'),
     },
     async ({ source, framework }) => {
-      const target = framework || 'react';
+      // Step 1: Parse
+      const parseResult = safeParse(source);
 
-      const prompt = `You are an AIR-to-${target === 'react' ? 'React' : 'HTML'} transpiler. Convert the following AIR source code into a complete, working ${target === 'react' ? 'React component' : 'HTML page'}.
+      if ('error' in parseResult) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: parseResult.error,
+              location: parseResult.line ? { line: parseResult.line, col: parseResult.col } : null,
+            }, null, 2),
+          }],
+        };
+      }
 
-AIR SOURCE:
-${source}
+      const ast = parseResult.ast;
 
-TRANSPILATION RULES:
-1. Every @state field becomes a useState hook (React) or a variable (HTML)
-2. Every @ui element maps to JSX/HTML elements with proper event handlers
-3. The > operator means "on event, do action"
-4. The | operator means "pipe/transform data"
-5. The + operator means "compose elements side by side"
-6. The * operator means "iterate/map over array"
-7. The ! operator means "mutation/action function"
-8. The # operator means "reference to state"
-9. The ~ operator means "async operation"
-10. @style properties map to CSS variables / Tailwind classes
-11. @persist:localStorage maps to useEffect + localStorage
-12. @api routes map to fetch calls
-13. @auth maps to auth context/guards
-14. @nav maps to React Router or conditional rendering
+      // Step 2: Transpile
+      try {
+        const result = transpile(ast);
+        const ctx = extractContext(ast);
 
-OUTPUT RULES:
-- Generate a COMPLETE, working ${target === 'react' ? 'React component with all imports' : 'HTML file with embedded CSS and JS'}
-- Include proper styling based on @style block
-- Make it production-quality, not a skeleton
-- All state management, event handlers, and data flow must work
+        // Build file metadata
+        const fileMeta = result.files.map(f => ({
+          path: f.path,
+          lines: f.content.split('\n').length,
+        }));
 
-Generate the transpiled code now:`;
+        const totalLines = result.stats.outputLines;
 
-      return {
-        content: [{
-          type: 'text',
-          text: prompt,
-        }],
-      };
+        // Determine which blocks were processed
+        const processedBlocks = ast.app.blocks.map(b => b.kind);
+
+        // Include full contents only if under 5000 lines
+        let files: Array<{ path: string; lines: number; content?: string; preview?: string }>;
+        if (totalLines <= 5000) {
+          files = result.files.map(f => ({
+            path: f.path,
+            lines: f.content.split('\n').length,
+            content: f.content,
+          }));
+        } else {
+          files = result.files.map(f => {
+            const contentLines = f.content.split('\n');
+            return {
+              path: f.path,
+              lines: contentLines.length,
+              preview: contentLines.slice(0, 20).join('\n') + '\n// ... truncated',
+            };
+          });
+        }
+
+        const output = {
+          success: true,
+          stats: {
+            fileCount: result.files.length,
+            totalLines,
+            hasBackend: ctx.hasBackend,
+            processedBlocks,
+            components: result.stats.components,
+          },
+          files,
+        };
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify(output, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            }, null, 2),
+          }],
+        };
+      }
     }
   );
 
@@ -335,29 +449,57 @@ Generate the transpiled code now:`;
       source: z.string().describe('AIR source code to explain'),
     },
     async ({ source }) => {
-      const lines = source.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+      // Step 1: Parse
+      const parseResult = safeParse(source);
 
-      // Parse basic structure
-      const appName = lines.find(l => l.trim().startsWith('@app:'))?.trim().slice(5) || 'unknown';
-      const blocks = lines
-        .filter(l => l.trim().startsWith('@'))
-        .map(l => l.trim().match(/@(\w+)/)?.[1])
-        .filter(Boolean);
+      if ('error' in parseResult) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: parseResult.error,
+              location: parseResult.line ? { line: parseResult.line, col: parseResult.col } : null,
+            }, null, 2),
+          }],
+        };
+      }
 
-      const lineCount = lines.length;
-      const reactEstimate = lineCount * 9; // ~9x expansion ratio
+      const ast = parseResult.ast;
 
-      let explanation = `📱 App: ${appName}\n`;
-      explanation += `📏 ${lineCount} lines of AIR (~${reactEstimate} lines of React equivalent)\n`;
-      explanation += `🧱 Blocks: ${[...new Set(blocks)].join(', ')}\n\n`;
-      explanation += `For a detailed explanation, analyze the AIR source using the language spec:\n\n`;
-      explanation += `${AIR_SPEC}\n\n`;
-      explanation += `AIR SOURCE TO EXPLAIN:\n${source}`;
+      // Step 2: Analyze
+      const blockTypes = ast.app.blocks.map(b => b.kind);
+      const stateFields = ast.app.blocks
+        .filter(b => b.kind === 'state')
+        .flatMap(b => b.kind === 'state' ? b.fields.map(f => f.name) : []);
+
+      const routeCount = countRoutes(ast);
+      const modelCount = countDbModels(ast);
+      const dbModels = ast.app.blocks
+        .filter(b => b.kind === 'db')
+        .flatMap(b => b.kind === 'db' ? b.models.map(m => m.name) : []);
+
+      const hooks = ast.app.blocks
+        .filter(b => b.kind === 'hook')
+        .flatMap(b => b.kind === 'hook' ? b.hooks.map(h => h.trigger) : []);
+
+      const ctx = extractContext(ast);
+
+      const analysis = {
+        appName: ast.app.name,
+        blockTypes,
+        stateFields,
+        apiRoutes: routeCount,
+        dbModels,
+        hooks,
+        hasBackend: ctx.hasBackend,
+        persistMethod: ctx.persistKeys.length > 0 ? ctx.persistMethod : null,
+        persistKeys: ctx.persistKeys,
+      };
 
       return {
         content: [{
-          type: 'text',
-          text: explanation,
+          type: 'text' as const,
+          text: JSON.stringify(analysis, null, 2),
         }],
       };
     }
@@ -375,9 +517,9 @@ Generate the transpiled code now:`;
     },
     async ({ description }) => ({
       messages: [{
-        role: 'user',
+        role: 'user' as const,
         content: {
-          type: 'text',
+          type: 'text' as const,
           text: `Generate a new AIR app for: ${description}
 
 Use the AIR language specification to create a complete .air file. AIR is a compact, AI-native language where:
@@ -386,8 +528,11 @@ Use the AIR language specification to create a complete .air file. AIR is a comp
 - @style(...) sets the theme
 - @ui(...) defines the component tree
 - Operators: > (flow), | (pipe), + (compose), * (iterate), ! (mutate), # (ref)
+- @db{...} defines database models with :primary, :required, :auto, :default modifiers
+- @api(...) defines backend routes mapped to db operations
+- @cron, @webhook, @queue, @email, @env, @deploy for full-stack features
 
-First generate the .air file, then use the air_transpile tool to create the working React app.`,
+First generate the .air file, then use the air_transpile tool to create the working app.`,
         },
       }],
     })
@@ -401,7 +546,7 @@ First generate the .air file, then use the air_transpile tool to create the work
   await server.connect(transport);
 
   // Log to stderr (stdout is reserved for MCP protocol)
-  console.error('🚀 AirEngine MCP Server running');
+  console.error('AirEngine MCP Server running');
   console.error('   Tools: air_generate, air_validate, air_transpile, air_explain');
   console.error('   Resources: air://spec, air://examples');
 }
