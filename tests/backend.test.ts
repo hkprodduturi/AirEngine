@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { parse } from '../src/parser/index.js';
 import { transpile } from '../src/transpiler/index.js';
 import { extractContext } from '../src/transpiler/context.js';
-import { generatePrismaSchema } from '../src/transpiler/prisma.js';
+import { generatePrismaSchema, resolveRelations } from '../src/transpiler/prisma.js';
 import { generateServer } from '../src/transpiler/express.js';
 import { routeToFunctionName, expandCrud } from '../src/transpiler/route-utils.js';
 import type { AirDbBlock } from '../src/parser/types.js';
@@ -101,7 +101,7 @@ describe('Prisma schema generation', () => {
     expect(schema).toContain('// pending, done, archived');
   });
 
-  it('generates TODO comments for relations', () => {
+  it('generates TODO comments for ambiguous relations (no FK)', () => {
     const db: AirDbBlock = {
       kind: 'db',
       models: [
@@ -112,8 +112,9 @@ describe('Prisma schema generation', () => {
       indexes: [],
     };
     const schema = generatePrismaSchema(db);
-    expect(schema).toContain('// TODO: Prisma relation fields');
+    expect(schema).toContain('// TODO: Ambiguous relations');
     expect(schema).toContain('User.posts <-> Post.author');
+    expect(schema).toContain('no FK field found');
   });
 });
 
@@ -476,19 +477,13 @@ describe('server/seed.ts generation', () => {
     expect(seed).toContain('done:');
   });
 
-  it('skips FK _id fields in seed data', () => {
+  it('wires FK fields with .id references in seed data', () => {
     const seed = getServerFile('projectflow', 'server/seed.ts')!;
-    // workspace_id, project_id, task_id, author_id, assignee_id should be skipped
-    const dataBlocks = seed.split('createMany');
-    for (const block of dataBlocks) {
-      const dataSection = block.split('data:')[1]?.split('],')[0];
-      if (dataSection) {
-        expect(dataSection).not.toContain('workspace_id:');
-        expect(dataSection).not.toContain('project_id:');
-        expect(dataSection).not.toContain('task_id:');
-        expect(dataSection).not.toContain('author_id:');
-      }
-    }
+    // FK fields should reference captured parent IDs, not literal numbers
+    expect(seed).toContain('workspace_id: workspace1.id');
+    expect(seed).toContain('project_id: project1.id');
+    expect(seed).toContain('task_id: task1.id');
+    expect(seed).toContain('author_id: user1.id');
   });
 
   it('generates seed for projectflow with multiple models', () => {
@@ -1198,5 +1193,395 @@ describe('stats enhancement', () => {
     const result = transpileFile('todo');
     expect(result.stats.pages).toBe(0);
     expect(result.stats.hooks).toBe(0);
+  });
+});
+
+// ---- E1: Relation Resolution ----
+
+describe('E1: relation resolution', () => {
+  it('resolves unambiguous one-to-many with FK on child', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [{ name: 'id', type: { kind: 'int' }, primary: true }] },
+        { name: 'Post', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true },
+          { name: 'author_id', type: { kind: 'int' } },
+        ] },
+      ],
+      relations: [{ from: 'User.posts', to: 'Post.author' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    // User gets array relation field
+    expect(schema).toContain('posts  Post[]');
+    // Post gets scalar relation field with @relation directive
+    expect(schema).toContain('author  User');
+    expect(schema).toContain('fields: [author_id]');
+    expect(schema).toContain('references: [id]');
+    // No ambiguous TODO
+    expect(schema).not.toContain('// TODO: Ambiguous');
+  });
+
+  it('marks ambiguous relations as TODO (no FK field)', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [{ name: 'id', type: { kind: 'int' }, primary: true }] },
+        { name: 'Group', fields: [{ name: 'id', type: { kind: 'int' }, primary: true }] },
+      ],
+      relations: [{ from: 'User.groups', to: 'Group.members' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain('// TODO: Ambiguous relations');
+    expect(schema).toContain('no FK field found');
+    // No relation fields should be generated in models
+    expect(schema).not.toContain('groups  Group');
+    expect(schema).not.toContain('members  User');
+  });
+
+  it('generates optional relation field for optional FK', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [{ name: 'id', type: { kind: 'int' }, primary: true }] },
+        { name: 'Task', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true },
+          { name: 'assignee_id', type: { kind: 'optional', of: { kind: 'int' } } },
+        ] },
+      ],
+      relations: [{ from: 'Task.assignee', to: 'User.assigned' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    // Task gets optional relation
+    expect(schema).toContain('assignee  User?');
+    expect(schema).toContain('fields: [assignee_id]');
+    // User gets array relation
+    expect(schema).toContain('assigned  Task[]');
+  });
+
+  it('resolveRelations returns correct resolved/ambiguous split', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [{ name: 'id', type: { kind: 'int' }, primary: true }] },
+        { name: 'Workspace', fields: [{ name: 'id', type: { kind: 'int' }, primary: true }] },
+        { name: 'Project', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true },
+          { name: 'workspace_id', type: { kind: 'int' } },
+        ] },
+      ],
+      relations: [
+        { from: 'User.workspaces', to: 'Workspace.members' },
+        { from: 'Workspace.projects', to: 'Project.workspace' },
+      ],
+      indexes: [],
+    };
+    const { resolved, ambiguous } = resolveRelations(db);
+    expect(resolved.length).toBe(1);
+    expect(resolved[0].modelA).toBe('Workspace');
+    expect(resolved[0].fkField).toBe('workspace_id');
+    expect(ambiguous.length).toBe(1);
+    expect(ambiguous[0].from).toBe('User.workspaces');
+  });
+
+  it('skips relation when target model has no id field', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'Tag', fields: [{ name: 'slug', type: { kind: 'str' }, primary: true }] },
+        { name: 'Post', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true },
+          { name: 'tag_id', type: { kind: 'int' } },
+        ] },
+      ],
+      relations: [{ from: 'Tag.posts', to: 'Post.tag' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain('// TODO: Ambiguous');
+    expect(schema).toContain("no 'id' field");
+  });
+
+  it('skips relation when field name conflicts with scalar', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true },
+          { name: 'posts', type: { kind: 'str' } },
+        ] },
+        { name: 'Post', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true },
+          { name: 'author_id', type: { kind: 'int' } },
+        ] },
+      ],
+      relations: [{ from: 'User.posts', to: 'Post.author' }],
+      indexes: [],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain('// TODO: Ambiguous');
+    expect(schema).toContain('conflicts with existing scalar field');
+  });
+
+  it('marks FK on both sides as ambiguous', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true },
+          { name: 'profile_id', type: { kind: 'int' } },
+        ] },
+        { name: 'Profile', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true },
+          { name: 'user_id', type: { kind: 'int' } },
+        ] },
+      ],
+      relations: [{ from: 'User.profile', to: 'Profile.user' }],
+      indexes: [],
+    };
+    const { ambiguous } = resolveRelations(db);
+    expect(ambiguous.length).toBe(1);
+    expect(ambiguous[0].reason).toContain('both sides');
+  });
+});
+
+// ---- E1: Index Generation ----
+
+describe('E1: index generation', () => {
+  it('generates @unique on single field', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [{
+        name: 'User',
+        fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'email', type: { kind: 'str' } },
+        ],
+      }],
+      relations: [],
+      indexes: [{ fields: ['User.email'], unique: true }],
+    };
+    const schema = generatePrismaSchema(db);
+    const emailLine = schema.split('\n').find(l => l.trim().startsWith('email'));
+    expect(emailLine).toContain('@unique');
+  });
+
+  it('generates @@index for composite non-unique', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [{
+        name: 'Task',
+        fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'status', type: { kind: 'str' } },
+          { name: 'project_id', type: { kind: 'int' } },
+        ],
+      }],
+      relations: [],
+      indexes: [{ fields: ['Task.status', 'Task.project_id'], unique: false }],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain('@@index([status, project_id])');
+  });
+
+  it('generates @@unique for composite unique', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [{
+        name: 'Enrollment',
+        fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'student_id', type: { kind: 'int' } },
+          { name: 'course_id', type: { kind: 'int' } },
+        ],
+      }],
+      relations: [],
+      indexes: [{ fields: ['Enrollment.student_id', 'Enrollment.course_id'], unique: true }],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain('@@unique([student_id, course_id])');
+  });
+
+  it('emits TODO for indexes referencing unknown model', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [{
+        name: 'User',
+        fields: [{ name: 'id', type: { kind: 'int' }, primary: true }],
+      }],
+      relations: [],
+      indexes: [{ fields: ['Ghost.email'], unique: true }],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain("// TODO: index references unknown model 'Ghost'");
+    // No @unique should appear in User model
+    expect(schema).not.toContain('@unique');
+  });
+
+  it('emits TODO for indexes referencing unknown field', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [{
+        name: 'User',
+        fields: [{ name: 'id', type: { kind: 'int' }, primary: true }],
+      }],
+      relations: [],
+      indexes: [{ fields: ['User.nonexistent'], unique: false }],
+    };
+    const schema = generatePrismaSchema(db);
+    expect(schema).toContain("// TODO: index references unknown field(s) 'nonexistent'");
+  });
+
+  it('@unique coexists with @id and @default', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [{
+        name: 'User',
+        fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'email', type: { kind: 'str' } },
+          { name: 'name', type: { kind: 'str' }, default: 'Unknown' },
+        ],
+      }],
+      relations: [],
+      indexes: [{ fields: ['User.email'], unique: true }],
+    };
+    const schema = generatePrismaSchema(db);
+    // id still has @id @default(autoincrement())
+    const idLine = schema.split('\n').find(l => l.trim().startsWith('id'));
+    expect(idLine).toContain('@id');
+    expect(idLine).toContain('@default(autoincrement())');
+    // email has @unique
+    const emailLine = schema.split('\n').find(l => l.trim().startsWith('email'));
+    expect(emailLine).toContain('@unique');
+    // name has @default but not @unique
+    const nameLine = schema.split('\n').find(l => l.trim().startsWith('name'));
+    expect(nameLine).toContain('@default("Unknown")');
+    expect(nameLine).not.toContain('@unique');
+  });
+});
+
+// ---- E1: FK-Safe Seeding ----
+
+describe('E1: FK-safe seeding', () => {
+  it('seed parents before children (topological order)', () => {
+    const seed = getServerFile('projectflow', 'server/seed.ts')!;
+    const userIdx = seed.indexOf('prisma.user.create');
+    const workspaceIdx = seed.indexOf('prisma.workspace.create');
+    const projectIdx = seed.indexOf('prisma.project.create');
+    const taskIdx = seed.indexOf('prisma.task.create');
+    const commentIdx = seed.indexOf('prisma.comment.create');
+    // Parents come before children
+    expect(userIdx).toBeLessThan(projectIdx);
+    expect(workspaceIdx).toBeLessThan(projectIdx);
+    expect(projectIdx).toBeLessThan(taskIdx);
+    expect(taskIdx).toBeLessThan(commentIdx);
+  });
+
+  it('seed uses captured IDs with sequential creates', () => {
+    const seed = getServerFile('projectflow', 'server/seed.ts')!;
+    expect(seed).toContain('const user1 = await prisma.user.create');
+    expect(seed).toContain('const workspace1 = await prisma.workspace.create');
+    expect(seed).toContain('const project1 = await prisma.project.create');
+    expect(seed).toContain('const task1 = await prisma.task.create');
+  });
+
+  it('optional FK is null for first record', () => {
+    const seed = getServerFile('projectflow', 'server/seed.ts')!;
+    // assignee_id is optional on Task → null for record 1
+    const task1Line = seed.split('\n').find(l => l.includes('const task1 = await'));
+    expect(task1Line).toContain('assignee_id: null');
+  });
+
+  it('seed reverse-deletes (children before parents)', () => {
+    const seed = getServerFile('projectflow', 'server/seed.ts')!;
+    const commentDelIdx = seed.indexOf('prisma.comment.deleteMany');
+    const taskDelIdx = seed.indexOf('prisma.task.deleteMany');
+    const projectDelIdx = seed.indexOf('prisma.project.deleteMany');
+    const workspaceDelIdx = seed.indexOf('prisma.workspace.deleteMany');
+    const userDelIdx = seed.indexOf('prisma.user.deleteMany');
+    // Children deleted before parents
+    expect(commentDelIdx).toBeLessThan(taskDelIdx);
+    expect(taskDelIdx).toBeLessThan(projectDelIdx);
+    expect(projectDelIdx).toBeLessThan(workspaceDelIdx);
+    expect(workspaceDelIdx).toBeLessThan(userDelIdx);
+  });
+
+  it('fullstack-todo still uses createMany (no relations)', () => {
+    const seed = getServerFile('fullstack-todo', 'server/seed.ts')!;
+    expect(seed).toContain('createMany');
+    expect(seed).not.toContain('const todo1 = await');
+  });
+
+  it('frontend-only apps produce no schema', () => {
+    const result = transpileFile('todo');
+    const schema = result.files.find(f => f.path === 'server/prisma/schema.prisma');
+    expect(schema).toBeUndefined();
+  });
+
+  it('skips seeding model with unresolved required FK', () => {
+    const db: AirDbBlock = {
+      kind: 'db',
+      models: [
+        { name: 'User', fields: [{ name: 'id', type: { kind: 'int' }, primary: true, auto: true }] },
+        { name: 'Post', fields: [
+          { name: 'id', type: { kind: 'int' }, primary: true, auto: true },
+          { name: 'mystery_id', type: { kind: 'int' } },
+        ] },
+      ],
+      relations: [],
+      indexes: [],
+    };
+    const ast = parse('@app:t\n@db{\nUser{id:int:primary:auto}\nPost{id:int:primary:auto,mystery_id:int}\n}\n@api(\nGET:/users>~db.User.findMany\n)');
+    const result = transpile(ast);
+    const seed = result.files.find(f => f.path === 'server/seed.ts')?.content;
+    expect(seed).toBeDefined();
+    // Post has unresolved required FK (mystery_id) — should be skipped
+    expect(seed).toContain('TODO: Post has unresolved required FK fields');
+  });
+});
+
+// ---- E1: projectflow schema integration ----
+
+describe('E1: projectflow schema integration', () => {
+  it('schema has real relation fields + @unique + @@index + 1 ambiguous TODO', () => {
+    const schema = getServerFile('projectflow', 'server/prisma/schema.prisma')!;
+
+    // Real relation fields (not TODO comments)
+    expect(schema).toContain('projects  Project[]');
+    expect(schema).toContain('workspace  Workspace');
+    expect(schema).toContain('fields: [workspace_id]');
+    expect(schema).toContain('tasks  Task[]');
+    expect(schema).toContain('project  Project');
+    expect(schema).toContain('fields: [project_id]');
+    expect(schema).toContain('comments  Comment[]');
+    expect(schema).toContain('task  Task');
+    expect(schema).toContain('fields: [task_id]');
+    expect(schema).toContain('assigned  Task[]');
+    expect(schema).toContain('assignee  User?');
+    expect(schema).toContain('fields: [assignee_id]');
+
+    // @unique indexes
+    expect(schema).toContain('@unique');
+    const emailLine = schema.split('\n').find(l => l.trim().startsWith('email') && l.includes('@unique'));
+    expect(emailLine).toBeDefined();
+    const slugLine = schema.split('\n').find(l => l.trim().startsWith('slug') && l.includes('@unique'));
+    expect(slugLine).toBeDefined();
+
+    // @@index composite
+    expect(schema).toContain('@@index([status, project_id])');
+
+    // 1 ambiguous relation (User.workspaces<>Workspace.members)
+    expect(schema).toContain('// TODO: Ambiguous relations');
+    expect(schema).toContain('User.workspaces <-> Workspace.members');
+  });
+
+  it('schema has no leftover "TODO: Prisma relation fields" from old format', () => {
+    const schema = getServerFile('projectflow', 'server/prisma/schema.prisma')!;
+    expect(schema).not.toContain('// TODO: Prisma relation fields');
+    expect(schema).not.toContain('// TODO: Add index annotations');
   });
 });
