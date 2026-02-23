@@ -1,6 +1,6 @@
 {
   "name": "airengine",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "AI-native Intermediate Representation — one .air file, full-stack apps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

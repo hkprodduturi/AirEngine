@@ -4,13 +4,13 @@
     @section:hero(
       h1:hero>"The language AI thinks in when it builds software"
       p:lead>"One .air file. Full-stack apps. Instant compilation. 300 lines of AIR replaces 5,000+ lines of React, Express, and Prisma."
-      row(btn:primary>"Get Started"+btn:secondary>"View on GitHub")
+      row:center(link:primary:"#start">"Get Started"+link:secondary:"https://github.com/hkprodduturi/AirEngine">"View on GitHub")
     )
     @section:stats(
       grid:4(
         card(h2>"298"+p:muted>"Lines of AIR")
         card(h2>"21"+p:muted>"Generated Files")
-        card(h2>"346"+p:muted>"Tests Passing")
+        card(h2>"372"+p:muted>"Tests Passing")
         card(h2>"5000+"+p:muted>"Lines Generated")
       )
     )
@@ -63,10 +63,10 @@
     @section:cta(
       h1>"Ready to Build?"
       p:lead>"Start building full-stack apps with a single file."
-      row(btn:primary>"Get Started"+btn:secondary>"Read the Docs")
+      row:center(link:primary:"#start">"Get Started"+link:secondary:"https://github.com/hkprodduturi/AirEngine#supported-blocks">"Read the Docs")
     )
     @section:footer(
       p:small>"Built by Harish Prodduturi"
-      row(btn:ghost>"GitHub"+btn:ghost>"npm"+btn:ghost>"Docs")
+      row:center(link:ghost:"https://github.com/hkprodduturi/AirEngine">"GitHub"+link:ghost:"https://www.npmjs.com/package/airengine">"npm"+link:ghost:"https://github.com/hkprodduturi/AirEngine#supported-blocks">"Docs")
     )
   )

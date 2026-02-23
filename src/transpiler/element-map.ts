@@ -40,6 +40,9 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   row: {
     tag: 'div',
     className: 'flex gap-4 items-center',
+    modifiers: {
+      center: { className: 'flex gap-4 items-center justify-center' },
+    },
   },
   grid: {
     tag: 'div',
@@ -156,6 +159,11 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   link: {
     tag: 'a',
     className: 'text-[var(--accent)] hover:underline cursor-pointer block text-center text-sm',
+    modifiers: {
+      primary: { className: 'bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium hover:brightness-110 cursor-pointer transition-colors inline-flex items-center justify-center no-underline' },
+      secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors inline-flex items-center justify-center no-underline' },
+      ghost: { className: 'bg-transparent hover:bg-[var(--hover)] px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors inline-flex items-center justify-center no-underline' },
+    },
   },
   form: {
     tag: 'form',
