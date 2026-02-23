@@ -910,8 +910,8 @@ describe('page component extraction', () => {
     const app = result.files.find(f => f.path === 'client/src/App.jsx')!.content;
     // With 3+ pages, lazy imports are used
     for (const name of ['DashboardPage', 'ProjectsPage', 'TasksPage']) {
-      const hasStatic = app.includes(`import ${name} from './pages/${name}.js'`);
-      const hasLazy = app.includes(`const ${name} = lazy(() => import('./pages/${name}.js'))`);
+      const hasStatic = app.includes(`import ${name} from './pages/${name}.jsx'`);
+      const hasLazy = app.includes(`const ${name} = lazy(() => import('./pages/${name}.jsx'))`);
       expect(hasStatic || hasLazy).toBe(true);
     }
   });
@@ -1068,8 +1068,8 @@ describe('page wiring integration (projectflow)', () => {
   it('App.jsx imports every extracted page component (static or lazy)', () => {
     for (const pf of pageFiles) {
       const name = pf.path.split('/').pop()!.replace('.jsx', '');
-      const hasStaticImport = app.includes(`import ${name} from './pages/${name}.js'`);
-      const hasLazyImport = app.includes(`const ${name} = lazy(() => import('./pages/${name}.js'))`);
+      const hasStaticImport = app.includes(`import ${name} from './pages/${name}.jsx'`);
+      const hasLazyImport = app.includes(`const ${name} = lazy(() => import('./pages/${name}.jsx'))`);
       expect(hasStaticImport || hasLazyImport).toBe(true);
     }
   });
