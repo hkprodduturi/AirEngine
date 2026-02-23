@@ -110,6 +110,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 `;
 }
 
+function hexToRgb(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
 function generateIndexCss(ctx: TranspileContext): string {
   const accent = typeof ctx.style.accent === 'string' ? ctx.style.accent : '#6366f1';
   const radius = typeof ctx.style.radius === 'number' ? ctx.style.radius : 12;
@@ -148,8 +155,10 @@ function generateIndexCss(ctx: TranspileContext): string {
 
   const vars = [
     `  --accent: ${accent};`,
+    `  --accent-rgb: ${hexToRgb(accent)};`,
     `  --radius: ${radius}px;`,
     ...themeVars,
+    `  --surface: var(--bg-secondary);`,
     ...extraVars,
   ].join('\n');
 
@@ -172,6 +181,54 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 600; padding: 12px 16px; border-bottom: 2px solid var(--border); font-size: 0.875rem; }
+td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+tbody tr:hover { background: var(--hover); }
+
+/* Forms */
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group label { font-size: 0.875rem; font-weight: 500; color: var(--muted); }
+
+/* Global input/select/textarea */
+input, select, textarea {
+  width: 100%; border: 1px solid var(--border-input); border-radius: var(--radius);
+  padding: 10px 14px; background: transparent; color: var(--fg);
+  font-size: 0.875rem; outline: none; transition: border-color 0.2s;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+}
+input::placeholder, textarea::placeholder { color: var(--muted); }
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+/* Buttons */
+button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 20px; border-radius: var(--radius); font-size: 0.875rem;
+  font-weight: 500; cursor: pointer; transition: all 0.15s; border: none;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Cards */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+}
+
+/* Empty state */
+.empty-state { text-align: center; padding: 48px 24px; color: var(--muted); font-size: 0.875rem; }
+
+/* Typography */
+h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; }
+h2 { font-size: 1.25rem; font-weight: 600; }
+
+/* Sidebar base */
+aside { background: var(--surface); }
 `;
 }
 

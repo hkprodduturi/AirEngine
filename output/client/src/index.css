@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent: #6366f1;
+  --radius: 12px;
+  --bg: #030712;
+  --bg-secondary: rgba(255,255,255,0.03);
+  --fg: #f3f4f6;
+  --muted: rgba(255,255,255,0.5);
+  --border: rgba(255,255,255,0.1);
+  --border-input: rgba(255,255,255,0.2);
+  --hover: rgba(255,255,255,0.08);
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+* {
+  box-sizing: border-box;
+}

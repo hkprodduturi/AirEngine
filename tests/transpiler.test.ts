@@ -283,6 +283,18 @@ describe('transpile: todo.air', () => {
     expect(jsx).toContain('text-[var(--fg)]');
   });
 
+  it('wraps content in default 900px container', () => {
+    expect(jsx).toContain('max-w-[900px]');
+    expect(jsx).toContain('mx-auto');
+    expect(jsx).toContain('px-6 py-8');
+  });
+
+  it('generates segmented tab control', () => {
+    expect(jsx).toContain('bg-[var(--surface)]');
+    expect(jsx).toContain('rounded-[calc(var(--radius)-4px)]');
+    expect(jsx).toContain("text-[var(--muted)] hover:text-[var(--fg)]");
+  });
+
   it('generates filter tabs', () => {
     expect(jsx).toContain('"all"');
     expect(jsx).toContain('"active"');
@@ -318,9 +330,12 @@ describe('transpile: expense-tracker.air', () => {
     expect(jsx).toContain('bg-[var(--accent)]');
   });
 
-  it('generates stat cards', () => {
+  it('generates stat cards with structured layout', () => {
     expect(jsx).toContain('Total');
     expect(jsx).toContain('Average');
+    expect(jsx).toContain('bg-[var(--surface)]');
+    expect(jsx).toContain('uppercase tracking-wide');
+    expect(jsx).toContain('text-2xl font-bold');
   });
 
   it('generates expense card iteration', () => {
@@ -890,6 +905,7 @@ describe('transpile: output structure', () => {
     const result = transpileFile('todo');
     const css = result.files.find(f => f.path === 'src/index.css')!.content;
     expect(css).toContain('--accent: #6366f1');
+    expect(css).toContain('--accent-rgb:');
     expect(css).toContain('--radius: 12px');
     expect(css).toContain('--bg:');
     expect(css).toContain('--fg:');
@@ -898,9 +914,22 @@ describe('transpile: output structure', () => {
     expect(css).toContain('--border-input:');
     expect(css).toContain('--hover:');
     expect(css).toContain('--card-shadow:');
+    expect(css).toContain('--surface:');
     expect(css).toContain('background: var(--bg)');
     expect(css).toContain('color: var(--fg)');
     expect(css).toContain('@tailwind');
+  });
+
+  it('generates component CSS primitives in index.css', () => {
+    const result = transpileFile('todo');
+    const css = result.files.find(f => f.path === 'src/index.css')!.content;
+    expect(css).toContain('.form-group');
+    expect(css).toContain('.empty-state');
+    expect(css).toContain('.card');
+    expect(css).toContain('border-collapse');
+    expect(css).toContain('button:disabled');
+    expect(css).toContain('rgba(var(--accent-rgb)');
+    expect(css).toContain('aside { background: var(--surface)');
   });
 
   it('App.jsx uses CSS variables for component styling', () => {

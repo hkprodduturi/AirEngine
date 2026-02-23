@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id  Int  @id @default(autoincrement())
+  email  String
+  name  String
+  avatar  String?
+  role  String // admin, member, viewer
+  created_at  DateTime  @default(now())
+}
+
+model Workspace {
+  id  Int  @id @default(autoincrement())
+  name  String
+  slug  String
+  plan  String // free, pro, enterprise
+  created_at  DateTime  @default(now())
+}
+
+model Project {
+  id  Int  @id @default(autoincrement())
+  name  String
+  description  String?
+  status  String // active, archived, completed
+  workspace_id  Int
+  created_at  DateTime  @default(now())
+}
+
+model Task {
+  id  Int  @id @default(autoincrement())
+  title  String
+  description  String?
+  status  String // todo, in_progress, review, done
+  priority  String // low, medium, high, urgent
+  assignee_id  Int?
+  project_id  Int
+  due_date  DateTime?
+  created_at  DateTime  @default(now())
+}
+
+model Comment {
+  id  Int  @id @default(autoincrement())
+  body  String
+  task_id  Int
+  author_id  Int
+  created_at  DateTime  @default(now())
+}
+
+// TODO: Prisma relation fields
+// User.workspaces <-> Workspace.members
+// Workspace.projects <-> Project.workspace
+// Project.tasks <-> Task.project
+// Task.comments <-> Comment.task
+// Task.assignee <-> User.assigned
+// Comment.author <-> User.comments
+
+// TODO: Add index annotations to models
+// @@index([User.email]) (unique)
+// @@index([Workspace.slug]) (unique)
+// @@index([Task.status, Task.project_id])
