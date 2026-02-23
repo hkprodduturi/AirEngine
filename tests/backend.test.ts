@@ -1585,3 +1585,136 @@ describe('E1: projectflow schema integration', () => {
     expect(schema).not.toContain('// TODO: Add index annotations');
   });
 });
+
+// ---- E2: Deploy Wiring ----
+
+describe('E2: deploy wiring', () => {
+  it('generates Dockerfile for projectflow', () => {
+    const dockerfile = getServerFile('projectflow', 'server/Dockerfile')!;
+    expect(dockerfile).toBeDefined();
+    expect(dockerfile).toContain('FROM node:20-alpine');
+    expect(dockerfile).toContain('AS builder');
+    expect(dockerfile).toContain('EXPOSE 3001');
+    expect(dockerfile).toContain('CMD ["node", "dist/server.js"]');
+    expect(dockerfile).toContain('npm install');
+    expect(dockerfile).not.toContain('npm ci');
+  });
+
+  it('Dockerfile includes Prisma when @db exists', () => {
+    const dockerfile = getServerFile('projectflow', 'server/Dockerfile')!;
+    // Prisma generate only in builder stage
+    expect(dockerfile).toContain('RUN npx prisma generate');
+    // Production copies pre-built Prisma artifacts
+    expect(dockerfile).toContain('COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma');
+    expect(dockerfile).toContain('COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma');
+    expect(dockerfile).toContain('COPY --from=builder /app/prisma ./prisma');
+    // No prisma generate after --omit=dev
+    const prodSection = dockerfile.split('# ---- Production ----')[1];
+    expect(prodSection).not.toContain('prisma generate');
+  });
+
+  it('docker-compose.yml at root', () => {
+    const result = transpileFile('projectflow');
+    const compose = result.files.find(f => f.path === 'docker-compose.yml');
+    expect(compose).toBeDefined();
+    expect(compose!.content).toContain('services:');
+    expect(compose!.content).toContain('server:');
+    expect(compose!.content).toContain('"3001:3001"');
+    expect(compose!.content).toContain('env_file: ./server/.env');
+  });
+
+  it('docker-compose has bind mount when @db exists', () => {
+    const result = transpileFile('projectflow');
+    const compose = result.files.find(f => f.path === 'docker-compose.yml')!;
+    expect(compose.content).toContain('./server/data:/app/data');
+    expect(compose.content).toContain('volumes:');
+    expect(compose.content).toContain('DATABASE_URL=file:/app/data/app.db');
+    // No named volume (bind mount instead)
+    expect(compose.content).not.toContain('server-data:');
+  });
+
+  it('.dockerignore generated', () => {
+    const dockerignore = getServerFile('projectflow', 'server/.dockerignore')!;
+    expect(dockerignore).toBeDefined();
+    expect(dockerignore).toContain('node_modules');
+    expect(dockerignore).toContain('.env');
+    expect(dockerignore).toContain('*.db');
+    expect(dockerignore).toContain('.DS_Store');
+    expect(dockerignore).toContain('coverage');
+  });
+
+  it('.env.example with documented vars', () => {
+    const envExample = getServerFile('projectflow', 'server/.env.example')!;
+    expect(envExample).toBeDefined();
+    expect(envExample).toContain('DATABASE_URL');
+    expect(envExample).toContain('JWT_SECRET=');
+    expect(envExample).toContain('PORT=3001');
+    expect(envExample).toContain('#');
+  });
+
+  it('README has deployment section', () => {
+    const result = transpileFile('projectflow');
+    const readme = result.files.find(f => f.path === 'README.md')!;
+    expect(readme.content).toContain('## Deployment');
+    expect(readme.content).toContain('docker compose up');
+    expect(readme.content).toContain('docker build');
+    // DB init uses explicit DATABASE_URL for bind-mount path
+    expect(readme.content).toContain('mkdir -p data');
+    expect(readme.content).toContain('DATABASE_URL="file:../data/app.db"');
+    expect(readme.content).toContain('bind-mount');
+  });
+
+  it('fullstack-todo: no deploy files', () => {
+    const result = transpileFile('fullstack-todo');
+    expect(result.files.find(f => f.path === 'server/Dockerfile')).toBeUndefined();
+    expect(result.files.find(f => f.path === 'server/.dockerignore')).toBeUndefined();
+    expect(result.files.find(f => f.path === 'server/.env.example')).toBeUndefined();
+    expect(result.files.find(f => f.path === 'docker-compose.yml')).toBeUndefined();
+  });
+
+  it('fullstack-todo README: no deploy section', () => {
+    const result = transpileFile('fullstack-todo');
+    const readme = result.files.find(f => f.path === 'README.md')!;
+    expect(readme.content).not.toContain('## Deployment');
+  });
+
+  it('frontend-only: no deploy files', () => {
+    const result = transpileFile('todo');
+    expect(result.files.find(f => f.path === 'server/Dockerfile')).toBeUndefined();
+    expect(result.files.find(f => f.path === 'server/.dockerignore')).toBeUndefined();
+    expect(result.files.find(f => f.path === 'server/.env.example')).toBeUndefined();
+    expect(result.files.find(f => f.path === 'docker-compose.yml')).toBeUndefined();
+  });
+
+  it('port override: @deploy port wins', () => {
+    const ast = parse('@app:t\n@db{\nItem{id:int:primary:auto,name:str}\n}\n@api(\nGET:/items>~db.Item.findMany\n)\n@deploy(target:docker,port:4000)\n@ui(\ntext>"hi"\n)');
+    const result = transpile(ast);
+    const dockerfile = result.files.find(f => f.path === 'server/Dockerfile')!;
+    expect(dockerfile.content).toContain('EXPOSE 4000');
+    const compose = result.files.find(f => f.path === 'docker-compose.yml')!;
+    expect(compose.content).toContain('"4000:4000"');
+  });
+
+  it('healthcheck uses /api when @api routes exist', () => {
+    const dockerfile = getServerFile('projectflow', 'server/Dockerfile')!;
+    expect(dockerfile).toContain('wget -qO- http://localhost:3001/api');
+  });
+
+  it('healthcheck uses / when no @api routes', () => {
+    const ast = parse('@app:t\n@webhook(\nPOST:/hook>!process\n)\n@deploy(target:docker,port:3001)\n@ui(\ntext>"hi"\n)');
+    const result = transpile(ast);
+    const dockerfile = result.files.find(f => f.path === 'server/Dockerfile')!;
+    expect(dockerfile.content).toContain('wget -qO- http://localhost:3001/');
+    expect(dockerfile.content).not.toContain('wget -qO- http://localhost:3001/api');
+  });
+
+  it('non-docker target: TODO in README, no files', () => {
+    const ast = parse('@app:t\n@api(\nGET:/data>handler\n)\n@deploy(target:aws)\n@ui(\ntext>"hi"\n)');
+    const result = transpile(ast);
+    const readme = result.files.find(f => f.path === 'README.md')!;
+    expect(readme.content).toContain('TODO');
+    expect(readme.content).toContain('aws');
+    expect(result.files.find(f => f.path === 'server/Dockerfile')).toBeUndefined();
+    expect(result.files.find(f => f.path === 'docker-compose.yml')).toBeUndefined();
+  });
+});

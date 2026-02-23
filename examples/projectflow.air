@@ -60,6 +60,10 @@
   PORT:int:3001
 )
 
+# ---- Deploy Config ----
+
+@deploy(target:docker,port:3001,node:20)
+
 # ---- API Routes (18 endpoints) ----
 
 @api(

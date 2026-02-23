@@ -18,6 +18,7 @@ import { generateServer, generateReadme } from './express.js';
 import { generateApiClient } from './api-client-gen.js';
 import { generateClientTypesFile } from './types-gen.js';
 import { generateResourceHooks } from './resource-hook-gen.js';
+import { generateDockerCompose } from './deploy-gen.js';
 
 export interface TranspileOptions {
   framework?: 'react';
@@ -150,6 +151,11 @@ export function transpile(
 
     files.push(...generateServer(ctx));
     files.push({ path: 'README.md', content: generateReadme(ctx) });
+
+    if (ctx.deploy) {
+      const compose = generateDockerCompose(ctx);
+      if (compose) files.push({ path: 'docker-compose.yml', content: compose });
+    }
   } else {
     // Frontend-only: flat (backward compatible)
     files.push(...scaffoldFiles);

@@ -1,6 +1,10 @@
 @app:airengine-site
   @style(theme:dark,accent:#7c5cfc,radius:12,font:sans,maxWidth:1100)
+  @nav(
+    /#hero,/#features,/#blocks,/#start,/#cta
+  )
   @ui(
+    header(logo>"⚡ AirEngine"+nav(link:ghost:"#stats">"Stats",link:ghost:"#features">"Features",link:ghost:"#blocks">"Blocks",link:ghost:"https://github.com/hkprodduturi/AirEngine">"GitHub"))
     @section:hero(
       h1:hero>"The language AI thinks in when it builds software"
       p:lead>"One .air file. Full-stack apps. Instant compilation. 300 lines of AIR replaces 5,000+ lines of React, Express, and Prisma."
@@ -10,7 +14,7 @@
       grid:4(
         card(h2>"298"+p:muted>"Lines of AIR")
         card(h2>"21"+p:muted>"Generated Files")
-        card(h2>"372"+p:muted>"Tests Passing")
+        card(h2>"454"+p:muted>"Tests Passing")
         card(h2>"5000+"+p:muted>"Lines Generated")
       )
     )

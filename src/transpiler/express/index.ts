@@ -45,6 +45,12 @@ import {
   generateEmailStub,
 } from './blocks-gen.js';
 
+import {
+  generateDockerfile,
+  generateDockerignore,
+  generateEnvExample,
+} from '../deploy-gen.js';
+
 export { generateReadme } from './readme-gen.js';
 
 // ---- Main entry ----
@@ -142,6 +148,16 @@ export function generateServer(ctx: TranspileContext): OutputFile[] {
 
   // server.ts — main entry point (always last so we know what to import)
   files.push({ path: 'server/server.ts', content: generateServerEntry(ctx) });
+
+  // Deploy artifacts (only if @deploy exists with target:docker)
+  if (ctx.deploy) {
+    const dockerfile = generateDockerfile(ctx);
+    if (dockerfile) files.push({ path: 'server/Dockerfile', content: dockerfile });
+    const dockerignore = generateDockerignore(ctx);
+    if (dockerignore) files.push({ path: 'server/.dockerignore', content: dockerignore });
+    const envExample = generateEnvExample(ctx);
+    if (envExample) files.push({ path: 'server/.env.example', content: envExample });
+  }
 
   return files;
 }
