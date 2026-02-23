@@ -133,7 +133,7 @@ export function generateApiRouter(ctx: TranspileContext): string {
         // Type validation via validateFields
         const valSchema = generateValidationSchema(route);
         if (valSchema) {
-          lines.push(`    const _errors = validateFields(${bodyVar} as Record<string, unknown>, ${valSchema});`);
+          lines.push(`    const _errors = validateFields(${bodyVar} as unknown as Record<string, unknown>, ${valSchema});`);
           lines.push("    if (_errors.length > 0) return res.status(400).json({ error: 'Validation error', details: _errors });");
         }
       }
