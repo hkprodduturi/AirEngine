@@ -95,9 +95,9 @@ function generateFieldValue(field: AirDbField, modelName: string, n: number): st
     case 'str':
       return generateStringValue(name, modelName, n);
     case 'int':
-      return `${n * 10}`;
+      return generateIntValue(name, n);
     case 'float':
-      return `${n * 10.5}`;
+      return generateFloatValue(name, n);
     case 'bool':
       return n % 2 === 0 ? 'true' : 'false';
     case 'enum': {
@@ -117,12 +117,36 @@ function generateFieldValue(field: AirDbField, modelName: string, n: number): st
 /** Generate smart string values based on field name heuristics */
 function generateStringValue(fieldName: string, modelName: string, n: number): string {
   const lower = fieldName.toLowerCase();
-  if (lower === 'email') return `'user${n}@example.com'`;
-  if (lower === 'name') return `'User ${n}'`;
+  if (lower === 'email') return `'${modelName.toLowerCase()}${n}@example.com'`;
+  if (lower === 'name') return `'${modelName} ${n}'`;
   if (lower === 'slug') return `'sample-${modelName.toLowerCase()}-${n}'`;
   if (lower === 'password') return `'password${n}'`;
-  if (lower === 'title') return `'Sample ${fieldName} ${n}'`;
-  return `'Sample ${fieldName} ${n}'`;
+  if (lower === 'title') return `'${modelName} ${fieldName} ${n}'`;
+  if (lower === 'description' || lower === 'bio') return `'${modelName} description for record ${n}.'`;
+  if (lower === 'url' || lower === 'website') return `'https://example.com/${modelName.toLowerCase()}/${n}'`;
+  if (lower === 'avatar' || lower === 'image') return `'https://api.dicebear.com/7.x/initials/svg?seed=${modelName}${n}'`;
+  if (lower === 'phone') return `'+1555000100${n}'`;
+  if (lower === 'address') return `'${n}00 Main St, City, ST'`;
+  if (lower === 'content' || lower === 'body' || lower === 'text') return `'Sample content for ${modelName.toLowerCase()} ${n}.'`;
+  return `'${modelName} ${fieldName} ${n}'`;
+}
+
+/** Generate smart integer values based on field name heuristics */
+function generateIntValue(fieldName: string, n: number): string {
+  const lower = fieldName.toLowerCase();
+  if (lower === 'age') return `${20 + 5 * n}`;
+  if (lower === 'quantity' || lower === 'count') return `${n * 3}`;
+  if (lower === 'rating') return `${Math.min(5, n + 2)}`;
+  return `${n * 10}`;
+}
+
+/** Generate smart float values based on field name heuristics */
+function generateFloatValue(fieldName: string, n: number): string {
+  const lower = fieldName.toLowerCase();
+  if (lower === 'price' || lower === 'amount' || lower === 'cost') return `${(29.99 * n).toFixed(2)}`;
+  if (lower === 'rating' || lower === 'score') return `${(3.0 + 0.5 * n).toFixed(1)}`;
+  if (lower === 'percentage' || lower === 'percent') return `${(25.0 * n).toFixed(1)}`;
+  return `${n * 10.5}`;
 }
 
 /**

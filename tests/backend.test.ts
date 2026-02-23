@@ -428,7 +428,7 @@ describe('server/types.ts generation', () => {
 
   it('api.ts uses typed body destructuring', () => {
     const api = getServerFile('fullstack-todo', 'server/api.ts')!;
-    expect(api).toContain('req.body as CreateTodoBody');
+    expect(api).toContain('as CreateTodoBody');
     expect(api).toContain('const { text }');
   });
 });
@@ -736,5 +736,84 @@ describe('mutation wiring (fullstack)', () => {
     const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
     expect(app.content).toContain('api.createSignup(formData)');
     expect(app.content).toContain('new FormData');
+  });
+});
+
+// ---- D2: Backend Hardening ----
+
+describe('D2: backend hardening', () => {
+  it('POST handler validates required body params (fullstack-todo)', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts');
+    expect(api).toBeDefined();
+    expect(api).toContain('status(400)');
+    expect(api).toContain('Missing required fields');
+  });
+
+  it('PUT handler with :id validates integer id', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts');
+    expect(api).toBeDefined();
+    expect(api).toContain("Invalid id");
+    expect(api).toContain('id must be an integer');
+  });
+
+  it('500 handler includes conditional details', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts');
+    expect(api).toBeDefined();
+    expect(api).toContain("process.env.NODE_ENV !== 'production'");
+    expect(api).toContain('error instanceof Error');
+    expect(api).toContain('details');
+  });
+
+  it('400 validation errors include details field', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts');
+    expect(api).toBeDefined();
+    expect(api).toContain("details: 'Required:");
+  });
+
+  it('seed data uses model-aware string values (not generic "Sample")', () => {
+    const seed = getServerFile('fullstack-todo', 'server/seed.ts');
+    expect(seed).toBeDefined();
+    // Should use model-aware value like 'Sample content for todo 1.' not generic 'Sample text 1'
+    expect(seed).toContain('todo');
+    expect(seed).not.toContain("'Sample text 1'");
+  });
+
+  it('seed data uses realistic email patterns', () => {
+    const ast = parse('@app:t\n@db{\nUser{id:int:primary:auto,email:str:required,name:str:required}\n}\n@api(\nCRUD:/users>~db.User\n)');
+    const result = transpile(ast);
+    const seed = result.files.find(f => f.path === 'server/seed.ts')?.content;
+    expect(seed).toBeDefined();
+    expect(seed).toContain('user1@example.com');
+  });
+
+  it('api client is .js not .ts (no regression)', () => {
+    const result = transpileFile('fullstack-todo');
+    const apiClient = result.files.find(f => f.path === 'client/src/api.js');
+    expect(apiClient).toBeDefined();
+    const apiTs = result.files.find(f => f.path === 'client/src/api.ts');
+    expect(apiTs).toBeUndefined();
+  });
+
+  it('types.ts is imported by api.ts (no regression)', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts');
+    expect(api).toBeDefined();
+    expect(api).toContain("from './types.js'");
+  });
+
+  it('findMany returns raw array (no pagination wrapper)', () => {
+    const api = getServerFile('fullstack-todo', 'server/api.ts');
+    expect(api).toBeDefined();
+    expect(api).toContain('prisma.todo.findMany()');
+    expect(api).not.toContain('pagination');
+    expect(api).not.toContain('page');
+  });
+
+  it('unknown handler still returns 501', () => {
+    const ast = parse('@app:t\n@api(\nGET:/custom>unknownHandler\n)\n@ui(\ntext>"hello"\n)');
+    const result = transpile(ast);
+    const api = result.files.find(f => f.path === 'server/api.ts')?.content;
+    expect(api).toBeDefined();
+    expect(api).toContain('501');
+    expect(api).toContain('Not implemented');
   });
 });

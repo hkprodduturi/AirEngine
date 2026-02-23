@@ -224,6 +224,20 @@ function generateApiRouter(ctx: TranspileContext): string {
     lines.push(`apiRouter.${method}('${path}', async (req, res) => {`);
     lines.push('  try {');
 
+    // Validate :id param for integer primary keys
+    const hasIdParam = path.includes(':id');
+    if (hasIdParam && ctx.db) {
+      const modelMatch = handler.match(/^~db\.(\w+)\./);
+      if (modelMatch) {
+        const isIntId = hasIntPrimaryKey(modelMatch[1], ctx.db);
+        if (isIntId) {
+          lines.push("    if (isNaN(parseInt(req.params.id))) {");
+          lines.push("      return res.status(400).json({ error: 'Invalid id', details: 'id must be an integer' });");
+          lines.push('    }');
+        }
+      }
+    }
+
     // Get body type name for typed destructuring
     let bodyTypeName: string | undefined;
     if (route.params && route.params.length > 0) {
@@ -237,10 +251,24 @@ function generateApiRouter(ctx: TranspileContext): string {
 
     const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
     if (prismaCall) {
-      // Add typed destructuring if we have params and a body type
+      // Add typed destructuring with validation if we have params and a body type
       if (bodyTypeName && route.params && route.params.length > 0) {
+        // Use _body to avoid collision when a param is named 'body'
+        const hasBodyParam = route.params.some(p => p.name === 'body');
+        const bodyVar = hasBodyParam ? '_body' : 'body';
+        lines.push(`    const ${bodyVar} = (req.body ?? {}) as ${bodyTypeName};`);
         const paramNames = route.params.map(p => p.name).join(', ');
-        lines.push(`    const { ${paramNames} } = req.body as ${bodyTypeName};`);
+        lines.push(`    const { ${paramNames} } = ${bodyVar};`);
+
+        // Validate required params
+        const requiredParams = route.params.filter(p => p.type.kind !== 'optional');
+        if (requiredParams.length > 0) {
+          const checks = requiredParams.map(p => `${p.name} === undefined || ${p.name} === null`).join(' || ');
+          const names = requiredParams.map(p => p.name).join(', ');
+          lines.push(`    if (${checks}) {`);
+          lines.push(`      return res.status(400).json({ error: 'Missing required fields', details: 'Required: ${names}' });`);
+          lines.push('    }');
+        }
       }
       lines.push(`    const result = ${prismaCall};`);
       lines.push('    res.json(result);');
@@ -250,7 +278,8 @@ function generateApiRouter(ctx: TranspileContext): string {
     }
 
     lines.push('  } catch (error) {');
-    lines.push("    res.status(500).json({ error: 'Internal server error' });");
+    lines.push("    const details = process.env.NODE_ENV !== 'production' && error instanceof Error ? error.message : undefined;");
+    lines.push("    res.status(500).json({ error: 'Internal server error', ...(details && { details }) });");
     lines.push('  }');
     lines.push('});');
     lines.push('');
@@ -304,6 +333,20 @@ function mapHandlerToPrisma(
     default:
       return null;
   }
+}
+
+/** Check if a model has an integer primary key */
+function hasIntPrimaryKey(modelName: string, db: AirDbBlock): boolean {
+  for (const model of db.models) {
+    if (model.name === modelName) {
+      for (const field of model.fields) {
+        if (field.primary && field.name === 'id') {
+          return unwrapKind(field.type) === 'int';
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /** Determine id expression: parseInt for int primary keys, string otherwise */
