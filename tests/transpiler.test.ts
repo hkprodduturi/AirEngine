@@ -480,6 +480,51 @@ describe('transpile: landing.air', () => {
   it('generates primary button', () => {
     expect(jsx).toContain('Get Started');
   });
+
+  it('generates icon emojis', () => {
+    expect(jsx).toContain('&#9889;');   // zap
+    expect(jsx).toContain('&#128737;'); // shield
+    expect(jsx).toContain('&#128101;'); // users
+  });
+
+  it('generates pricing cards with structured content', () => {
+    expect(jsx).toContain('$29/mo');
+    expect(jsx).toContain('Custom');
+    expect(jsx).toContain('font-semibold');
+  });
+
+  it('generates feature lists from plan elements', () => {
+    expect(jsx).toContain('<ul');
+    expect(jsx).toContain('5 apps');
+    expect(jsx).toContain('community');
+    expect(jsx).toContain('unlimited');
+    expect(jsx).toContain('&#10004;');
+  });
+
+  it('generates pricing buttons', () => {
+    expect(jsx).toContain('Start Free');
+    expect(jsx).toContain('Go Pro');
+    expect(jsx).toContain('Contact');
+  });
+
+  it('generates Popular badge', () => {
+    expect(jsx).toContain('Popular');
+    expect(jsx).toContain('rounded-full');
+  });
+
+  it('generates CTA with email input and waitlist button', () => {
+    expect(jsx).toContain('type="email"');
+    expect(jsx).toContain('Join Waitlist');
+  });
+
+  it('generates hero image', () => {
+    expect(jsx).toContain('<img');
+    expect(jsx).toContain('/assets/hero.png');
+  });
+
+  it('wraps grid compose children in containers', () => {
+    expect(jsx).toContain('flex flex-col gap-4');
+  });
 });
 
 // ---- Golden output: todo.air codegen shape ----

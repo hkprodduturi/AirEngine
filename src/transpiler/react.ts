@@ -11,6 +11,18 @@ import type { UIAnalysis, ResolvedBind } from './normalize-ui.js';
 import { resolveBindChain } from './normalize-ui.js';
 import { mapElement } from './element-map.js';
 
+// ---- Icon emoji map ----
+
+const ICON_EMOJI: Record<string, string> = {
+  zap: '&#9889;', shield: '&#128737;', users: '&#128101;',
+  star: '&#11088;', heart: '&#10084;', check: '&#10004;',
+  x: '&#10006;', search: '&#128269;', settings: '&#9881;',
+  mail: '&#9993;', lock: '&#128274;', globe: '&#127760;',
+  home: '&#127968;', bell: '&#128276;', edit: '&#9998;',
+  trash: '&#128465;', plus: '&#43;', minus: '&#8722;',
+  arrow: '&#10140;', clock: '&#128339;', calendar: '&#128197;',
+};
+
 // ---- Scope tracking for code generation ----
 
 interface Scope {
@@ -464,6 +476,35 @@ function generateElementJSX(
     }
   }
 
+  // Grid element with first child as modifier (grid:3 appears as first child)
+  if (node.element === 'grid' && node.children && node.children.length > 0) {
+    let gridChildren = node.children;
+    let gridMapping = mapping;
+    const first = gridChildren[0];
+    if (first.kind === 'binary' && first.operator === ':') {
+      const bindRes = resolveBindChain(first);
+      if (bindRes && bindRes.element === 'grid' && bindRes.binding?.kind === 'value') {
+        const cols = String(bindRes.binding.value);
+        gridMapping = mapElement('grid', [cols]);
+        gridChildren = gridChildren.slice(1);
+      }
+    }
+    // Wrap compose (+) children in a div so each becomes one grid cell
+    const childJsx = gridChildren.map(c => {
+      if (c.kind === 'binary' && c.operator === '+') {
+        const inner = generateJSX(c, ctx, analysis, scope, ind + 4);
+        return `${pad}  <div className="flex flex-col gap-4">\n${inner}\n${pad}  </div>`;
+      }
+      return generateJSX(c, ctx, analysis, scope, ind + 2);
+    }).filter(Boolean).join('\n');
+    return `${pad}<${gridMapping.tag} className="${gridMapping.className}">\n${childJsx}\n${pad}</${gridMapping.tag}>`;
+  }
+
+  // Plan element — render as pricing card with structured children
+  if (node.element === 'plan' && node.children && node.children.length > 0) {
+    return generatePlanElement(node, ctx, analysis, scope, ind);
+  }
+
   // Element with children
   if (node.children && node.children.length > 0) {
     const childJsx = node.children.map(c =>
@@ -861,6 +902,13 @@ function generateBindJSX(
       ).join('\n');
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>\n${itemsJsx}\n${pad}</${mapping.tag}>`;
     }
+  }
+
+  // Icon — render with emoji or modifier name
+  if (resolved.element === 'icon') {
+    const iconName = resolved.modifiers[0] || '';
+    const emoji = ICON_EMOJI[iconName] || iconName;
+    return `${pad}<span className="${mapping.className}">${emoji}</span>`;
   }
 
   // Chart — render placeholder
@@ -1516,6 +1564,53 @@ function generateTableElement(
   }
 
   return `${pad}<table className="w-full">\n${pad}  <thead>\n${pad}    <tr>\n${headerCells}\n${pad}    </tr>\n${pad}  </thead>\n${pad}  <tbody>\n${pad}    <tr>\n${columns.map(c => `${pad}      <td className="p-3 border-b border-[var(--border)]">--</td>`).join('\n')}\n${pad}    </tr>\n${pad}  </tbody>\n${pad}</table>`;
+}
+
+function generatePlanElement(
+  node: AirUINode & { kind: 'element' },
+  _ctx: TranspileContext,
+  _analysis: UIAnalysis,
+  _scope: Scope,
+  ind: number,
+): string {
+  const pad = ' '.repeat(ind);
+  const mapping = mapElement('plan', []);
+  let name = '';
+  let price = '';
+  const features: string[] = [];
+
+  for (const child of node.children ?? []) {
+    if (child.kind === 'text') {
+      const text = child.text;
+      if (text.startsWith('[[') || text.startsWith('[')) {
+        // Feature list: [[feat:5_apps,feat:community] → parse features
+        const cleaned = text.replace(/^\[+|\]+$/g, '');
+        for (const item of cleaned.split(',')) {
+          const feat = item.trim().replace(/^feat:/, '').replace(/_/g, ' ');
+          if (feat) features.push(feat);
+        }
+      } else if (!name) {
+        name = text;
+      }
+    } else if (child.kind === 'value') {
+      price = typeof child.value === 'number' ? (child.value === 0 ? 'Free' : `$${child.value}/mo`) : String(child.value);
+    } else if (child.kind === 'element' && child.element === 'custom') {
+      price = 'Custom';
+    }
+  }
+
+  const lines = [`${pad}<div className="${mapping.className}">`];
+  if (name) lines.push(`${pad}  <div className="text-lg font-semibold">${escapeText(name)}</div>`);
+  if (price) lines.push(`${pad}  <div className="text-3xl font-bold">${escapeText(price)}</div>`);
+  if (features.length > 0) {
+    lines.push(`${pad}  <ul className="space-y-1 text-sm">`);
+    for (const feat of features) {
+      lines.push(`${pad}    <li>&#10004; ${escapeText(feat)}</li>`);
+    }
+    lines.push(`${pad}  </ul>`);
+  }
+  lines.push(`${pad}</div>`);
+  return lines.join('\n');
 }
 
 function generateTabsElement(
