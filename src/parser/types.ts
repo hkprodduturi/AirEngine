@@ -12,6 +12,7 @@ export type AirType =
   | { kind: 'float'; default?: AirLiteral }
   | { kind: 'bool'; default?: AirLiteral }
   | { kind: 'date'; default?: AirLiteral }
+  | { kind: 'datetime'; default?: AirLiteral }
   | { kind: 'enum'; values: string[]; default?: AirLiteral }
   | { kind: 'array'; of: AirType }
   | { kind: 'object'; fields: AirField[] }
@@ -174,9 +175,16 @@ export interface AirHook {
 
 // ---- Full-Stack Block Types ----
 
+export interface AirDbField extends AirField {
+  primary?: boolean;
+  required?: boolean;
+  auto?: boolean;
+  default?: AirLiteral;
+}
+
 export interface AirDbModel {
   name: string;
-  fields: AirField[];
+  fields: AirDbField[];
 }
 
 export interface AirDbRelation {

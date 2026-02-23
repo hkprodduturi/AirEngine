@@ -21,7 +21,7 @@ function transpileFile(name: string) {
 
 function getAppJsx(name: string): string {
   const result = transpileFile(name);
-  const appFile = result.files.find(f => f.path === 'src/App.jsx');
+  const appFile = result.files.find(f => f.path === 'src/App.jsx' || f.path === 'client/src/App.jsx');
   return appFile?.content ?? '';
 }
 
@@ -607,7 +607,7 @@ describe('golden: todo.air codegen shape', () => {
 
 describe('golden: dashboard.air codegen shape', () => {
   const result = transpileFile('dashboard');
-  const jsx = result.files.find(f => f.path === 'src/App.jsx')!.content;
+  const jsx = result.files.find(f => f.path === 'src/App.jsx' || f.path === 'client/src/App.jsx')!.content;
   const lines = jsx.split('\n');
 
   it('App.jsx starts with React import', () => {

@@ -1,8 +1,10 @@
 /**
  * AIR Transpiler — Orchestrator
  *
- * Converts a validated AirAST into a working React application.
- * Output is a complete Vite + React + Tailwind project.
+ * Converts a validated AirAST into a working application.
+ *
+ * Frontend-only .air files → flat Vite + React + Tailwind project.
+ * Fullstack .air files (with @db, @api, etc.) → client/ + server/ structure.
  *
  * Pure function — no file I/O.
  */
@@ -12,6 +14,7 @@ import { extractContext } from './context.js';
 import { analyzeUI } from './normalize-ui.js';
 import { generateApp } from './react.js';
 import { generateScaffold } from './scaffold.js';
+import { generateServer } from './express.js';
 
 export interface TranspileOptions {
   framework?: 'react';
@@ -52,10 +55,18 @@ export function transpile(
   const scaffoldFiles = generateScaffold(ctx);
 
   // 5. Assemble output
-  const files: OutputFile[] = [
-    ...scaffoldFiles,
-    { path: 'src/App.jsx', content: appCode },
-  ];
+  const files: OutputFile[] = [];
+
+  if (ctx.hasBackend) {
+    // Fullstack: client/ + server/
+    files.push(...scaffoldFiles.map(f => ({ ...f, path: `client/${f.path}` })));
+    files.push({ path: 'client/src/App.jsx', content: appCode });
+    files.push(...generateServer(ctx));
+  } else {
+    // Frontend-only: flat (backward compatible)
+    files.push(...scaffoldFiles);
+    files.push({ path: 'src/App.jsx', content: appCode });
+  }
 
   const outputLines = files.reduce((sum, f) => sum + f.content.split('\n').length, 0);
 

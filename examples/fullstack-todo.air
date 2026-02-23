@@ -1,0 +1,20 @@
+@app:fullstack-todo
+  @state{items:[{id:int,text:str,done:bool}],filter:enum(all,active,done)}
+  @style(theme:dark,accent:#6366f1,radius:12,font:sans)
+  @db{
+    Todo{id:int:primary:auto,text:str:required,done:bool:default(false),created_at:datetime:auto}
+  }
+  @api(
+    GET:/todos>~db.Todo.findMany
+    POST:/todos(text:str)>~db.Todo.create
+    PUT:/todos/:id(done:bool)>~db.Todo.update
+    DELETE:/todos/:id>~db.Todo.delete
+  )
+  @ui(
+    header>"Todo App"+badge:#items.length
+    input:text>!add({text:#val,done:false})
+    list>items|filter>*item(check:#item.done+text:#item.text+btn:icon:!del(#item.id))
+    tabs>filter.set(all,active,done)
+    footer>"#items|!done.length items left"
+  )
+  @persist:localStorage(items)

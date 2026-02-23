@@ -27,6 +27,12 @@ describe('AIR Lexer', () => {
       expect(kinds(tokens).filter(k => k === 'type_keyword')).toHaveLength(6);
     });
 
+    it('should tokenize datetime as type keyword', () => {
+      const tokens = tokenize('datetime');
+      expect(tokens[0].kind).toBe('type_keyword');
+      expect(tokens[0].value).toBe('datetime');
+    });
+
     it('should tokenize string literals', () => {
       const tokens = tokenize('"hello world" "test"');
       const strings = tokens.filter(t => t.kind === 'string');

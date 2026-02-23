@@ -6,6 +6,8 @@
 import type {
   AirAST, AirField, AirLiteral, AirRoute, AirNavRoute,
   AirAuthBlock, AirHook, AirUINode,
+  AirDbBlock, AirWebhookBlock, AirCronBlock, AirQueueBlock,
+  AirEmailBlock, AirEnvBlock, AirDeployBlock,
 } from '../parser/types.js';
 
 export interface TranspileContext {
@@ -20,6 +22,15 @@ export interface TranspileContext {
   auth: AirAuthBlock | null;
   hooks: AirHook[];
   uiNodes: AirUINode[];
+  // Backend blocks
+  db: AirDbBlock | null;
+  webhooks: AirWebhookBlock | null;
+  cron: AirCronBlock | null;
+  queue: AirQueueBlock | null;
+  email: AirEmailBlock | null;
+  env: AirEnvBlock | null;
+  deploy: AirDeployBlock | null;
+  hasBackend: boolean;
 }
 
 export function extractContext(ast: AirAST): TranspileContext {
@@ -35,6 +46,14 @@ export function extractContext(ast: AirAST): TranspileContext {
     auth: null,
     hooks: [],
     uiNodes: [],
+    db: null,
+    webhooks: null,
+    cron: null,
+    queue: null,
+    email: null,
+    env: null,
+    deploy: null,
+    hasBackend: false,
   };
 
   for (const block of ast.app.blocks) {
@@ -65,11 +84,35 @@ export function extractContext(ast: AirAST): TranspileContext {
         ctx.persistMethod = block.method;
         ctx.persistOptions = block.options ?? {};
         break;
-      // Backend blocks — not relevant for React transpile context
-      default:
+      case 'db':
+        ctx.db = block;
+        break;
+      case 'webhook':
+        ctx.webhooks = block;
+        break;
+      case 'cron':
+        ctx.cron = block;
+        break;
+      case 'queue':
+        ctx.queue = block;
+        break;
+      case 'email':
+        ctx.email = block;
+        break;
+      case 'env':
+        ctx.env = block;
+        break;
+      case 'deploy':
+        ctx.deploy = block;
         break;
     }
   }
+
+  // hasBackend if ANY backend block exists
+  ctx.hasBackend = Boolean(
+    ctx.db || ctx.apiRoutes.length > 0 || ctx.webhooks ||
+    ctx.cron || ctx.queue || ctx.email || ctx.env || ctx.deploy
+  );
 
   return ctx;
 }

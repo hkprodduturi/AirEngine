@@ -25,6 +25,7 @@ import type {
   AirHook,
   AirDbBlock,
   AirDbModel,
+  AirDbField,
   AirDbRelation,
   AirDbIndex,
   AirCronBlock,
@@ -164,7 +165,7 @@ export function parseType(s: TokenStream): AirType {
       }
       return { kind: 'enum', values: [] };
     }
-    const k = kw as 'str' | 'int' | 'float' | 'bool' | 'date';
+    const k = kw as 'str' | 'int' | 'float' | 'bool' | 'date' | 'datetime';
     // Default value: type(literal) e.g. float(2000)
     if (s.is('open_paren')) {
       s.advance();
@@ -195,6 +196,57 @@ export function parseFieldList(s: TokenStream, terminator: TokenKind): AirField[
       s.expect('colon');
       const type = parseType(s);
       fields.push({ name, type });
+    } else {
+      break;
+    }
+    s.skipNewlines();
+    if (!s.match('comma')) {
+      s.skipNewlines();
+      if (!s.is(terminator)) break;
+    }
+    s.skipNewlines();
+  }
+  return fields;
+}
+
+// ---- DB Field Parser (with modifiers) ----
+
+export function parseDbFieldList(s: TokenStream, terminator: TokenKind): AirDbField[] {
+  const fields: AirDbField[] = [];
+  s.skipNewlines();
+  while (!s.is(terminator) && !s.isEof()) {
+    if (s.is('identifier') || s.is('type_keyword')) {
+      const name = s.advance().value;
+      s.expect('colon');
+      const type = parseType(s);
+      const field: AirDbField = { name, type };
+
+      // Consume `:modifier` chains
+      while (s.is('colon') && !s.isEof()) {
+        const save = s.save();
+        s.advance(); // consume :
+        if (s.is('identifier', 'primary')) {
+          s.advance();
+          field.primary = true;
+        } else if (s.is('identifier', 'required')) {
+          s.advance();
+          field.required = true;
+        } else if (s.is('identifier', 'auto')) {
+          s.advance();
+          field.auto = true;
+        } else if (s.is('identifier', 'default')) {
+          s.advance();
+          s.expect('open_paren');
+          field.default = parseLiteral(s);
+          s.expect('close_paren');
+        } else {
+          // Unknown modifier — restore and stop
+          s.restore(save);
+          break;
+        }
+      }
+
+      fields.push(field);
     } else {
       break;
     }
@@ -895,10 +947,10 @@ export function parseDb(s: TokenStream): AirDbBlock {
       }
       s.expect('close_paren');
     } else if (s.is('identifier')) {
-      // Model: Name{field:type,...}
+      // Model: Name{field:type:modifier,...}
       const name = s.advance().value;
       s.expect('open_brace');
-      const fields = parseFieldList(s, 'close_brace');
+      const fields = parseDbFieldList(s, 'close_brace');
       s.expect('close_brace');
       models.push({ name, fields });
     } else {

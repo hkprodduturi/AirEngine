@@ -470,6 +470,72 @@ describe('@db block', () => {
     expect(db.indexes[0].fields).toEqual(['Post.author', 'Post.published']);
     expect(db.indexes[0].unique).toBe(false);
   });
+
+  it('should parse :primary modifier', () => {
+    const src = '@app:t\n@db{\nTodo{id:int:primary}\n}';
+    const ast = parse(src);
+    const db = ast.app.blocks[0] as AirDbBlock;
+    expect(db.models[0].fields[0].primary).toBe(true);
+  });
+
+  it('should parse :primary:auto combined', () => {
+    const src = '@app:t\n@db{\nTodo{id:int:primary:auto}\n}';
+    const ast = parse(src);
+    const db = ast.app.blocks[0] as AirDbBlock;
+    const field = db.models[0].fields[0];
+    expect(field.primary).toBe(true);
+    expect(field.auto).toBe(true);
+    expect(field.type.kind).toBe('int');
+  });
+
+  it('should parse :required modifier', () => {
+    const src = '@app:t\n@db{\nTodo{text:str:required}\n}';
+    const ast = parse(src);
+    const db = ast.app.blocks[0] as AirDbBlock;
+    expect(db.models[0].fields[0].required).toBe(true);
+  });
+
+  it('should parse :default(false) modifier', () => {
+    const src = '@app:t\n@db{\nTodo{done:bool:default(false)}\n}';
+    const ast = parse(src);
+    const db = ast.app.blocks[0] as AirDbBlock;
+    const field = db.models[0].fields[0];
+    expect(field.default).toBe(false);
+    expect(field.type.kind).toBe('bool');
+  });
+
+  it('should parse datetime type with :auto', () => {
+    const src = '@app:t\n@db{\nTodo{created_at:datetime:auto}\n}';
+    const ast = parse(src);
+    const db = ast.app.blocks[0] as AirDbBlock;
+    const field = db.models[0].fields[0];
+    expect(field.type.kind).toBe('datetime');
+    expect(field.auto).toBe(true);
+  });
+
+  it('should parse all modifiers in fullstack-todo.air', () => {
+    const src = readExample('fullstack-todo');
+    const ast = parse(src);
+    const db = ast.app.blocks.find(b => b.kind === 'db') as AirDbBlock;
+    expect(db.models).toHaveLength(1);
+    const todo = db.models[0];
+    expect(todo.name).toBe('Todo');
+    expect(todo.fields).toHaveLength(4);
+    // id:int:primary:auto
+    expect(todo.fields[0].name).toBe('id');
+    expect(todo.fields[0].primary).toBe(true);
+    expect(todo.fields[0].auto).toBe(true);
+    // text:str:required
+    expect(todo.fields[1].name).toBe('text');
+    expect(todo.fields[1].required).toBe(true);
+    // done:bool:default(false)
+    expect(todo.fields[2].name).toBe('done');
+    expect(todo.fields[2].default).toBe(false);
+    // created_at:datetime:auto
+    expect(todo.fields[3].name).toBe('created_at');
+    expect(todo.fields[3].type.kind).toBe('datetime');
+    expect(todo.fields[3].auto).toBe(true);
+  });
 });
 
 // ---- @cron ----
