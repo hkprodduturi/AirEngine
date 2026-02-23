@@ -603,6 +603,138 @@ describe('golden: todo.air codegen shape', () => {
   });
 });
 
+// ---- Golden output: dashboard.air codegen shape ----
+
+describe('golden: dashboard.air codegen shape', () => {
+  const result = transpileFile('dashboard');
+  const jsx = result.files.find(f => f.path === 'src/App.jsx')!.content;
+  const lines = jsx.split('\n');
+
+  it('App.jsx starts with React import', () => {
+    expect(lines[0]).toBe("import { useState, useEffect } from 'react';");
+  });
+
+  it('declares state in order: users, stats, search, period', () => {
+    const usersIdx = lines.findIndex(l => l.includes('useState') && l.includes('users'));
+    const statsIdx = lines.findIndex(l => l.includes('useState') && l.includes('stats'));
+    const searchIdx = lines.findIndex(l => l.includes('useState') && l.includes('search'));
+    const periodIdx = lines.findIndex(l => l.includes('useState') && l.includes('period'));
+    expect(usersIdx).toBeGreaterThan(0);
+    expect(statsIdx).toBeGreaterThan(usersIdx);
+    expect(searchIdx).toBeGreaterThan(statsIdx);
+    expect(periodIdx).toBeGreaterThan(searchIdx);
+  });
+
+  it('currentPage state comes after domain state', () => {
+    const periodIdx = lines.findIndex(l => l.includes('period'));
+    const pageIdx = lines.findIndex(l => l.includes('currentPage'));
+    expect(pageIdx).toBeGreaterThan(periodIdx);
+  });
+
+  it('useEffect hook call is before return', () => {
+    const effectIdx = lines.findIndex(l => l.includes('useEffect('));
+    const returnIdx = lines.findIndex(l => l.trimStart().startsWith('return ('));
+    expect(effectIdx).toBeGreaterThan(0);
+    expect(returnIdx).toBeGreaterThan(effectIdx);
+  });
+
+  it('JSX has expected structural markers in order', () => {
+    const markers = [
+      'min-h-screen',    // root wrapper
+      '<aside',          // sidebar
+      'Dashboard',       // app title
+      '<nav',            // navigation
+      'setCurrentPage',  // page switching
+      '<main',           // main content area
+      'overview',        // first page
+      'Total Users',     // stat card
+      'Revenue',         // revenue stat
+      'toFixed(2)',      // currency formatting
+      'chart placeholder', // chart stub
+      '<select',         // period dropdown
+      'users',           // users page
+      '<table',          // data table
+      '<thead',          // table header
+      'Name',            // column header
+      '<tbody',          // table body
+      '.filter(',        // search filter
+      '.map(',           // row iteration
+      'row.name',        // data field access
+      'Prev',            // pagination
+      'Next',            // pagination
+    ];
+    let lastIdx = -1;
+    for (const marker of markers) {
+      const idx = jsx.indexOf(marker, lastIdx + 1);
+      expect(idx).toBeGreaterThan(lastIdx);
+      lastIdx = idx;
+    }
+  });
+});
+
+// ---- Golden output: landing.air codegen shape ----
+
+describe('golden: landing.air codegen shape', () => {
+  const result = transpileFile('landing');
+  const jsx = result.files.find(f => f.path === 'src/App.jsx')!.content;
+  const css = result.files.find(f => f.path === 'src/index.css')!.content;
+
+  it('is a stateless component (no useState calls)', () => {
+    expect(jsx).not.toMatch(/const \[.+, set.+\] = useState/);
+  });
+
+  it('uses light theme CSS variables', () => {
+    expect(css).toContain('--bg: #ffffff');
+    expect(css).toContain('--fg: #111827');
+    expect(css).toContain('--accent: #7c3aed');
+  });
+
+  it('respects maxWidth from @style', () => {
+    expect(jsx).toContain('max-w-[1200px]');
+  });
+
+  it('JSX has expected structural markers in order', () => {
+    const markers = [
+      'min-h-screen',          // root wrapper
+      'id="hero"',             // hero section
+      'Build Software',        // hero heading
+      'Get Started',           // primary CTA
+      'Watch Demo',            // secondary CTA
+      '/assets/hero.png',      // hero image
+      'id="features"',         // features section
+      'Why AirEngine',         // features heading
+      'grid-cols-3',           // 3-column grid
+      '&#9889;',               // zap icon
+      'Fast',                  // feature card 1
+      '&#128737;',             // shield icon
+      'Reliable',              // feature card 2
+      '&#128101;',             // users icon
+      'Collaborative',         // feature card 3
+      'id="pricing"',          // pricing section
+      'Simple Pricing',        // pricing heading
+      'Free',                  // free tier
+      '5 apps',                // free features
+      '$29/mo',                // pro price
+      'unlimited',             // pro features
+      'Go Pro',                // pro CTA
+      'Popular',               // popular badge
+      'Enterprise',            // enterprise tier
+      'Custom',                // custom pricing
+      'Contact',               // enterprise CTA
+      'id="cta"',              // CTA section
+      'Ready to build',        // CTA heading
+      'type="email"',          // email input
+      'Join Waitlist',         // waitlist button
+    ];
+    let lastIdx = -1;
+    for (const marker of markers) {
+      const idx = jsx.indexOf(marker, lastIdx + 1);
+      expect(idx).toBeGreaterThan(lastIdx);
+      lastIdx = idx;
+    }
+  });
+});
+
 // ---- Semantics matrix: supported vs stubbed ----
 
 describe('semantics: supported features', () => {
