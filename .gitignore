@@ -3,4 +3,5 @@ dist/
 test-output*/
 package-lock.json
 *.tsbuildinfo
+*.tgz
 .DS_Store

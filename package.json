@@ -1,12 +1,17 @@
 {
   "name": "airengine",
   "version": "0.1.0",
-  "description": "AI-native Intermediate Representation engine — a compact language for AI agents to generate, read, and modify software without human-readable code.",
+  "description": "AI-native Intermediate Representation — one .air file, full-stack apps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "air": "./dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "docs",
+    "examples"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -20,17 +25,17 @@
   },
   "keywords": [
     "ai",
-    "intermediate-representation",
-    "code-generation",
+    "compiler",
     "transpiler",
-    "ai-native",
-    "dsl",
-    "react",
-    "agent"
+    "code-generation",
+    "full-stack"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hkprodduturi/AirEngine"
+  },
   "author": "",
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
   },
