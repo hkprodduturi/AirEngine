@@ -398,6 +398,58 @@ describe('transpile: dashboard.air', () => {
   it('generates page navigation', () => {
     expect(jsx).toContain('currentPage');
   });
+
+  it('generates nav buttons with active state', () => {
+    expect(jsx).toContain("setCurrentPage('overview')");
+    expect(jsx).toContain("setCurrentPage('users')");
+    expect(jsx).toContain("setCurrentPage('settings')");
+    expect(jsx).toContain("bg-[var(--accent)] text-white");
+  });
+
+  it('generates revenue stat with currency formatting', () => {
+    expect(jsx).toContain('Revenue');
+    expect(jsx).toContain("'$' + (stats.revenue).toFixed(2)");
+  });
+
+  it('generates table with column headers', () => {
+    expect(jsx).toContain('<table');
+    expect(jsx).toContain('<thead');
+    expect(jsx).toContain('<tbody');
+    expect(jsx).toContain('>Name</th>');
+    expect(jsx).toContain('>Email</th>');
+    expect(jsx).toContain('>Role</th>');
+    expect(jsx).toContain('>Active</th>');
+  });
+
+  it('generates table row mapping with data fields', () => {
+    expect(jsx).toContain('.map((row)');
+    expect(jsx).toContain('row.name');
+    expect(jsx).toContain('row.email');
+    expect(jsx).toContain('row.role');
+  });
+
+  it('generates search filter for table', () => {
+    expect(jsx).toContain('.filter(');
+    expect(jsx).toContain('search.toLowerCase()');
+  });
+
+  it('generates period select dropdown', () => {
+    expect(jsx).toContain('<select');
+    expect(jsx).toContain('setPeriod');
+    expect(jsx).toContain('value="7d"');
+    expect(jsx).toContain('value="30d"');
+    expect(jsx).toContain('value="90d"');
+    expect(jsx).toContain('value="1y"');
+  });
+
+  it('generates chart placeholder', () => {
+    expect(jsx).toContain('chart placeholder');
+  });
+
+  it('generates pagination', () => {
+    expect(jsx).toContain('Prev');
+    expect(jsx).toContain('Next');
+  });
 });
 
 // ---- Integration: landing.air ----

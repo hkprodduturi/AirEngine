@@ -449,6 +449,20 @@ function generateElementJSX(
   if (node.element === 'logo') {
     return `${pad}<div className="${mapping.className}">&#9889;</div>`;
   }
+  if (node.element === 'table') {
+    return generateTableElement(node, ctx, analysis, scope, ind);
+  }
+  // stateVar.select → select dropdown for enum state
+  if (node.element.endsWith('.select')) {
+    const stateVar = node.element.replace('.select', '');
+    const stateField = findStateField(stateVar, ctx);
+    const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
+    if (options.length > 0) {
+      return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
+        + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+        + `${pad}</select>`;
+    }
+  }
 
   // Element with children
   if (node.children && node.children.length > 0) {
@@ -670,6 +684,23 @@ function generateFlowJSX(
     }
   }
 
+  // Pattern: element > $#ref → element displaying currency value
+  if (node.right.kind === 'unary' && node.right.operator === '$') {
+    const leftResolved = tryResolveElement(node.left);
+    if (leftResolved) {
+      const inner = node.right.operand;
+      const ref = resolveRef(inner.kind === 'unary' && inner.operator === '#' ? inner.operand : inner, scope);
+      if (leftResolved.element === 'stat' && node.left.kind === 'binary' && node.left.operator === ':') {
+        const bindInfo = resolveBindChain(node.left);
+        if (bindInfo?.label) {
+          const mapping = mapElement('stat', []);
+          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-sm text-[var(--muted)]">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{'$' + (${ref}).toFixed(2)}</div>\n${pad}</div>`;
+        }
+      }
+      return `${pad}<span>{'$' + ${ref}}</span>`;
+    }
+  }
+
   // Pattern: element > #ref → element bound to / displaying state
   if (node.right.kind === 'unary' && node.right.operator === '#') {
     const leftResolved = tryResolveElement(node.left);
@@ -821,6 +852,22 @@ function generateBindJSX(
     return `${pad}<${mapping.tag} className="${mapping.className}">${escapeText(resolved.label)}</${mapping.tag}>`;
   }
 
+  // Nav with page items — render as navigation buttons
+  if (resolved.element === 'nav' && resolved.children && resolved.children.length > 0 && analysis.hasPages) {
+    const navItems = resolved.children.filter(c => c.kind === 'element').map(c => (c as AirUINode & { kind: 'element' }).element);
+    if (navItems.length > 0) {
+      const itemsJsx = navItems.map(name =>
+        `${pad}  <button className={\`w-full text-left px-3 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${currentPage === '${name}' ? 'bg-[var(--accent)] text-white' : 'hover:bg-[var(--hover)]'}\`} onClick={() => setCurrentPage('${name}')}>${capitalize(name)}</button>`
+      ).join('\n');
+      return `${pad}<${mapping.tag}${classAttr(mapping.className)}>\n${itemsJsx}\n${pad}</${mapping.tag}>`;
+    }
+  }
+
+  // Chart — render placeholder
+  if (resolved.element === 'chart') {
+    return `${pad}<div className="${mapping.className}">${capitalize(resolved.modifiers[0] || 'chart')} chart placeholder</div>`;
+  }
+
   // Element with children from resolved bind
   if (resolved.children && resolved.children.length > 0) {
     const childJsx = resolved.children.map(c =>
@@ -851,6 +898,21 @@ function generateDotJSX(
   ind: number,
 ): string {
   const pad = ' '.repeat(ind);
+
+  // Pattern: stateVar.select → select dropdown for enum state
+  if (node.right.kind === 'element' && node.right.element === 'select') {
+    const stateVar = node.left.kind === 'element' ? node.left.element : '';
+    if (stateVar) {
+      const stateField = findStateField(stateVar, ctx);
+      const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
+      if (options.length > 0) {
+        return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
+          + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+          + `${pad}</select>`;
+      }
+    }
+  }
+
   const expr = resolveDotExpr(node, scope);
   return `${pad}{${expr}}`;
 }
@@ -1406,6 +1468,54 @@ function generateFlowChain(
   ).filter(Boolean).join('\n');
 
   return `${pad}<${containerMapping.tag}${classAttr(containerMapping.className)}>\n${innerJsx}\n${pad}</${containerMapping.tag}>`;
+}
+
+function generateTableElement(
+  node: AirUINode & { kind: 'element' },
+  ctx: TranspileContext,
+  _analysis: UIAnalysis,
+  scope: Scope,
+  ind: number,
+): string {
+  const pad = ' '.repeat(ind);
+
+  // Extract column names and data source from children
+  let columns: string[] = [];
+  let dataSource = '';
+
+  for (const child of node.children ?? []) {
+    if (child.kind === 'binary' && child.operator === ':') {
+      const resolved = resolveBindChain(child);
+      if (resolved) {
+        if (resolved.element === 'cols' && (resolved.binding || resolved.label)) {
+          const rawText = resolved.label || (resolved.binding!.kind === 'text' ? resolved.binding!.text : nodeToString(resolved.binding!));
+          columns = rawText.replace(/^\[+|\]+$/g, '').split(',').map(c => c.split(':')[0].trim()).filter(Boolean);
+        } else if (resolved.element === 'data' && resolved.binding) {
+          dataSource = resolveRefNode(resolved.binding, scope);
+        }
+      }
+    }
+    // data:#users|search — pipe wrapping a data bind
+    if (child.kind === 'binary' && child.operator === '|') {
+      if (child.left.kind === 'binary' && child.left.operator === ':') {
+        const resolved = resolveBindChain(child.left);
+        if (resolved?.element === 'data' && resolved.binding) {
+          dataSource = resolvePipeExpr(child as AirUINode & { kind: 'binary' }, ctx, scope);
+        }
+      }
+    }
+  }
+
+  if (columns.length === 0) columns = ['Column 1', 'Column 2', 'Column 3'];
+
+  const headerCells = columns.map(c => `${pad}          <th className="text-left p-3 border-b border-[var(--border)] text-sm text-[var(--muted)]">${capitalize(c)}</th>`).join('\n');
+  const dataCells = columns.map(c => `${pad}            <td className="p-3 border-b border-[var(--border)]">{row.${c}}</td>`).join('\n');
+
+  if (dataSource) {
+    return `${pad}<table className="w-full">\n${pad}  <thead>\n${pad}    <tr>\n${headerCells}\n${pad}    </tr>\n${pad}  </thead>\n${pad}  <tbody>\n${pad}    {${dataSource}.map((row) => (\n${pad}      <tr key={row.id}>\n${dataCells}\n${pad}      </tr>\n${pad}    ))}\n${pad}  </tbody>\n${pad}</table>`;
+  }
+
+  return `${pad}<table className="w-full">\n${pad}  <thead>\n${pad}    <tr>\n${headerCells}\n${pad}    </tr>\n${pad}  </thead>\n${pad}  <tbody>\n${pad}    <tr>\n${columns.map(c => `${pad}      <td className="p-3 border-b border-[var(--border)]">--</td>`).join('\n')}\n${pad}    </tr>\n${pad}  </tbody>\n${pad}</table>`;
 }
 
 function generateTabsElement(
