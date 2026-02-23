@@ -193,8 +193,8 @@ tbody tr:hover { background: var(--hover); }
 .form-group label { font-size: 0.875rem; font-weight: 500; color: var(--muted); }
 
 /* Global input/select/textarea */
-input, select, textarea {
-  width: 100%; border: 1px solid var(--border-input); border-radius: var(--radius);
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+  width: 100%; border: 1px solid var(--border-input) !important; border-radius: var(--radius);
   padding: 10px 14px; background: transparent; color: var(--fg);
   font-size: 0.875rem; outline: none; transition: border-color 0.2s;
 }
@@ -204,6 +204,10 @@ input:focus, select:focus, textarea:focus {
 input::placeholder, textarea::placeholder { color: var(--muted); }
 input:focus-visible, select:focus-visible, button:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
+}
+/* Checkbox/radio */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; cursor: pointer; accent-color: var(--accent);
 }
 
 /* Buttons */

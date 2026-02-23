@@ -23,7 +23,7 @@ interface MappingEntry {
 const ELEMENT_MAP: Record<string, MappingEntry> = {
   header: {
     tag: 'header',
-    className: 'flex items-center justify-between px-6 py-4 border-b border-[var(--border)]',
+    className: 'flex items-center justify-between pb-4 mb-2 border-b border-[var(--border)]',
   },
   footer: {
     tag: 'footer',
@@ -108,7 +108,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   list: {
     tag: 'ul',
-    className: 'space-y-2',
+    className: 'space-y-3',
   },
   table: {
     tag: 'table',

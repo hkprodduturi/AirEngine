@@ -937,14 +937,35 @@ function generateComposeJSX(
 ): string {
   const pad = ' '.repeat(ind);
 
-  // Pattern: header>text + btn → merge button into the header
+  // Pattern: header>text + right → merge into header
   if (node.left.kind === 'binary' && node.left.operator === '>') {
     const leftResolved = tryResolveElement(node.left.left);
     if (leftResolved && leftResolved.element === 'header') {
       const mapping = mapElement('header', []);
-      const textContent = generateJSX(node.left.right, ctx, analysis, scope, ind + 2);
-      const rightContent = generateJSX(node.right, ctx, analysis, scope, ind + 2);
-      return `${pad}<${mapping.tag} className="${mapping.className}">\n${textContent}\n${rightContent}\n${pad}</${mapping.tag}>`;
+      const rightResolved = tryResolveElement(node.right.kind === 'binary' && node.right.operator === ':' ? node.right : node.right);
+      const isBadge = rightResolved && rightResolved.element === 'badge';
+      const isAction = node.right.kind === 'unary' && node.right.operator === '!';
+      const isBtn = rightResolved && (rightResolved.element === 'btn' || rightResolved.element === 'button');
+
+      // Wrap header text in <h1>
+      let titleJsx: string;
+      if (node.left.right.kind === 'text') {
+        titleJsx = `${pad}  <h1 className="text-xl font-bold">${escapeText(node.left.right.text)}</h1>`;
+      } else {
+        titleJsx = generateJSX(node.left.right, ctx, analysis, scope, ind + 2);
+      }
+      const rightContent = generateJSX(node.right, ctx, analysis, scope, isBadge ? ind + 4 : ind + 2);
+
+      if (isBadge) {
+        // Group title + badge together on the left
+        return `${pad}<${mapping.tag} className="${mapping.className}">\n`
+          + `${pad}  <div className="flex items-center gap-3">\n`
+          + `${titleJsx.replace(new RegExp(`^${pad}  `), `${pad}    `)}\n`
+          + `${rightContent.replace(new RegExp(`^(\\s*)`), `${pad}    `)}\n`
+          + `${pad}  </div>\n`
+          + `${pad}</${mapping.tag}>`;
+      }
+      return `${pad}<${mapping.tag} className="${mapping.className}">\n${titleJsx}\n${rightContent}\n${pad}</${mapping.tag}>`;
     }
   }
 
@@ -1164,10 +1185,16 @@ function generateBindJSX(
       scope,
     );
     if (mapping.tag === 'button') {
-      // Action-only button with no modifiers → use ghost style
-      const btnClass = resolved.element === 'btn' && resolved.modifiers.length === 0
-        ? mapElement('btn', ['ghost']).className
-        : mapping.className;
+      // Delete/remove actions inside iteration → compact icon button
+      const isDel = actionName === 'del' || actionName === 'delete' || actionName === 'remove';
+      let btnClass: string;
+      if (isDel && scope.insideIter) {
+        btnClass = mapElement('btn', ['icon']).className;
+      } else if (resolved.element === 'btn' && resolved.modifiers.length === 0) {
+        btnClass = mapElement('btn', ['ghost']).className;
+      } else {
+        btnClass = mapping.className;
+      }
       return `${pad}<button className="${btnClass}" onClick={() => ${actionName}(${actionArgs})}>${getButtonLabel(resolved)}</button>`;
     }
     return `${pad}<${mapping.tag} className="${mapping.className}" onClick={() => ${actionName}(${actionArgs})} />`;
@@ -1364,11 +1391,14 @@ function generateBoundElement(
   if (resolved.element === 'text' || resolved.element === 'p') {
     const ref = resolveRefNode(binding, scope);
     const hasCurrency = binding.kind === 'unary' && binding.operator === '$';
+    // Inside iteration, text takes remaining space
+    const iterClass = scope.insideIter ? ' flex-1' : '';
+    const cls = mapping.className ? mapping.className + iterClass : iterClass.trim();
     if (hasCurrency) {
       const inner = resolveRef(binding.operand, scope);
-      return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{'$' + ${inner}}</${mapping.tag}>`;
+      return `${pad}<${mapping.tag}${classAttr(cls)}>{'$' + ${inner}}</${mapping.tag}>`;
     }
-    return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{${ref}}</${mapping.tag}>`;
+    return `${pad}<${mapping.tag}${classAttr(cls)}>{${ref}}</${mapping.tag}>`;
   }
 
   // Stat element with label and value
@@ -1444,9 +1474,11 @@ function generateElementWithAction(
   if (mapping.tag === 'input') {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
     const btnLabel = capitalize(actionName);
+    // Button args: replace e.target.value with _inp.value (e.target in button context is the button, not the input)
+    const btnArgs = actionArgs ? actionArgs.replace(/e\.target\.value/g, '_inp.value') : '_inp.value';
     return `${pad}<div className="flex gap-2">\n`
       + `${pad}  <input${typeAttr} className="${mapping.className} flex-1" placeholder="Add..." onKeyDown={(e) => { if (e.key === 'Enter' && e.target.value) { ${actionName}(${actionArgs || 'e.target.value'}); e.target.value = ''; } }} />\n`
-      + `${pad}  <button className="bg-[var(--accent)] text-white px-4 py-2.5 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" onClick={(e) => { const _inp = e.currentTarget.previousElementSibling; if (_inp?.value) { ${actionName}(${actionArgs || '_inp.value'}); _inp.value = ''; } }}>${btnLabel}</button>\n`
+      + `${pad}  <button className="bg-[var(--accent)] text-white px-4 py-2.5 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" onClick={(e) => { const _inp = e.currentTarget.previousElementSibling; if (_inp?.value) { ${actionName}(${btnArgs}); _inp.value = ''; } }}>${btnLabel}</button>\n`
       + `${pad}</div>`;
   }
 
@@ -1482,7 +1514,7 @@ function generateIterationJSX(
     generateJSX(c, ctx, analysis, newScope, ind + 4)
   ).filter(Boolean).join('\n');
 
-  return `${pad}{${dataExpr}.length === 0 ? (\n${pad}  <div className="empty-state">No items yet</div>\n${pad}) : ${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id} className="flex gap-4 items-center">\n${childJsx}\n${pad}  </div>\n${pad}))}`;
+  return `${pad}{${dataExpr}.length === 0 ? (\n${pad}  <div className="empty-state">No items yet</div>\n${pad}) : ${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n${childJsx}\n${pad}  </div>\n${pad}))}`;
 }
 
 function generateContainerWithIteration(
@@ -1537,7 +1569,7 @@ function generateContainerWithIteration(
     + `${pad}  {${dataSource}.length === 0 ? (\n`
     + `${pad}    <div className="empty-state">No items yet</div>\n`
     + `${pad}  ) : ${dataSource}.map((${iterVar}) => (\n`
-    + `${pad}    <div key={${iterVar}.id} className="flex gap-2 items-center">\n`
+    + `${pad}    <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n`
     + `${childJsx}\n`
     + `${pad}    </div>\n`
     + `${pad}  ))}\n`
@@ -1819,7 +1851,7 @@ function generateFlowChain(
       + `${pad}  {${iterDataExpr}.length === 0 ? (\n`
       + `${pad}    <div className="empty-state">No items yet</div>\n`
       + `${pad}  ) : ${iterDataExpr}.map((${iterVar}) => (\n`
-      + `${pad}    <div key={${iterVar}.id} className="flex gap-2 items-center">\n`
+      + `${pad}    <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n`
       + `${childJsx}\n`
       + `${pad}    </div>\n`
       + `${pad}  ))}\n`
