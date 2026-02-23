@@ -111,14 +111,13 @@ function generateFieldLine(field: AirDbField, model: AirDbModel, enums: PrismaEn
   // Field name
   parts.push(`  ${field.name}`);
 
-  // Type
+  // Type — SQLite doesn't support enums, map to String with comment
   let prismaType: string;
+  let enumComment = '';
   const baseType = unwrapType(field.type);
   if (baseType.kind === 'enum') {
-    const enumName = `${model.name}${capitalize(field.name)}`;
-    const matched = enums.find(e => e.name === enumName);
-    prismaType = matched ? matched.name : 'String';
-    if (field.type.kind === 'optional') prismaType += '?';
+    prismaType = field.type.kind === 'optional' ? 'String?' : 'String';
+    enumComment = ` // ${baseType.values.join(', ')}`;
   } else {
     prismaType = mapFieldType(field.type);
   }
@@ -141,7 +140,7 @@ function generateFieldLine(field: AirDbField, model: AirDbModel, enums: PrismaEn
     parts.push(attrs.join(' '));
   }
 
-  return parts.join('  ');
+  return parts.join('  ') + enumComment;
 }
 
 // ---- Main generator ----
@@ -159,18 +158,9 @@ export function generatePrismaSchema(db: AirDbBlock): string {
   lines.push('  url      = env("DATABASE_URL")');
   lines.push('}');
 
-  // Collect enums
-  const enums = collectEnums(db.models);
-
-  // Enum blocks
-  for (const e of enums) {
-    lines.push('');
-    lines.push(`enum ${e.name} {`);
-    for (const v of e.values) {
-      lines.push(`  ${v}`);
-    }
-    lines.push('}');
-  }
+  // Enums not generated as Prisma enum blocks (SQLite doesn't support them).
+  // Enum fields map to String with inline comments documenting valid values.
+  const enums: PrismaEnum[] = [];
 
   // Model blocks
   for (const model of db.models) {

@@ -1,0 +1,297 @@
+# ================================================================
+# ProjectFlow — Full-Stack SaaS Project Management
+# ================================================================
+# A complete project management app in ~260 lines of AIR.
+# Demonstrates every block type AirEngine supports.
+# Transpiles to React + Express + Prisma (client/ + server/).
+# ================================================================
+
+@app:projectflow
+
+# ---- Design System ----
+
+@style(theme:dark,accent:#6366f1,radius:12,font:sans,density:comfortable,maxWidth:1400)
+
+# ---- Client State ----
+
+@state{
+  user:?{id:int,name:str,email:str,role:str,avatar:?str},
+  workspace:?{id:int,name:str,slug:str,plan:str},
+  projects:[{id:int,name:str,status:str,taskCount:int}],
+  tasks:[{id:int,title:str,status:str,priority:str,assignee:?str,dueDate:?str}],
+  comments:[{id:int,body:str,author:str,created:str}],
+  members:[{id:int,name:str,email:str,role:str}],
+  stats:{totalTasks:int,completed:int,inProgress:int,overdue:int},
+  filter:enum(all,active,archived),
+  taskFilter:enum(all,todo,in_progress,review,done),
+  search:str,
+  selectedTask:?int,
+  showModal:bool
+}
+
+# ---- Database Models ----
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,avatar:?str,role:enum(admin,member,viewer),created_at:datetime:auto}
+  Workspace{id:int:primary:auto,name:str:required,slug:str:required,plan:enum(free,pro,enterprise),created_at:datetime:auto}
+  Project{id:int:primary:auto,name:str:required,description:?str,status:enum(active,archived,completed),workspace_id:int:required,created_at:datetime:auto}
+  Task{id:int:primary:auto,title:str:required,description:?str,status:enum(todo,in_progress,review,done),priority:enum(low,medium,high,urgent),assignee_id:?int,project_id:int:required,due_date:?date,created_at:datetime:auto}
+  Comment{id:int:primary:auto,body:str:required,task_id:int:required,author_id:int:required,created_at:datetime:auto}
+  @relation(User.workspaces<>Workspace.members)
+  @relation(Workspace.projects<>Project.workspace)
+  @relation(Project.tasks<>Task.project)
+  @relation(Task.comments<>Comment.task)
+  @relation(Task.assignee<>User.assigned)
+  @relation(Comment.author<>User.comments)
+  @index(User.email:unique)
+  @index(Workspace.slug:unique)
+  @index(Task.status+Task.project_id)
+}
+
+# ---- Environment Variables ----
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  STRIPE_SECRET:str:required
+  GITHUB_WEBHOOK_SECRET:str:required
+  SMTP_HOST:str:"smtp.sendgrid.net"
+  SMTP_PORT:int:587
+  PORT:int:3001
+)
+
+# ---- API Routes (18 endpoints) ----
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/users>~db.User.findMany
+  PUT:/users/:id(name:str)>~db.User.update
+  GET:/workspaces>~db.Workspace.findMany
+  POST:/workspaces(name:str,slug:str,plan:str)>~db.Workspace.create
+  GET:/projects>~db.Project.findMany
+  POST:/projects(name:str,workspace_id:int)>~db.Project.create
+  PUT:/projects/:id(status:str)>~db.Project.update
+  DELETE:/projects/:id>~db.Project.delete
+  GET:/tasks>~db.Task.findMany
+  POST:/tasks(title:str,project_id:int,priority:str)>~db.Task.create
+  PUT:/tasks/:id(status:str)>~db.Task.update
+  DELETE:/tasks/:id>~db.Task.delete
+  GET:/tasks/:id/comments>~db.Comment.findMany
+  POST:/tasks/:id/comments(body:str)>~db.Comment.create
+  GET:/stats>~db.Task.aggregate
+  POST:/invite(email:str,role:str)>invite.send
+)
+
+# ---- Authentication ----
+
+@auth(required,role:enum(admin,member,viewer),redirect:/login)
+
+# ---- Webhooks ----
+
+@webhook(
+  POST:/stripe/webhook>!processStripePayment
+  POST:/github/webhook>!processGithubEvent
+)
+
+# ---- Scheduled Jobs ----
+
+@cron(
+  cleanup>"0 0 * * *">!db.sessions.deleteExpired
+  digest>"0 8 * * *">!email.sendDailyDigest
+)
+
+# ---- Background Jobs ----
+
+@queue(
+  sendEmail(to:str,template:str)>!email.send
+  generateReport(workspace_id:int)>!reports.generate
+)
+
+# ---- Email Templates ----
+
+@email(
+  welcome(name:str)>"Welcome to ProjectFlow"
+  invite(name:str,workspace:str)>"You've been invited to join"
+  taskAssigned(name:str,task:str)>"New task assigned to you"
+)
+
+# ---- Navigation ----
+
+@nav(
+  />?user>dashboard:login
+  /projects>?user>projects:login
+  /tasks>?user>tasks:login
+  /settings>?user>settings:login
+  /login>login
+)
+
+# ---- Session Persistence ----
+
+@persist:cookie(user,workspace,httpOnly,7d)
+
+# ---- Lifecycle Hooks ----
+
+@hook(
+  onMount>~api.stats+~api.projects
+  onChange:filter>~api.projects
+  onChange:taskFilter>~api.tasks
+)
+
+# ---- User Interface (5 pages) ----
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"ProjectFlow"
+        p:"muted">"Manage projects at the speed of thought"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"PF"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Projects"
+        btn:ghost>"Tasks"
+        btn:ghost>"Settings"
+      )
+      footer>text:"muted">#workspace.plan
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Tasks">#stats.totalTasks
+        stat:"Completed">#stats.completed
+        stat:"In Progress">#stats.inProgress
+        stat:"Overdue">#stats.overdue
+      )
+      @section:recent(
+        h2>"Recent Tasks"
+        table>tasks|taskFilter>*task(
+          text>#task.title
+          badge:#task.status
+          badge:#task.priority
+          text:"muted">#task.assignee
+          text:"muted">#task.dueDate
+        )
+      )
+      @section:activity(
+        h2>"Activity Feed"
+        list>comments>*comment(
+          text>#comment.author+text:"muted">#comment.body+text:"muted">#comment.created
+        )
+      )
+    )
+  )
+  @page:projects(
+    sidebar(
+      logo>"PF"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Projects"
+        btn:ghost>"Tasks"
+        btn:ghost>"Settings"
+      )
+    )+main(
+      header>h1>"Projects"+tabs>filter.set(all,active,archived)+btn:primary>"New Project"
+      grid:3>projects|filter>*project(
+        card(
+          h2>#project.name
+          badge:#project.status
+          stat:"Tasks">#project.taskCount
+          row(btn:ghost>"Open",btn:ghost>"Archive">!archive(#project.id))
+        )
+      )
+    )
+  )
+  @page:tasks(
+    sidebar(
+      logo>"PF"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Projects"
+        btn:ghost>"Tasks"
+        btn:ghost>"Settings"
+      )
+    )+main(
+      header>h1>"Tasks"+tabs>taskFilter.set(all,todo,in_progress,review,done)+btn:primary>"New Task"
+      grid:4(
+        @section:todo(
+          h2>"To Do"
+          list>tasks|todo>*task(card(text>#task.title+badge:#task.priority+btn:icon:!del(#task.id)))
+        )
+        @section:progress(
+          h2>"In Progress"
+          list>tasks|in_progress>*task(card(text>#task.title+badge:#task.priority+text:"muted">#task.assignee))
+        )
+        @section:review(
+          h2>"Review"
+          list>tasks|review>*task(card(text>#task.title+badge:#task.priority+btn:primary>"Approve">!done(#task.id)))
+        )
+        @section:done(
+          h2>"Done"
+          list>tasks|done>*task(card(text>#task.title+text:"muted">#task.assignee))
+        )
+      )
+    )
+  )
+  @page:settings(
+    sidebar(
+      logo>"PF"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Projects"
+        btn:ghost>"Tasks"
+        btn:ghost>"Settings"
+      )
+    )+main(
+      header>h1>"Settings"
+      grid:2(
+        @section:profile(
+          card(
+            h2>"Profile"
+            form(
+              input:text>#user.name
+              input:email>#user.email
+              btn:primary>"Save">!updateProfile
+            )
+          )
+        )
+        @section:workspace(
+          card(
+            h2>"Workspace"
+            form(
+              input:text>#workspace.name
+              select:#workspace.plan(free,pro,enterprise)
+              btn:primary>"Update">!updateWorkspace
+            )
+          )
+        )
+        @section:team(
+          card(
+            h2>"Team Members"
+            btn:primary>"Invite Member"
+            table>members>*member(
+              text>#member.name+text>#member.email+badge:#member.role+btn:icon:!remove(#member.id)
+            )
+          )
+        )
+        @section:billing(
+          card(
+            h2>"Billing"
+            stat:"Current Plan">#workspace.plan
+            btn:primary>"Upgrade"
+          )
+        )
+      )
+    )
+  )
+)

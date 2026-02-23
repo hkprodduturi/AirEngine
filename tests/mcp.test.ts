@@ -199,8 +199,8 @@ describe('air_transpile tool logic', () => {
     expect('error' in result).toBe(true);
   });
 
-  it('transpiles all 6 examples without throwing', () => {
-    const names = ['todo', 'expense-tracker', 'auth', 'dashboard', 'landing', 'fullstack-todo'];
+  it('transpiles all 7 examples without throwing', () => {
+    const names = ['todo', 'expense-tracker', 'auth', 'dashboard', 'landing', 'fullstack-todo', 'projectflow'];
     for (const name of names) {
       const source = readExample(name);
       const ast = parse(source);

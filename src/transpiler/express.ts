@@ -133,19 +133,31 @@ function generateTsConfig(): string {
 // ---- .env ----
 
 function generateEnvFile(ctx: TranspileContext): string {
-  const lines: string[] = [];
+  // Use a Map to deduplicate — @env defaults merge with built-in defaults
+  const vars = new Map<string, string>();
+
+  // Built-in defaults
   if (ctx.db) {
-    lines.push('DATABASE_URL="file:./dev.db"');
+    vars.set('DATABASE_URL', '"file:./dev.db"');
   }
-  lines.push(`PORT=3001`);
+  vars.set('PORT', '3001');
+
+  // @env block vars — override/add
   if (ctx.env) {
     for (const v of ctx.env.vars) {
+      // Skip if already set and @env has no default
+      if (vars.has(v.name) && v.default === undefined) continue;
       if (v.default !== undefined) {
-        lines.push(`${v.name}=${JSON.stringify(String(v.default))}`);
+        vars.set(v.name, JSON.stringify(String(v.default)));
       } else {
-        lines.push(`${v.name}=`);
+        vars.set(v.name, '');
       }
     }
+  }
+
+  const lines: string[] = [];
+  for (const [key, value] of vars) {
+    lines.push(value ? `${key}=${value}` : `${key}=`);
   }
   return lines.join('\n') + '\n';
 }

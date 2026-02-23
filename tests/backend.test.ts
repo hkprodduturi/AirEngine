@@ -95,10 +95,9 @@ describe('Prisma schema generation', () => {
       indexes: [],
     };
     const schema = generatePrismaSchema(db);
-    expect(schema).toContain('enum TaskStatus {');
-    expect(schema).toContain('  pending');
-    expect(schema).toContain('  done');
-    expect(schema).toContain('  archived');
+    // SQLite: enums map to String with inline comment
+    expect(schema).toContain('String');
+    expect(schema).toContain('// pending, done, archived');
   });
 
   it('generates TODO comments for relations', () => {
@@ -318,5 +317,63 @@ describe('hasBackend detection', () => {
     const ast = parse('@app:t\n@state{x:int}\n@style(theme:dark)\n@ui(\ntext>"hello"\n)');
     const ctx = extractContext(ast);
     expect(ctx.hasBackend).toBe(false);
+  });
+});
+
+// ---- projectflow.air integration ----
+
+describe('projectflow.air integration', () => {
+  it('parses projectflow.air with all block types', () => {
+    const ast = parseFile('projectflow');
+    expect(ast.app.name).toBe('projectflow');
+    const kinds = ast.app.blocks.map(b => b.kind);
+    expect(kinds).toContain('db');
+    expect(kinds).toContain('api');
+    expect(kinds).toContain('auth');
+    expect(kinds).toContain('webhook');
+    expect(kinds).toContain('cron');
+    expect(kinds).toContain('queue');
+    expect(kinds).toContain('email');
+    expect(kinds).toContain('env');
+    expect(kinds).toContain('state');
+    expect(kinds).toContain('style');
+    expect(kinds).toContain('nav');
+    expect(kinds).toContain('persist');
+    expect(kinds).toContain('hook');
+    expect(kinds).toContain('ui');
+  });
+
+  it('transpiles projectflow.air to fullstack structure', () => {
+    const result = transpileFile('projectflow');
+    const paths = result.files.map(f => f.path);
+    expect(paths.some(p => p.startsWith('client/'))).toBe(true);
+    expect(paths.some(p => p.startsWith('server/'))).toBe(true);
+    expect(paths).toContain('server/prisma/schema.prisma');
+    expect(paths).toContain('server/api.ts');
+    expect(paths).toContain('server/auth.ts');
+    expect(paths).toContain('server/webhooks.ts');
+    expect(paths).toContain('server/cron.ts');
+    expect(paths).toContain('server/queue.ts');
+    expect(paths).toContain('server/templates.ts');
+    expect(paths).toContain('server/env.ts');
+  });
+
+  it('.env has no duplicate keys', () => {
+    const env = getServerFile('projectflow', 'server/.env')!;
+    const keys = env.split('\n').filter(l => l.includes('=')).map(l => l.split('=')[0]);
+    const unique = new Set(keys);
+    expect(keys.length).toBe(unique.size);
+  });
+
+  it('generates 5+ db models in Prisma schema', () => {
+    const schema = getServerFile('projectflow', 'server/prisma/schema.prisma')!;
+    const modelCount = (schema.match(/^model \w+/gm) || []).length;
+    expect(modelCount).toBeGreaterThanOrEqual(5);
+  });
+
+  it('generates 15+ API routes', () => {
+    const api = getServerFile('projectflow', 'server/api.ts')!;
+    const routeCount = (api.match(/apiRouter\.\w+\('/g) || []).length;
+    expect(routeCount).toBeGreaterThanOrEqual(15);
   });
 });
