@@ -1,0 +1,24 @@
+@app:auth
+  @state{user:?{name:str,email:str,token:str},error:?str,loading:bool}
+  @api(
+    POST:/login(email:str,pass:str)>~jwt.verify>user.set
+    POST:/signup(name:str,email:str,pass:str)>~db.users.create>user.set
+    POST:/logout>user.clear+token.revoke
+  )
+  @nav(
+    />?user>dashboard:login
+    /dashboard>?user>@protected:/>redirect
+  )
+  @ui(
+    @page:login(
+      form(input:email+input:password+btn:submit>"Log In")>!login
+      ?error>alert:error:#error
+      ?loading>spinner
+      link:/signup>"Create account"
+    )
+    @page:dashboard(
+      header>"Welcome, #user.name"+btn:!logout
+      slot:content
+    )
+  )
+  @persist:cookie(user.token,httpOnly,7d)

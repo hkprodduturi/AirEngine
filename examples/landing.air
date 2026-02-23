@@ -1,0 +1,31 @@
+@app:landing
+  @style(theme:light,accent:#7c3aed,radius:16,font:display+sans,maxWidth:1200)
+  @nav(/#hero,/#features,/#pricing,/#cta)
+  @ui(
+    @section:hero(
+      h1>"Build Software Without Code"
+      p>"AI-native development platform that ships production apps in minutes"
+      row(btn:primary>"Get Started"+btn:ghost>"Watch Demo")
+      img:hero>/assets/hero.png
+    )
+    @section:features(
+      h2>"Why AirEngine?"
+      grid:3(
+        card(icon:zap+"Fast"+"Generate apps 5x faster")
+        card(icon:shield+"Reliable"+"Schema-guaranteed output")
+        card(icon:users+"Collaborative"+"Multi-agent native")
+      )
+    )
+    @section:pricing(
+      h2>"Simple Pricing"
+      grid:3(
+        plan("Free",0,[feat:5_apps,feat:community])+btn:secondary>"Start Free"
+        plan("Pro",29,[feat:unlimited,feat:priority,feat:api])+btn:primary>"Go Pro"+badge:"Popular"
+        plan("Enterprise",custom,[feat:everything,feat:sla,feat:support])+btn:ghost>"Contact"
+      )
+    )
+    @section:cta(
+      h2>"Ready to build?"
+      input:email+btn:primary>"Join Waitlist"
+    )
+  )

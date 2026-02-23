@@ -1,0 +1,11 @@
+@app:todo
+  @state{items:[{id:int,text:str,done:bool}],filter:enum(all,active,done)}
+  @style(theme:dark,accent:#6366f1,radius:12,font:sans)
+  @ui(
+    header>"Todo App"+badge:#items.length
+    input:text>!add({text:#val,done:false})
+    list>items|filter>*item(check:#item.done+text:#item.text+btn:!del(#item.id))
+    tabs>filter.set(all,active,done)
+    footer>"#items|!done.length items left"
+  )
+  @persist:localStorage(items)

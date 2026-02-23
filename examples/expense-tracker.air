@@ -1,0 +1,32 @@
+@app:expense-tracker
+  @state{
+    expenses:[{id:int,title:str,amount:float,category:enum(food,transport,entertainment,bills,other),date:date}],
+    budget:float(2000),
+    filter:enum(all,food,transport,entertainment,bills,other),
+    sort:enum(newest,oldest,highest,lowest),
+    input:{title:str,amount:float,category:enum}
+  }
+  @style(theme:dark,accent:#8b5cf6,green:#10b981,red:#ef4444,radius:12,font:mono+sans)
+  @ui(
+    header>"Expense Tracker"+badge:$#expenses|sum(amount)+"/ $"+#budget
+    progress:bar(value:#expenses|sum(amount),max:#budget,color:?over>#red:#green)
+    row(
+      input:text>#input.title+input:number>#input.amount+select:category>#input.category+btn:!add(#input)
+    )
+    row(tabs:filter>#filter+select:sort>#sort)
+    grid:responsive>expenses|filter|sort>*expense(
+      card(
+        row(badge:category:#expense.category+text:date:#expense.date)
+        text:title:#expense.title
+        text:amount:$#expense.amount
+        btn:icon:!del(#expense.id)
+      )
+    )
+    row(
+      stat:"Total">#expenses|sum(amount)
+      stat:"Average">#expenses|avg(amount)
+      stat:"Count">#expenses.length
+      stat:"Remaining">$#budget-#expenses|sum(amount)
+    )
+  )
+  @persist:localStorage(expenses,budget)

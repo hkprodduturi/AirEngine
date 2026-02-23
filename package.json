@@ -1,0 +1,51 @@
+{
+  "name": "airengine",
+  "version": "0.1.0",
+  "description": "AI-native Intermediate Representation engine — a compact language for AI agents to generate, read, and modify software without human-readable code.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "air": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli/index.js",
+    "test": "vitest",
+    "lint": "eslint src/",
+    "generate": "node dist/cli/index.js generate",
+    "transpile": "node dist/cli/index.js transpile",
+    "validate": "node dist/cli/index.js validate",
+    "mcp": "npx tsx src/mcp/server.ts"
+  },
+  "keywords": [
+    "ai",
+    "intermediate-representation",
+    "code-generation",
+    "transpiler",
+    "ai-native",
+    "dsl",
+    "react",
+    "agent"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "ora": "^8.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.19.0",
+    "vitest": "^1.6.0",
+    "@types/node": "^20.12.0",
+    "eslint": "^9.0.0"
+  }
+}

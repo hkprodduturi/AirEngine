@@ -1,0 +1,37 @@
+@app:dashboard
+  @state{
+    users:[{id:int,name:str,email:str,role:enum(admin,user),active:bool}],
+    stats:{total:int,active:int,revenue:float},
+    search:str,
+    period:enum(7d,30d,90d,1y)
+  }
+  @api(
+    GET:/stats(?period)>~stats.set
+    GET:/users(?search,?page)>~users.set
+    PUT:/users/:id(role:enum)>~users.update
+    DELETE:/users/:id>~users.remove
+  )
+  @style(theme:dark,accent:#10b981,radius:8,font:mono,density:compact)
+  @ui(
+    sidebar(
+      logo+"Dashboard"
+      nav:vertical(overview,users,settings)
+    )
+    main(
+      @page:overview(
+        row(
+          stat:"Total Users">#stats.total
+          stat:"Active">#stats.active
+          stat:"Revenue">$#stats.revenue
+        )
+        chart:line(data:#stats.history,x:date,y:revenue)+period.select
+      )
+      @page:users(
+        search:input>#search
+        table(data:#users|search,cols:[name,email,role:select,active:toggle],actions:[edit,!del])
+        pagination
+      )
+    )
+  )
+  @auth(required,role:admin)
+  @hook(onMount>~api.stats+~api.users)
