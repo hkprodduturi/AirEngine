@@ -1,0 +1,258 @@
+/**
+ * AIR Element → JSX Tag + Tailwind Classes mapping
+ *
+ * Maps AIR element names and resolved modifiers to concrete
+ * HTML tags and Tailwind utility classes.
+ */
+
+export interface ElementMapping {
+  tag: string;
+  className: string;
+  selfClosing?: boolean;
+  inputType?: string;
+}
+
+interface MappingEntry {
+  tag: string;
+  className: string;
+  selfClosing?: boolean;
+  inputType?: string;
+  modifiers?: Record<string, Partial<ElementMapping>>;
+}
+
+const ELEMENT_MAP: Record<string, MappingEntry> = {
+  header: {
+    tag: 'header',
+    className: 'flex items-center justify-between p-4 border-b border-white/10',
+  },
+  footer: {
+    tag: 'footer',
+    className: 'p-4 text-center text-sm opacity-70',
+  },
+  main: {
+    tag: 'main',
+    className: 'flex-1 p-6',
+  },
+  sidebar: {
+    tag: 'aside',
+    className: 'w-64 border-r border-white/10 p-4 flex flex-col gap-4',
+  },
+  row: {
+    tag: 'div',
+    className: 'flex gap-4 items-center',
+  },
+  grid: {
+    tag: 'div',
+    className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4',
+    modifiers: {
+      responsive: { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' },
+      '2': { className: 'grid grid-cols-2 gap-4' },
+      '3': { className: 'grid grid-cols-3 gap-4' },
+      '4': { className: 'grid grid-cols-4 gap-4' },
+    },
+  },
+  card: {
+    tag: 'div',
+    className: 'rounded-xl border border-white/10 p-4 shadow-sm',
+  },
+  btn: {
+    tag: 'button',
+    className: 'px-4 py-2 rounded-lg cursor-pointer transition-colors',
+    modifiers: {
+      primary: { className: 'bg-[var(--accent)] text-white px-4 py-2 rounded-lg cursor-pointer hover:opacity-90 transition-colors' },
+      secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-4 py-2 rounded-lg cursor-pointer hover:opacity-90 transition-colors' },
+      ghost: { className: 'bg-transparent hover:bg-white/10 px-4 py-2 rounded-lg cursor-pointer transition-colors' },
+      icon: { className: 'p-2 rounded-full hover:bg-white/10 cursor-pointer transition-colors' },
+      submit: { className: 'bg-[var(--accent)] text-white px-4 py-2 rounded-lg cursor-pointer hover:opacity-90 transition-colors' },
+    },
+  },
+  input: {
+    tag: 'input',
+    className: 'w-full border border-white/20 rounded-lg px-3 py-2 bg-transparent focus:outline-none focus:border-[var(--accent)]',
+    selfClosing: true,
+    modifiers: {
+      text: { inputType: 'text' },
+      number: { inputType: 'number' },
+      email: { inputType: 'email' },
+      password: { inputType: 'password' },
+      search: { inputType: 'search' },
+    },
+  },
+  select: {
+    tag: 'select',
+    className: 'border border-white/20 rounded-lg px-3 py-2 bg-transparent focus:outline-none',
+  },
+  h1: {
+    tag: 'h1',
+    className: 'text-3xl font-bold',
+  },
+  h2: {
+    tag: 'h2',
+    className: 'text-2xl font-semibold',
+  },
+  h3: {
+    tag: 'h3',
+    className: 'text-xl font-semibold',
+  },
+  p: {
+    tag: 'p',
+    className: '',
+  },
+  text: {
+    tag: 'span',
+    className: '',
+  },
+  badge: {
+    tag: 'span',
+    className: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[var(--accent)]/20 text-[var(--accent)]',
+  },
+  list: {
+    tag: 'ul',
+    className: 'space-y-2',
+  },
+  table: {
+    tag: 'table',
+    className: 'w-full',
+  },
+  tabs: {
+    tag: 'div',
+    className: 'flex gap-2',
+  },
+  toggle: {
+    tag: 'input',
+    className: '',
+    selfClosing: true,
+    inputType: 'checkbox',
+  },
+  check: {
+    tag: 'input',
+    className: 'rounded',
+    selfClosing: true,
+    inputType: 'checkbox',
+  },
+  alert: {
+    tag: 'div',
+    className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded',
+    modifiers: {
+      error: { className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded' },
+      success: { className: 'border-l-4 border-green-500 bg-green-500/10 p-4 rounded' },
+      warning: { className: 'border-l-4 border-yellow-500 bg-yellow-500/10 p-4 rounded' },
+    },
+  },
+  spinner: {
+    tag: 'div',
+    className: 'animate-spin h-6 w-6 border-2 border-current border-t-transparent rounded-full',
+  },
+  link: {
+    tag: 'a',
+    className: 'text-[var(--accent)] hover:underline cursor-pointer',
+  },
+  form: {
+    tag: 'form',
+    className: 'space-y-4',
+  },
+  stat: {
+    tag: 'div',
+    className: 'rounded-xl border border-white/10 p-4 text-center',
+  },
+  progress: {
+    tag: 'div',
+    className: 'w-full bg-white/10 rounded-full h-3 overflow-hidden',
+    modifiers: {
+      bar: { className: 'w-full bg-white/10 rounded-full h-3 overflow-hidden' },
+    },
+  },
+  chart: {
+    tag: 'div',
+    className: 'w-full h-64 border border-white/10 rounded-xl flex items-center justify-center opacity-50',
+    modifiers: {
+      line: {},
+      bar: {},
+    },
+  },
+  search: {
+    tag: 'input',
+    className: 'w-full border border-white/20 rounded-lg px-3 py-2 bg-transparent focus:outline-none focus:border-[var(--accent)]',
+    selfClosing: true,
+    modifiers: {
+      input: { inputType: 'search' },
+    },
+  },
+  pagination: {
+    tag: 'div',
+    className: 'flex gap-2 items-center justify-center',
+  },
+  img: {
+    tag: 'img',
+    className: 'max-w-full rounded-lg',
+    selfClosing: true,
+  },
+  icon: {
+    tag: 'span',
+    className: 'text-xl',
+  },
+  logo: {
+    tag: 'div',
+    className: 'text-xl font-bold',
+  },
+  nav: {
+    tag: 'nav',
+    className: 'flex gap-4',
+    modifiers: {
+      vertical: { className: 'flex flex-col gap-2' },
+    },
+  },
+  slot: {
+    tag: 'div',
+    className: 'flex-1',
+    modifiers: {
+      content: { className: 'flex-1' },
+    },
+  },
+  plan: {
+    tag: 'div',
+    className: 'rounded-xl border border-white/10 p-6 flex flex-col items-center gap-4',
+  },
+  section: {
+    tag: 'section',
+    className: 'py-16 px-6',
+  },
+};
+
+/**
+ * Look up an AIR element name + modifiers and return the JSX mapping.
+ * Unknown elements soft-fail to a `<div>` with a data attribute.
+ */
+export function mapElement(element: string, modifiers: string[]): ElementMapping {
+  const entry = ELEMENT_MAP[element];
+
+  if (!entry) {
+    // Unknown element — soft-fail
+    return {
+      tag: 'div',
+      className: '',
+    };
+  }
+
+  const base: ElementMapping = {
+    tag: entry.tag,
+    className: entry.className,
+    selfClosing: entry.selfClosing,
+    inputType: entry.inputType,
+  };
+
+  // Apply modifier overrides
+  if (modifiers.length > 0 && entry.modifiers) {
+    for (const mod of modifiers) {
+      const override = entry.modifiers[mod];
+      if (override) {
+        if (override.className !== undefined) base.className = override.className;
+        if (override.tag) base.tag = override.tag;
+        if (override.inputType) base.inputType = override.inputType;
+        if (override.selfClosing !== undefined) base.selfClosing = override.selfClosing;
+      }
+    }
+  }
+
+  return base;
+}

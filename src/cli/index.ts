@@ -14,7 +14,8 @@ import { Command } from 'commander';
 import { parse } from '../parser/index.js';
 import { validate } from '../validator/index.js';
 import { transpile } from '../transpiler/index.js';
-import { readFileSync } from 'fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'fs';
+import { join, dirname } from 'path';
 
 const program = new Command();
 
@@ -61,7 +62,15 @@ program
       }
 
       const result = transpile(ast, { outDir: options.output });
-      console.log(`  ✅ Transpiled ${file}`);
+
+      // Write generated files to disk
+      for (const f of result.files) {
+        const fullPath = join(options.output, f.path);
+        mkdirSync(dirname(fullPath), { recursive: true });
+        writeFileSync(fullPath, f.content);
+      }
+
+      console.log(`  ✅ Transpiled ${file} → ${options.output}/`);
       console.log(`     → ${result.files.length} files generated`);
       console.log(`     → ${result.stats.outputLines} lines of output\n`);
     } catch (err) {
