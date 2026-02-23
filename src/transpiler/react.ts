@@ -125,6 +125,54 @@ function generateObjectDefault(fields: AirField[]): string {
   return `{ ${entries.join(', ')} }`;
 }
 
+// ---- Persist: Key Resolution ----
+
+/**
+ * Resolves a persist key like "user.token" into:
+ * - storeKey: the cookie/storage key name ("auth-user-token")
+ * - getter: JS expression to read the value ("user?.token")
+ * - depVar: the root state variable for useEffect dependency ("user")
+ * - loadSetter: function that returns a setter statement for loading
+ *
+ * Simple keys like "items" resolve to themselves.
+ * Dot-path keys like "user.token" access a sub-property of state.
+ */
+function resolvePersistKey(key: string, ctx: TranspileContext): {
+  storeKey: string;
+  getter: string;
+  depVar: string;
+  loadSetter: (valueExpr: string) => string;
+} {
+  const parts = key.split('.');
+  const rootVar = parts[0];
+  const storeKey = `${ctx.appName}-${key.replace(/\./g, '-')}`;
+
+  if (parts.length === 1) {
+    // Simple key: "items" → getter=items, setter=setItems(val)
+    return {
+      storeKey,
+      getter: rootVar,
+      depVar: rootVar,
+      loadSetter: (val) => `set${capitalize(rootVar)}(${val})`,
+    };
+  }
+
+  // Dot-path key: "user.token" → getter=user?.token, setter=setUser(prev => ({...prev, token: val}))
+  const subPath = parts.slice(1).join('.');
+  const optionalChain = parts.slice(1).reduce((acc, p) => `${acc}?.${p}`, rootVar);
+
+  return {
+    storeKey,
+    getter: optionalChain,
+    depVar: rootVar,
+    loadSetter: (val) => {
+      // Build nested spread: setUser(prev => ({...prev, token: val}))
+      const lastProp = parts[parts.length - 1];
+      return `set${capitalize(rootVar)}(prev => ({ ...prev, ${lastProp}: ${val} }))`;
+    },
+  };
+}
+
 // ---- Persist: Load ----
 
 function generatePersistLoad(ctx: TranspileContext): string[] {
@@ -137,10 +185,10 @@ function generatePersistLoad(ctx: TranspileContext): string[] {
     lines.push('useEffect(() => {');
     lines.push('  try {');
     for (const key of ctx.persistKeys) {
-      const safeName = key.replace(/\./g, '_');
-      const setter = 'set' + capitalize(safeName);
-      lines.push(`    const saved_${safeName} = ${storage}.getItem('${ctx.appName}-${safeName}');`);
-      lines.push(`    if (saved_${safeName}) ${setter}(JSON.parse(saved_${safeName}));`);
+      const { storeKey, getter, loadSetter } = resolvePersistKey(key, ctx);
+      const varName = `_saved_${key.replace(/\./g, '_')}`;
+      lines.push(`    const raw = ${storage}.getItem('${storeKey}');`);
+      lines.push(`    if (raw) { const ${varName} = JSON.parse(raw); ${loadSetter(varName)}; }`);
     }
     lines.push('  } catch (e) { /* ignore corrupt storage */ }');
     lines.push('}, []);');
@@ -153,9 +201,9 @@ function generatePersistLoad(ctx: TranspileContext): string[] {
     lines.push('  try {');
     lines.push('    const cookies = Object.fromEntries(document.cookie.split("; ").map(c => c.split("=")));');
     for (const key of ctx.persistKeys) {
-      const safeName = key.replace(/\./g, '_');
-      const setter = 'set' + capitalize(safeName);
-      lines.push(`    if (cookies['${ctx.appName}-${safeName}']) ${setter}(JSON.parse(decodeURIComponent(cookies['${ctx.appName}-${safeName}'])));`);
+      const { storeKey, getter, loadSetter } = resolvePersistKey(key, ctx);
+      const varName = `_saved_${key.replace(/\./g, '_')}`;
+      lines.push(`    if (cookies['${storeKey}']) { const ${varName} = JSON.parse(decodeURIComponent(cookies['${storeKey}'])); ${loadSetter(varName)}; }`);
     }
     lines.push('  } catch (e) { /* ignore */ }');
     lines.push('}, []);');
@@ -174,18 +222,28 @@ function generatePersistSave(ctx: TranspileContext): string[] {
   if (ctx.persistMethod === 'localStorage' || ctx.persistMethod === 'session') {
     const storage = ctx.persistMethod === 'session' ? 'sessionStorage' : 'localStorage';
     for (const key of ctx.persistKeys) {
-      const safeName = key.replace(/\./g, '_');
+      const { storeKey, getter, depVar } = resolvePersistKey(key, ctx);
+      const isDotPath = key.includes('.');
       lines.push(`useEffect(() => {`);
-      lines.push(`  ${storage}.setItem('${ctx.appName}-${safeName}', JSON.stringify(${safeName}));`);
-      lines.push(`}, [${safeName}]);`);
+      if (isDotPath) {
+        lines.push(`  if (${getter} !== undefined) ${storage}.setItem('${storeKey}', JSON.stringify(${getter}));`);
+      } else {
+        lines.push(`  ${storage}.setItem('${storeKey}', JSON.stringify(${getter}));`);
+      }
+      lines.push(`}, [${depVar}]);`);
     }
   } else if (ctx.persistMethod === 'cookie') {
     const maxAge = ctx.persistOptions['7d'] ? '; max-age=604800' : '';
     for (const key of ctx.persistKeys) {
-      const safeName = key.replace(/\./g, '_');
+      const { storeKey, getter, depVar } = resolvePersistKey(key, ctx);
+      const isDotPath = key.includes('.');
       lines.push(`useEffect(() => {`);
-      lines.push(`  document.cookie = '${ctx.appName}-${safeName}=' + encodeURIComponent(JSON.stringify(${safeName})) + '; path=/${maxAge}';`);
-      lines.push(`}, [${safeName}]);`);
+      if (isDotPath) {
+        lines.push(`  if (${getter} !== undefined) document.cookie = '${storeKey}=' + encodeURIComponent(JSON.stringify(${getter})) + '; path=/${maxAge}';`);
+      } else {
+        lines.push(`  document.cookie = '${storeKey}=' + encodeURIComponent(JSON.stringify(${getter})) + '; path=/${maxAge}';`);
+      }
+      lines.push(`}, [${depVar}]);`);
     }
   }
 
@@ -567,6 +625,13 @@ function generateFlowJSX(
 ): string {
   const pad = ' '.repeat(ind);
 
+  // Pattern: ?condition > content → conditional rendering
+  if (node.left.kind === 'unary' && node.left.operator === '?') {
+    const condition = resolveRef(node.left.operand, scope);
+    const content = generateJSX(node.right, ctx, analysis, scope, ind + 2);
+    return `${pad}{${condition} && (\n${content}\n${pad})}`;
+  }
+
   // Pattern: element > !mutation → element with event handler
   if (node.right.kind === 'unary' && node.right.operator === '!') {
     return generateElementWithAction(node.left, node.right, ctx, analysis, scope, ind);
@@ -584,6 +649,14 @@ function generateFlowJSX(
     const leftResolved = tryResolveElement(node.left);
     if (leftResolved) {
       const mapping = mapElement(leftResolved.element, leftResolved.modifiers);
+      // img/a: text becomes src/href attribute, not children
+      if (mapping.tag === 'img') {
+        return `${pad}<img src="${node.right.text}"${classAttr(mapping.className)} alt="${leftResolved.modifiers[0] || 'image'}" />`;
+      }
+      if (mapping.tag === 'a') {
+        const textContent = node.right.text;
+        return `${pad}<a href="${textContent}"${classAttr(mapping.className)}>${escapeText(textContent)}</a>`;
+      }
       const textContent = node.right.text.includes('#')
         ? `{${interpolateText(node.right.text, ctx, scope)}}`
         : escapeText(node.right.text);
@@ -1616,6 +1689,17 @@ function interpolateText(text: string, ctx: TranspileContext, scope: Scope): str
       // Handle pipes in text refs like #items|!done.length
       const parts = ref.split('|');
       let expr = parts[0];
+
+      // Use optional chaining if root state var is nullable
+      const dotParts = expr.split('.');
+      if (dotParts.length > 1) {
+        const rootVar = dotParts[0];
+        const stateField = ctx.state.find(f => f.name === rootVar);
+        if (stateField && stateField.type.kind === 'optional') {
+          expr = rootVar + '?.' + dotParts.slice(1).join('.');
+        }
+      }
+
       for (let i = 1; i < parts.length; i++) {
         const pipe = parts[i];
         if (pipe.startsWith('!')) {
