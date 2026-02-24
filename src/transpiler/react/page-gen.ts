@@ -203,6 +203,10 @@ export function generatePageComponents(
   const hookMap = getHookableStateProps(ctx);
   const files: OutputFile[] = [];
 
+  // Determine if Layout.jsx will be generated — must match condition in layout-gen.ts
+  const hasSidebarInUI = ctx.uiNodes.some(n => n.kind === 'element' && n.element === 'sidebar');
+  const hasLayout = analysis.hasPages && (hasSidebarInUI || analysis.pages.length >= 3);
+
   for (const page of analysis.pages) {
     const pageName = capitalize(page.name);
     const deps = analyzePageDependencies(page.children, ctx, analysis);
@@ -213,8 +217,8 @@ export function generatePageComponents(
       files.push({
         path: `src/pages/${pageName}Page.jsx`,
         content: binding.isDashboard
-          ? generateDashboardPage(pageName, page, ctx, analysis, binding)
-          : generateCrudPage(pageName, page, ctx, analysis, binding),
+          ? generateDashboardPage(pageName, page, ctx, analysis, binding, hasLayout)
+          : generateCrudPage(pageName, page, ctx, analysis, binding, hasLayout),
       });
     } else {
       // ---- Original behavior (auth pages or non-auth-gated apps) ----
@@ -356,12 +360,13 @@ function generateDashboardPage(
   ctx: TranspileContext,
   analysis: UIAnalysis,
   binding: PageResourceBinding,
+  hasLayout: boolean,
 ): string {
   const lines: string[] = [];
   // Note: provenance header is prepended by transpiler orchestrator
   lines.push("import { useState, useEffect } from 'react';");
   lines.push("import * as api from '../api.js';");
-  lines.push("import Layout from '../Layout.jsx';");
+  if (hasLayout) lines.push("import Layout from '../Layout.jsx';");
   lines.push('');
   lines.push(`export default function ${pageName}Page({ user, logout, currentPage, setCurrentPage }) {`);
   lines.push('  const [loading, setLoading] = useState(true);');
@@ -403,7 +408,11 @@ function generateDashboardPage(
 
   // Render with Layout wrapping — sidebar filtered since Layout provides it
   lines.push('  return (');
-  lines.push('    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>');
+  const WrapOpen = hasLayout
+    ? '    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>'
+    : '    <div className="min-h-screen p-6" style={{ background: "var(--bg)", color: "var(--fg)" }}>';
+  const WrapClose = hasLayout ? '    </Layout>' : '    </div>';
+  lines.push(WrapOpen);
 
   // Loading state
   lines.push('      {loading ? (');
@@ -427,7 +436,7 @@ function generateDashboardPage(
   }
 
   lines.push('      )}');
-  lines.push('    </Layout>');
+  lines.push(WrapClose);
   lines.push('  );');
   lines.push('}');
   lines.push('');
@@ -443,6 +452,7 @@ function generateCrudPage(
   ctx: TranspileContext,
   analysis: UIAnalysis,
   binding: PageResourceBinding,
+  hasLayout: boolean,
 ): string {
   const lines: string[] = [];
   const modelPlural = binding.modelPlural || page.name.toLowerCase();
@@ -459,7 +469,7 @@ function generateCrudPage(
   // Note: provenance header is prepended by transpiler orchestrator
   lines.push("import { useState, useEffect } from 'react';");
   lines.push("import * as api from '../api.js';");
-  lines.push("import Layout from '../Layout.jsx';");
+  if (hasLayout) lines.push("import Layout from '../Layout.jsx';");
   lines.push('');
   lines.push(`export default function ${pageName}Page({ user, logout, currentPage, setCurrentPage }) {`);
 
@@ -571,7 +581,10 @@ function generateCrudPage(
 
   // Render
   lines.push('  return (');
-  lines.push('    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>');
+  lines.push(hasLayout
+    ? '    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>'
+    : '    <div className="min-h-screen p-6" style={{ background: "var(--bg)", color: "var(--fg)" }}>');
+
 
   // Auth-gated CRUD pages use the generated CRUD wrapper exclusively —
   // skip the @ui block JSX since the wrapper already handles display.
@@ -689,7 +702,7 @@ function generateCrudPage(
     lines.push('      )}');
   }
 
-  lines.push('    </Layout>');
+  lines.push(hasLayout ? '    </Layout>' : '    </div>');
   lines.push('  );');
   lines.push('}');
   lines.push('');

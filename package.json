@@ -22,7 +22,8 @@
     "generate": "node dist/cli/index.js generate",
     "transpile": "node dist/cli/index.js transpile",
     "validate": "node dist/cli/index.js validate",
-    "mcp": "npx tsx src/mcp/server.ts"
+    "mcp": "npx tsx src/mcp/server.ts",
+    "build:gallery": "tsx scripts/build-gallery.ts"
   },
   "keywords": [
     "ai",

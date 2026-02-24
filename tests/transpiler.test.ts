@@ -979,6 +979,13 @@ describe('transpile: output structure', () => {
     expect(result.stats.outputLines).toBeGreaterThan(50);
     expect(result.stats.components).toBeGreaterThanOrEqual(1);
   });
+
+  it('relative .html links get target="_blank"', () => {
+    const allJsx = getAllJsx('airengine-site');
+    // The airengine-site has a link to ./gallery/dist/index.html
+    expect(allJsx).toContain('target="_blank"');
+    expect(allJsx).toContain('gallery/dist/index.html');
+  });
 });
 
 // ---- D1: Visual Semantics ----

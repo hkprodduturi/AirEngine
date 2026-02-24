@@ -695,7 +695,8 @@ export function generateFlowJSX(
           const pageName = href.slice(1);
           return `${pad}<a href="#"${classAttr(mapping.className)} onClick={(e) => { e.preventDefault(); setCurrentPage('${pageName}'); }}>${escapeText(textContent)}</a>`;
         }
-        const external = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
+        const external = (href.startsWith('http') || href.endsWith('.html'))
+          ? ' target="_blank" rel="noopener noreferrer"' : '';
         return `${pad}<a href="${escapeAttr(href)}"${classAttr(mapping.className)}${external}>${escapeText(textContent)}</a>`;
       }
       const textContent = node.right.text.includes('#')
