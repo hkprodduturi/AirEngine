@@ -112,8 +112,9 @@ function singularize(s: string): string {
     return parts.join('-');
   }
   if (s.endsWith('ies')) return s.slice(0, -3) + 'y';
+  if (s.endsWith('ches') || s.endsWith('shes')) return s.slice(0, -2);
   if (s.endsWith('ses') || s.endsWith('xes') || s.endsWith('zes')) return s.slice(0, -2);
-  if (s.endsWith('s') && !s.endsWith('ss') && !s.endsWith('us')) return s.slice(0, -1);
+  if (s.endsWith('s') && !s.endsWith('ss') && !s.endsWith('us') && !s.endsWith('is')) return s.slice(0, -1);
   return s;
 }
 

@@ -179,7 +179,12 @@ export function generateApiRouter(ctx: TranspileContext): string {
         lines.push('    res.status(201).json(result);');
       } else {
         lines.push(`    const result = ${prismaCall};`);
-        lines.push('    res.json(result);');
+        // POST/create → 201 Created, others → 200 OK
+        if (method === 'post' && handler.includes('.create')) {
+          lines.push('    res.status(201).json(result);');
+        } else {
+          lines.push('    res.json(result);');
+        }
       }
     } else {
       // Check for auth handler before falling through to 501
@@ -307,6 +312,10 @@ export function mapHandlerToPrisma(
   switch (operation) {
     case 'findMany':
       return `await prisma.${modelVar}.findMany()`;
+    case 'findFirst':
+      return hasIdParam
+        ? `await prisma.${modelVar}.findFirst({ where: { id: ${idExpr} } })`
+        : `await prisma.${modelVar}.findFirst({ where: req.query })`;
     case 'findUnique':
       return hasIdParam
         ? `await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } })`
@@ -442,13 +451,15 @@ export function generateAuthHandlerLines(
   const lines: string[] = [];
 
   // Determine the user model name — ordered priority:
-  // 1. Model named "User"
+  // 1. Model named "User" (must have password field for auth)
   // 2. Model with both email AND password fields (most likely auth model)
-  // 3. First model with email field
-  const userModel = ctx.db?.models.find(m => m.name === 'User')
+  // 3. First model with email field (fallback for simple schemas)
+  const userModelByName = ctx.db?.models.find(m => m.name === 'User');
+  const userModel = (userModelByName && userModelByName.fields.some(f => f.name === 'password') ? userModelByName : null)
     || ctx.db?.models.find(m =>
       m.fields.some(f => f.name === 'email') && m.fields.some(f => f.name === 'password')
     )
+    || userModelByName
     || ctx.db?.models.find(m => m.fields.some(f => f.name === 'email'));
   const modelVar = userModel
     ? userModel.name.charAt(0).toLowerCase() + userModel.name.slice(1)
@@ -665,7 +676,12 @@ export function generateResourceRouter(
           lines.push('    res.status(201).json(result);');
         } else {
           lines.push(`    const result = ${prismaCall};`);
-          lines.push('    res.json(result);');
+          // POST/create → 201 Created
+          if (method === 'post' && handler.includes('.create')) {
+            lines.push('    res.status(201).json(result);');
+          } else {
+            lines.push('    res.json(result);');
+          }
         }
       } else {
         // Check for auth handler before falling through to 501
@@ -851,7 +867,12 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
             lines.push('    res.status(201).json(result);');
           } else {
             lines.push(`    const result = ${prismaCall};`);
-            lines.push('    res.json(result);');
+            // POST/create → 201 Created
+            if (method === 'post' && handler.includes('.create')) {
+              lines.push('    res.status(201).json(result);');
+            } else {
+              lines.push('    res.json(result);');
+            }
           }
         } else {
           // Check for auth handler before falling through to 501

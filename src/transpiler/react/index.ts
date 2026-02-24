@@ -90,8 +90,10 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
     lines.push('  }, []);');
     lines.push('');
 
-    // Only auth mutations (login + logout)
-    const authOnlyMutations = analysis.mutations.filter(m => AUTH_MUTATION_NAMES.has(m.name));
+    // Only auth mutations (login + register — not logout, we generate that explicitly)
+    const authOnlyMutations = analysis.mutations.filter(m =>
+      AUTH_MUTATION_NAMES.has(m.name) && m.name !== 'logout'
+    );
     if (authOnlyMutations.length > 0) {
       const authAnalysis = { ...analysis, mutations: authOnlyMutations };
       const mutCode = generateMutations(ctx, authAnalysis);
@@ -100,6 +102,18 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
         lines.push('');
       }
     }
+
+    // Always generate logout when auth-gated (Layout and pages need it)
+    lines.push('  const logout = () => {');
+    if (ctx.hasBackend && ctx.apiRoutes.length > 0) {
+      lines.push('    api.clearToken();');
+    }
+    lines.push('    setUser(null);');
+    lines.push(`    localStorage.removeItem('${ctx.appName}_user');`);
+    lines.push(`    localStorage.removeItem('auth_token');`);
+    lines.push("    setCurrentPage('login');");
+    lines.push('  };');
+    lines.push('');
 
     // Persist: load on mount (auth-related persistence like cookie tokens)
     const loadCode = generatePersistLoad(ctx);

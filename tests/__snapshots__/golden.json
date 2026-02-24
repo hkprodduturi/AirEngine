@@ -9,7 +9,7 @@
       "index.html": "de8f38d2651b5420",
       "src/main.jsx": "d2a5622fca5cfbd3",
       "src/index.css": "1f163c1dc1cfc4c1",
-      "src/App.jsx": "645ca05e1beed189"
+      "src/App.jsx": "0c1caede890af89c"
     }
   },
   "expense-tracker": {
@@ -22,7 +22,7 @@
       "index.html": "fc368be178bc4d6a",
       "src/main.jsx": "6099034bef7a7282",
       "src/index.css": "1ee5c3a903437dc9",
-      "src/App.jsx": "0338c2626483321b"
+      "src/App.jsx": "6d6b5d612e53bec4"
     }
   },
   "auth": {
@@ -35,10 +35,10 @@
       "client/index.html": "91b86cbc86134073",
       "client/src/main.jsx": "798afb8cd21838e0",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "b920b715ee801e90",
+      "client/src/App.jsx": "5904dce8c92e82cd",
       "client/src/api.js": "069926c3c9eb1fd1",
-      "client/src/pages/LoginPage.jsx": "7dfa2643243b70e3",
-      "client/src/pages/DashboardPage.jsx": "3e557547faac4632",
+      "client/src/pages/LoginPage.jsx": "2b9eb14c92997dab",
+      "client/src/pages/DashboardPage.jsx": "2324142ffe5017fc",
       "server/package.json": "2d4044e45d76a69c",
       "server/tsconfig.json": "1b6d33775241d6b4",
       "server/.env": "99efd42c4cde3f80",
@@ -64,7 +64,7 @@
       "client/src/Layout.jsx": "5aea2c37a6a14fb7",
       "client/src/api.js": "c0ad05a0ed0dd8f1",
       "client/src/pages/OverviewPage.jsx": "1a165523211d786d",
-      "client/src/pages/UsersPage.jsx": "492d16d6206c621a",
+      "client/src/pages/UsersPage.jsx": "e004b390b042e145",
       "client/src/components/DataTable.jsx": "f0aeab1d7c560ecf",
       "client/src/components/StatCard.jsx": "94147ff91bfed2ee",
       "server/package.json": "a87a03b573b43eaa",
@@ -89,7 +89,7 @@
       "index.html": "6960caefbd92e137",
       "src/main.jsx": "ebd6c45b5da28f33",
       "src/index.css": "acf4b1a6650698ff",
-      "src/App.jsx": "2b772b11b5d389ec"
+      "src/App.jsx": "8aa388d15aee04e9"
     }
   },
   "fullstack-todo": {
@@ -102,7 +102,7 @@
       "client/index.html": "09af4aaa46cb6fbc",
       "client/src/main.jsx": "c9e4f45f08db9432",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "875d9d6eb3ccbb87",
+      "client/src/App.jsx": "30207e32a88b6807",
       "client/src/api.js": "1dcd0c0ca1b1b212",
       "client/src/types.ts": "168ea41abdea173d",
       "client/src/components/EmptyState.jsx": "834c8d58e60bd8b7",
@@ -114,7 +114,7 @@
       "server/seed.ts": "3305711aef25335d",
       "server/types.ts": "355f9d4092650f8e",
       "server/validation.ts": "798ac66d5419b14c",
-      "server/api.ts": "023fff7091336d08",
+      "server/api.ts": "26a4982702e5cdb6",
       "server/middleware.ts": "a58866fbe1cc45d5",
       "server/server.ts": "463048213695499c",
       "README.md": "e3d6a8470629d67a"
@@ -130,15 +130,15 @@
       "client/index.html": "0a52e135952fb9fe",
       "client/src/main.jsx": "6a2fdfd95a3cebca",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "b0fa2690a2609730",
+      "client/src/App.jsx": "63ac828977104538",
       "client/src/Layout.jsx": "c4040772e63ee9da",
       "client/src/api.js": "d39f81ae572415c9",
       "client/src/types.ts": "ef8760e57f4f53d8",
-      "client/src/pages/LoginPage.jsx": "5917c87f1cadaccb",
-      "client/src/pages/DashboardPage.jsx": "c6d96ee06b709fe4",
-      "client/src/pages/ProjectsPage.jsx": "ecf8860dc1fc83ca",
-      "client/src/pages/TasksPage.jsx": "590e1731db75b35d",
-      "client/src/pages/SettingsPage.jsx": "7ccd281f070a5373",
+      "client/src/pages/LoginPage.jsx": "2f38ac8f7cce3c6a",
+      "client/src/pages/DashboardPage.jsx": "1cbf4ffa451a4ad9",
+      "client/src/pages/ProjectsPage.jsx": "f868125fb87ca146",
+      "client/src/pages/TasksPage.jsx": "2915e7b4583bd5cc",
+      "client/src/pages/SettingsPage.jsx": "ed0f23d94bfce164",
       "server/package.json": "abdabd902adc4a16",
       "server/tsconfig.json": "1b6d33775241d6b4",
       "server/.env": "6d81cd644dc1f5d9",
@@ -148,9 +148,9 @@
       "server/types.ts": "c98e6ae7f29d91fe",
       "server/validation.ts": "794c539e317a0308",
       "server/routes/users.ts": "0a85af1304704c37",
-      "server/routes/workspaces.ts": "6abae36cefa28b21",
-      "server/routes/projects.ts": "1656b0181e2f2abd",
-      "server/routes/tasks.ts": "e65fbde90e069542",
+      "server/routes/workspaces.ts": "ac8b97257d14cf2b",
+      "server/routes/projects.ts": "12c0c49332d224b4",
+      "server/routes/tasks.ts": "f90c939f70d09a64",
       "server/api.ts": "39f723450633c941",
       "server/webhooks.ts": "84aeee1d07c97cb0",
       "server/auth.ts": "78db18e70c091f1a",

@@ -4,7 +4,7 @@
 
 import type { TranspileContext } from '../context.js';
 import type { UIAnalysis } from '../normalize-ui.js';
-import { capitalize, hasAuthRoutes, isAuthPageName } from './helpers.js';
+import { capitalize, camelToLabel, hasAuthRoutes, isAuthPageName } from './helpers.js';
 
 // ---- Layout Component ----
 
@@ -30,7 +30,7 @@ export function generateLayout(ctx: TranspileContext, analysis: UIAnalysis): str
   lines.push('  const navItems = [');
   for (const page of analysis.pages) {
     if (isAuthPageName(page.name)) continue;
-    const label = capitalize(page.name);
+    const label = camelToLabel(page.name);
     lines.push(`    { key: '${page.name}', label: '${label}' },`);
   }
   lines.push('  ];');

@@ -226,7 +226,7 @@ export function generateElementJSX(
       const isAuthFormAction = firstAction === 'login' || firstAction === 'register' || firstAction === 'signup';
       const hasAuthRoutesForm = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
       const authAlertForm = isAuthFormAction && hasAuthRoutesForm
-        ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{authError}</div>}`
+        ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{authError}</div>}`
         : '';
       return `${pad}<form${classAttr(mapping.className)}${onSubmitAttr}>${authAlertForm}\n${childJsx}\n${pad}</form>`;
     }
@@ -299,7 +299,7 @@ export function generateScopedJSX(
         case 'hero': return 'py-24 px-6 space-y-6 text-center';
         case 'footer': return 'py-8 px-6 space-y-4 border-t border-[var(--border)] text-center';
         case 'cta': return 'py-20 px-6 space-y-6 text-center';
-        default: return scope.insideSidebarPage ? 'py-4 space-y-4' : 'py-16 px-6 space-y-6';
+        default: return scope.insideSidebarPage ? 'py-4 space-y-4' : (analysis.hasPages ? 'py-8 px-6 space-y-6' : 'py-16 px-6 space-y-6');
       }
     })();
     const childJsx = node.children.map(c =>
@@ -905,9 +905,11 @@ export function generateBindJSX(
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
     const resolvedName = resolved.modifiers[0] || mapping.inputType || resolved.element;
     const nameAttr = scope.insideForm ? ` name="${resolvedName}"` : '';
-    const placeholder = mapping.inputType && resolved.element === 'input'
-      ? ` placeholder="${escapeAttr(capitalize(resolvedName))}..."`
-      : '';
+    const placeholder = resolved.element === 'search'
+      ? ' placeholder="Search..."'
+      : (mapping.inputType && resolved.element === 'input'
+        ? ` placeholder="${escapeAttr(capitalize(resolvedName))}..."`
+        : '');
     return `${pad}<${mapping.tag}${typeAttr}${nameAttr}${classAttr(mapping.className)}${placeholder} />`;
   }
 
@@ -1136,7 +1138,7 @@ export function generateElementWithAction(
     const isAuthForm = actionName === 'login' || actionName === 'register' || actionName === 'signup';
     const hasAuthRoutes = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
     const authAlert = isAuthForm && hasAuthRoutes
-      ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{authError}</div>}`
+      ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{authError}</div>}`
       : '';
     return `${pad}<form className="${mapping.className}" onSubmit={(e) => { e.preventDefault(); ${actionName}(${actionArgs}); }}>${authAlert}\n${childJsx}\n${pad}</form>`;
   }

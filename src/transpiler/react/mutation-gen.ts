@@ -166,15 +166,35 @@ export function findMatchingRoute(
  * Try to match a generic mutation name to any API route by converting
  * camelCase name to kebab-case path segment.
  * e.g., !processPayment → find POST /.../process-payment
+ * Also tries PUT routes for action verbs (approve, reject, cancel, etc.)
  */
-function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]): string | null {
+function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]): { fnName: string; method: string } | null {
   // Convert camelCase to kebab-case
   const kebab = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-  const route = expandedRoutes.find(r =>
+  // Try POST first
+  const postRoute = expandedRoutes.find(r =>
     r.method === 'POST' && r.path.endsWith(`/${kebab}`)
   );
-  if (route) {
-    return routeToFunctionName(route.method, route.path);
+  if (postRoute) {
+    return { fnName: routeToFunctionName(postRoute.method, postRoute.path), method: 'POST' };
+  }
+  // Try PUT for action verbs (approve, reject, cancel, publish, etc.)
+  const putRoute = expandedRoutes.find(r =>
+    r.method === 'PUT' && r.path.endsWith(`/${kebab}`)
+  );
+  if (putRoute) {
+    return { fnName: routeToFunctionName(putRoute.method, putRoute.path), method: 'PUT' };
+  }
+  // Try matching PUT routes with :id param for update-style actions
+  const putIdRoute = expandedRoutes.find(r =>
+    r.method === 'PUT' && /~db\.\w+\.update/.test(r.handler)
+  );
+  if (putIdRoute) {
+    // Only match if the action name plausibly targets an update
+    const actionVerbs = ['approve', 'reject', 'cancel', 'confirm', 'publish', 'unpublish', 'activate', 'deactivate', 'complete', 'close', 'reopen', 'assign', 'unassign', 'move', 'pin', 'unpin', 'star', 'unstar', 'archive', 'restore', 'block', 'unblock', 'mark', 'flag', 'enroll', 'book'];
+    if (actionVerbs.includes(name.toLowerCase())) {
+      return { fnName: routeToFunctionName(putIdRoute.method, putIdRoute.path), method: 'PUT' };
+    }
   }
   return null;
 }
@@ -560,17 +580,49 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
     } else {
       // Generic mutation — try to match by name to any API route
       const genericMatch = canWireApi ? findGenericRouteMatch(name, expandedRoutes) : null;
+      // Use safe JS identifier — avoid shadowing globals like window.confirm
+      const safeName = name === 'confirm' ? 'handleConfirm' : name.replace(/\./g, '_');
       if (genericMatch) {
-        lines.push(`const ${name.replace(/\./g, '_')} = async (data) => {`);
-        lines.push(`  try {`);
-        lines.push(`    const result = await api.${genericMatch}(data);`);
-        lines.push(`    return result;`);
-        lines.push(`  } catch (err) {`);
-        lines.push(`    console.error('${name} failed:', err);`);
-        lines.push(`  }`);
-        lines.push('};');
+        if (genericMatch.method === 'PUT') {
+          // PUT-style action: takes (id, data?) for update operations
+          lines.push(`const ${safeName} = async (id, data) => {`);
+          lines.push(`  try {`);
+          lines.push(`    const result = await api.${genericMatch.fnName}(id, data || { ${name}: true });`);
+          // Find matching GET route for refetch
+          const basePath = expandedRoutes.find(r =>
+            routeToFunctionName(r.method, r.path) === genericMatch.fnName
+          )?.path.replace(/\/:[^/]+$/, '');
+          const getRoute = basePath ? expandedRoutes.find(r => r.method === 'GET' && r.path === basePath) : null;
+          if (getRoute) {
+            const getFn = routeToFunctionName('GET', getRoute.path);
+            const resource = basePath!.replace(/^\//, '').split('/').pop() || '';
+            const directMatch = ctx.state.find(f => f.name === resource);
+            const refetchSetter = directMatch
+              ? 'set' + capitalize(directMatch.name)
+              : (ctx.state.filter(f => f.type.kind === 'array').length === 1
+                ? 'set' + capitalize(ctx.state.find(f => f.type.kind === 'array')!.name)
+                : null);
+            if (refetchSetter) {
+              lines.push(`    ${refetchSetter}(await api.${getFn}());`);
+            }
+          }
+          lines.push(`    return result;`);
+          lines.push(`  } catch (err) {`);
+          lines.push(`    console.error('${name} failed:', err);`);
+          lines.push(`  }`);
+          lines.push('};');
+        } else {
+          lines.push(`const ${safeName} = async (data) => {`);
+          lines.push(`  try {`);
+          lines.push(`    const result = await api.${genericMatch.fnName}(data);`);
+          lines.push(`    return result;`);
+          lines.push(`  } catch (err) {`);
+          lines.push(`    console.error('${name} failed:', err);`);
+          lines.push(`  }`);
+          lines.push('};');
+        }
       } else {
-        lines.push(`const ${name.replace(/\./g, '_')} = (...args) => {`);
+        lines.push(`const ${safeName} = (...args) => {`);
         lines.push(`  console.log('${name}', ...args);`);
         lines.push('};');
       }

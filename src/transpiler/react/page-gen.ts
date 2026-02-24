@@ -14,7 +14,7 @@ import type { OutputFile } from '../index.js';
 import { resolveBindChain } from '../normalize-ui.js';
 import { routeToFunctionName } from '../route-utils.js';
 import {
-  capitalize, pluralize, ROOT_SCOPE,
+  capitalize, pluralize, toCamelCase, camelToLabel, ROOT_SCOPE,
   analyzePageDependencies, getHookableStateProps,
   tryResolveElement, isAuthPageName, hasAuthRoutes,
   inferModelFieldsFromDataSource,
@@ -74,7 +74,7 @@ function detectPageResource(
         // Skip auth routes
         if (r.path.includes('/auth/')) continue;
         const fnName = routeToFunctionName('GET', r.path);
-        const resource = r.path.replace(/^\//, '').split('/').pop() || '';
+        const resource = toCamelCase(r.path.replace(/^\//, '').split('/').pop() || '');
         binding.dataSources.push({ stateVar: resource, getFnName: fnName });
       }
       return binding;
@@ -250,32 +250,41 @@ function generateOriginalPage(
     }
   }
 
+  const isAuth = isAuthPageName(page.name);
+
   // Build prop names: exclude hook-covered state vars + their setters
   const propNames: string[] = [];
-  for (const s of deps.stateProps) {
-    if (hookedProps.has(s)) continue;
-    propNames.push(s);
-    propNames.push('set' + capitalize(s));
-  }
-  for (const s of deps.setterProps) {
-    if (hookedProps.has(s)) continue;
-    const setName = 'set' + capitalize(s);
-    if (!propNames.includes(setName)) propNames.push(setName);
-  }
-  for (const m of deps.mutationProps) {
-    const safeName = m.replace(/\./g, '_');
-    if (!propNames.includes(safeName)) propNames.push(safeName);
-  }
-  if (deps.needsNav) {
-    if (!propNames.includes('currentPage')) propNames.push('currentPage');
-    if (!propNames.includes('setCurrentPage')) propNames.push('setCurrentPage');
-  }
-
-  // Add authError props for login/register pages
-  const isAuth = isAuthPageName(page.name);
   if (isAuth && ctxHasAuth) {
+    // Auth pages in auth-gated mode: minimal props — no user/setUser (form uses FormData)
+    for (const m of deps.mutationProps) {
+      const safeName = m.replace(/\./g, '_');
+      if (!propNames.includes(safeName) && safeName !== 'logout') propNames.push(safeName);
+    }
     if (!propNames.includes('authError')) propNames.push('authError');
-    if (!propNames.includes('setAuthError')) propNames.push('setAuthError');
+    if (!propNames.includes('setCurrentPage')) propNames.push('setCurrentPage');
+  } else {
+    for (const s of deps.stateProps) {
+      if (hookedProps.has(s)) continue;
+      propNames.push(s);
+      propNames.push('set' + capitalize(s));
+    }
+    for (const s of deps.setterProps) {
+      if (hookedProps.has(s)) continue;
+      const setName = 'set' + capitalize(s);
+      if (!propNames.includes(setName)) propNames.push(setName);
+    }
+    for (const m of deps.mutationProps) {
+      const safeName = m.replace(/\./g, '_');
+      if (!propNames.includes(safeName)) propNames.push(safeName);
+    }
+    if (deps.needsNav) {
+      if (!propNames.includes('currentPage')) propNames.push('currentPage');
+      if (!propNames.includes('setCurrentPage')) propNames.push('setCurrentPage');
+    }
+    if (isAuth && ctxHasAuth) {
+      if (!propNames.includes('authError')) propNames.push('authError');
+      if (!propNames.includes('setAuthError')) propNames.push('setAuthError');
+    }
   }
 
   const lines: string[] = [];
@@ -353,8 +362,25 @@ function generateDashboardPage(
   lines.push(`export default function ${pageName}Page({ user, logout, currentPage, setCurrentPage }) {`);
 
   // State for each data source
+  const declaredVars = new Set<string>(['user', 'logout', 'currentPage', 'setCurrentPage']);
   for (const ds of binding.dataSources) {
     lines.push(`  const [${ds.stateVar}, set${capitalize(ds.stateVar)}] = useState([]);`);
+    declaredVars.add(ds.stateVar);
+    declaredVars.add('set' + capitalize(ds.stateVar));
+  }
+
+  // Pre-generate child JSX to scan for undeclared state vars
+  const filteredChildren = page.children.filter(c => !hasSidebarNode(c));
+  const mainChildren = extractMainContent(page.children) || filteredChildren;
+  const childJsx = mainChildren.map(c =>
+    generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
+  ).filter(Boolean).join('\n');
+
+  // Scan JSX for undeclared state variables and add them
+  const extraState = detectUndeclaredStateVars(childJsx, declaredVars, ctx);
+  for (const { name, defaultVal } of extraState) {
+    lines.push(`  const [${name}, set${capitalize(name)}] = useState(${defaultVal});`);
+    declaredVars.add(name);
   }
   lines.push('');
 
@@ -366,15 +392,15 @@ function generateDashboardPage(
   lines.push('  }, []);');
   lines.push('');
 
-  // Render with Layout wrapping
+  // Render with Layout wrapping — sidebar filtered since Layout provides it
   lines.push('  return (');
   lines.push('    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>');
 
-  // Render original UI tree content inside Layout
-  const childJsx = page.children.map(c =>
-    generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
-  ).filter(Boolean).join('\n');
-  lines.push(childJsx);
+  if (childJsx.trim()) {
+    lines.push('      <div className="space-y-6">');
+    lines.push(childJsx);
+    lines.push('      </div>');
+  }
 
   lines.push('    </Layout>');
   lines.push('  );');
@@ -411,12 +437,38 @@ function generateCrudPage(
   lines.push(`export default function ${pageName}Page({ user, logout, currentPage, setCurrentPage }) {`);
 
   // Local state
+  const declaredVars = new Set<string>(['user', 'logout', 'currentPage', 'setCurrentPage']);
   lines.push(`  const [${modelPlural}, set${capitalize(modelPlural)}] = useState([]);`);
+  declaredVars.add(modelPlural);
+  declaredVars.add('set' + capitalize(modelPlural));
   if (postFnName) {
     lines.push('  const [showForm, setShowForm] = useState(false);');
+    declaredVars.add('showForm'); declaredVars.add('setShowForm');
   }
   if (putFnName) {
     lines.push('  const [editId, setEditId] = useState(null);');
+    declaredVars.add('editId'); declaredVars.add('setEditId');
+  }
+  // Mark handler names as known
+  if (postFnName) declaredVars.add('handleCreate');
+  if (putFnName) declaredVars.add('handleUpdate');
+  if (deleteFnName) declaredVars.add('handleDelete');
+
+  // Pre-scan child JSX for undeclared state vars
+  const preChildren = page.children.filter(c => !hasSidebarNode(c));
+  const preMain = extractMainContent(page.children) || preChildren;
+  const preJsx = preMain.map(c =>
+    generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
+  ).filter(Boolean).join('\n');
+  const extraState = detectUndeclaredStateVars(preJsx, declaredVars, ctx);
+  for (const { name, defaultVal } of extraState) {
+    lines.push(`  const [${name}, set${capitalize(name)}] = useState(${defaultVal});`);
+    declaredVars.add(name);
+  }
+
+  // Alias mutation names from JSX to generated handlers
+  if (deleteFnName) {
+    lines.push('  const del = handleDelete;');
   }
   lines.push('');
 
@@ -467,7 +519,7 @@ function generateCrudPage(
   // Delete handler
   if (deleteFnName && getFnName) {
     lines.push('  const handleDelete = async (id) => {');
-    lines.push(`    if (!confirm('Delete this ${modelSingular.toLowerCase()}?')) return;`);
+    lines.push(`    if (!window.confirm('Delete this ${modelSingular.toLowerCase()}?')) return;`);
     lines.push(`    await api.${deleteFnName}(id);`);
     lines.push('    load();');
     lines.push('  };');
@@ -478,13 +530,38 @@ function generateCrudPage(
   lines.push('  return (');
   lines.push('    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>');
 
-  // Render original UI tree content inside Layout
-  const childJsx = page.children.map(c =>
+  // Filter out sidebar/main wrappers since Layout provides them
+  const filteredChildren = page.children.filter(c => !hasSidebarNode(c));
+  const mainChildren = extractMainContent(page.children) || filteredChildren;
+  const childJsx = mainChildren.map(c =>
     generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
   ).filter(Boolean).join('\n');
 
   if (childJsx.trim()) {
+    // Check if custom UI already has a form element or references showForm toggle
+    const hasFormInJsx = childJsx.includes('onSubmit') || childJsx.includes('<form');
+    lines.push('      <div className="space-y-6">');
+    // Inject create form toggle when POST route exists but custom UI doesn't include one
+    if (postFnName && !hasFormInJsx) {
+      lines.push(`        <div className="flex items-center justify-between">`);
+      lines.push(`          <h1 className="text-2xl font-bold">${capitalize(modelPlural)}</h1>`);
+      lines.push(`          <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius)]">`);
+      lines.push(`            {showForm ? 'Cancel' : 'Add ${modelSingular}'}`);
+      lines.push(`          </button>`);
+      lines.push(`        </div>`);
+      if (binding.formFields.length > 0) {
+        lines.push(`        {showForm && (`);
+        lines.push(`          <form onSubmit={handleCreate} className="p-4 border border-[var(--border)] rounded-[var(--radius)] bg-[var(--surface)] space-y-3">`);
+        for (const field of binding.formFields) {
+          lines.push(renderFormField(field, 12));
+        }
+        lines.push(`            <button type="submit" className="px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius)]">Create</button>`);
+        lines.push(`          </form>`);
+        lines.push(`        )}`);
+      }
+    }
     lines.push(childJsx);
+    lines.push('      </div>');
   } else {
     // If no UI tree content, generate a default CRUD view
     lines.push(`      <div className="space-y-6">`);
@@ -619,4 +696,104 @@ function hasSidebarNode(node: AirUINode): boolean {
     return hasSidebarNode(node.left);
   }
   return false;
+}
+
+/** Extract main content children when page has sidebar+main layout. */
+function extractMainContent(children: AirUINode[]): AirUINode[] | null {
+  for (const child of children) {
+    if (child.kind === 'binary' && child.operator === '+') {
+      if (hasSidebarNode(child.left)) {
+        const mainNode = child.right;
+        const resolved = tryResolveElement(mainNode);
+        if (resolved && resolved.element === 'main' && mainNode.kind === 'binary' && mainNode.operator === '>') {
+          return [mainNode.right];
+        }
+        return [mainNode];
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Scan generated JSX for state variable references that weren't declared.
+ * Returns array of { name, defaultVal } for useState declarations needed.
+ */
+function detectUndeclaredStateVars(
+  jsx: string,
+  declaredVars: Set<string>,
+  ctx: TranspileContext,
+): { name: string; defaultVal: string }[] {
+  const result: { name: string; defaultVal: string }[] = [];
+  const seen = new Set<string>();
+  const varRefs = new Set<string>();
+
+  // Find setter calls: setXyz(...) → xyz is a state var
+  const setterPattern = /\bset([A-Z]\w*)\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = setterPattern.exec(jsx)) !== null) {
+    const varName = m[1].charAt(0).toLowerCase() + m[1].slice(1);
+    varRefs.add(varName);
+  }
+
+  // Find value={varName} patterns
+  const valuePattern = /value=\{(\w+)(?:[.?]|}\s)/g;
+  while ((m = valuePattern.exec(jsx)) !== null) {
+    varRefs.add(m[1]);
+  }
+
+  // Find {varName.something} patterns (state object access)
+  const accessPattern = /\{(\w+)\.\w+/g;
+  while ((m = accessPattern.exec(jsx)) !== null) {
+    const name = m[1];
+    if (!['api', 'Math', 'JSON', 'console', 'window', 'document', 'e', 'item', '_item', 'row', 'prev'].includes(name)) {
+      varRefs.add(name);
+    }
+  }
+
+  // Find {varName === 'x'} patterns (filter/tab state)
+  const eqPattern = /\{(\w+)\s*===\s/g;
+  while ((m = eqPattern.exec(jsx)) !== null) {
+    const name = m[1];
+    if (!['currentPage', 'item', '_item', 'row', '_tab'].includes(name)) {
+      varRefs.add(name);
+    }
+  }
+
+  // Find {varName.filter(} or {varName.map(} patterns (array state)
+  const arrayPattern = /\{(\w+)\.(?:filter|map|length|sort|slice|find|reduce)\b/g;
+  while ((m = arrayPattern.exec(jsx)) !== null) {
+    const name = m[1];
+    if (!['api', 'Math', 'JSON', 'console', 'e', 'Object', 'Array', 'String'].includes(name)) {
+      varRefs.add(name);
+    }
+  }
+
+  for (const varName of varRefs) {
+    if (declaredVars.has(varName) || seen.has(varName)) continue;
+    seen.add(varName);
+
+    const stateField = ctx.state.find(f => f.name === varName);
+    let defaultVal = "''";
+
+    if (stateField) {
+      if (stateField.type.kind === 'array') defaultVal = '[]';
+      else if (stateField.type.kind === 'object') defaultVal = '{}';
+      else if (stateField.type.kind === 'bool') defaultVal = 'false';
+      else if (stateField.type.kind === 'int' || stateField.type.kind === 'float') defaultVal = '0';
+      else if (stateField.type.kind === 'optional') defaultVal = 'null';
+      else if (stateField.type.kind === 'enum') defaultVal = "'all'";
+      else if ('default' in stateField.type && stateField.type.default !== undefined) defaultVal = JSON.stringify(stateField.type.default);
+    } else {
+      if (varName.toLowerCase().includes('filter') || varName.toLowerCase().includes('status')) {
+        defaultVal = "'all'";
+      } else if (varName.endsWith('s') && varName.length > 2) {
+        defaultVal = '[]';
+      }
+    }
+
+    result.push({ name: varName, defaultVal });
+  }
+
+  return result;
 }

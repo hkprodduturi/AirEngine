@@ -713,9 +713,11 @@ describe('mutation wiring (fullstack)', () => {
     expect(app).not.toContain("console.log('Login attempted')");
   });
 
-  it('auth.air logout calls api.createLogout', () => {
+  it('auth.air logout clears token and user', () => {
     const app = getClientApp('auth');
-    expect(app).toContain('api.createLogout()');
+    expect(app).toContain('api.clearToken()');
+    expect(app).toContain('setUser(null)');
+    expect(app).toContain("setCurrentPage('login')");
   });
 
   it('auth.air form inputs have name attributes', () => {

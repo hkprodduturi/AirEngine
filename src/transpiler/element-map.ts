@@ -61,7 +61,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   btn: {
     tag: 'button',
-    className: 'px-5 py-2.5 rounded-[var(--radius)] cursor-pointer transition-colors',
+    className: 'bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors',
     modifiers: {
       primary: { className: 'bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium hover:brightness-110 min-w-[80px] cursor-pointer transition-colors' },
       secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors' },
@@ -72,7 +72,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   input: {
     tag: 'input',
-    className: 'rounded-[var(--radius)] px-3.5 py-2.5',
+    className: 'border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent',
     selfClosing: true,
     modifiers: {
       text: { inputType: 'text' },
@@ -118,7 +118,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   badge: {
     tag: 'span',
-    className: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[var(--accent)]/20 text-[var(--accent)]',
+    className: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] text-[var(--accent)]',
   },
   list: {
     tag: 'ul',
@@ -191,7 +191,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   search: {
     tag: 'input',
-    className: 'rounded-[var(--radius)] px-3.5 py-2.5',
+    className: 'border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent',
     selfClosing: true,
     modifiers: {
       input: { inputType: 'search' },

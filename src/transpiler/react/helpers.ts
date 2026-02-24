@@ -56,6 +56,16 @@ export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Convert hyphenated-name to camelCase (e.g. "stock-levels" → "stockLevels") */
+export function toCamelCase(s: string): string {
+  return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+/** Convert camelCase to human-readable label (e.g. "myCourses" → "My Courses") */
+export function camelToLabel(s: string): string {
+  return s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+}
+
 export function escapeText(text: string): string {
   return text.replace(/[{}<>]/g, c => {
     switch (c) {
@@ -102,14 +112,29 @@ export function interpolateText(text: string, ctx: TranspileContext, scope: Scop
 
       for (let i = 1; i < parts.length; i++) {
         const pipe = parts[i];
+        // Split pipe on first dot to separate pipe name from chained accessor
+        const pipeDot = pipe.indexOf('.');
+        const pipeName = pipeDot >= 0 ? pipe.slice(0, pipeDot) : pipe;
+        const pipeRest = pipeDot >= 0 ? pipe.slice(pipeDot + 1) : '';
         if (pipe.startsWith('!')) {
           // Filter negation: !done → .filter(i => !i.done)
           const field = pipe.slice(1).split('.')[0];
           const rest = pipe.slice(1).split('.').slice(1).join('.');
           expr = `${expr}.filter(i => !i.${field})`;
           if (rest) expr = `${expr}.${rest}`;
+        } else if (pipeName === 'count' || pipeName === 'length') {
+          expr = `${expr}.length`;
+          if (pipeRest) expr = `${expr}.${pipeRest}`;
+        } else if (pipeName === 'sum') {
+          const field = pipeRest || 'amount';
+          expr = `${expr}.reduce((s, x) => s + x.${field}, 0)`;
+        } else if (pipeName === 'filter') {
+          // Generic filter — leave as-is (requires context)
+          expr = `${expr}`;
         } else {
-          expr = `${expr}.${pipe}`;
+          // Literal filter value (e.g., |pending): filter by status
+          expr = `${expr}.filter(i => i.status === '${pipeName}')`;
+          if (pipeRest) expr = `${expr}.${pipeRest}`;
         }
       }
       return `\${${expr}}`;
@@ -173,8 +198,14 @@ export function nodeToString(node: AirUINode): string {
 }
 
 export function pluralize(s: string): string {
-  if (s.endsWith('y')) return s.slice(0, -1) + 'ies';
-  if (s.endsWith('s') || s.endsWith('x') || s.endsWith('z')) return s + 'es';
+  // consonant+y → ies (company → companies), vowel+y → ys (survey → surveys)
+  if (s.endsWith('y') && s.length > 1 && !'aeiou'.includes(s[s.length - 2])) {
+    return s.slice(0, -1) + 'ies';
+  }
+  if (s.endsWith('s') || s.endsWith('x') || s.endsWith('z') ||
+      s.endsWith('sh') || s.endsWith('ch')) {
+    return s + 'es';
+  }
   return s + 's';
 }
 
