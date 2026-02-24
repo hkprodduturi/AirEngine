@@ -144,7 +144,7 @@ export function parseType(s: TokenStream): AirType {
     return { kind: 'ref', entity: name };
   }
 
-  // Type keyword: str, int, float, bool, date, enum
+  // Type keyword: str, int, float, bool, date, enum, list, map, any
   if (s.is('type_keyword')) {
     const kw = s.advance().value;
     if (kw === 'enum') {
@@ -165,6 +165,25 @@ export function parseType(s: TokenStream): AirType {
       }
       return { kind: 'enum', values: [] };
     }
+    // list → shorthand for array of any (e.g. items:list)
+    if (kw === 'list') {
+      // list(type) → typed array, or bare list → array of str
+      if (s.is('open_paren')) {
+        s.advance();
+        const inner = parseType(s);
+        s.expect('close_paren');
+        return { kind: 'array', of: inner };
+      }
+      return { kind: 'array', of: { kind: 'str' } };
+    }
+    // map → shorthand for object
+    if (kw === 'map') {
+      return { kind: 'object', fields: [] };
+    }
+    // any → treat as str (safest default)
+    if (kw === 'any') {
+      return { kind: 'str' };
+    }
     const k = kw as 'str' | 'int' | 'float' | 'bool' | 'date' | 'datetime';
     // Default value: type(literal) e.g. float(2000)
     if (s.is('open_paren')) {
@@ -174,6 +193,28 @@ export function parseType(s: TokenStream): AirType {
       return { kind: k, default: defVal } as AirType;
     }
     return { kind: k };
+  }
+
+  // Inline enum shorthand: value1|value2|value3 (identifiers separated by pipe)
+  // Triggered when we see an identifier followed by a pipe operator
+  if (s.is('identifier')) {
+    const pos = s.pos;
+    const firstVal = s.advance().value;
+    if (s.is('operator', '|')) {
+      // It's an inline enum: collect all pipe-separated values
+      const values: string[] = [firstVal];
+      while (s.is('operator', '|')) {
+        s.advance(); // consume |
+        if (s.is('identifier') || s.is('type_keyword')) {
+          values.push(s.advance().value);
+        } else {
+          break;
+        }
+      }
+      return { kind: 'enum', values };
+    }
+    // Not an inline enum — restore position and fall through to error
+    s.restore(pos);
   }
 
   throw s.error(`Expected type, got ${s.current().kind} '${s.current().value}'`);

@@ -9,7 +9,7 @@ import { resolveBindChain } from '../normalize-ui.js';
 import { mapElement } from '../element-map.js';
 import {
   Scope, ROOT_SCOPE, ICON_EMOJI,
-  capitalize, escapeText, interpolateText, deriveLabel, classAttr,
+  capitalize, escapeText, escapeAttr, interpolateText, deriveLabel, classAttr,
   findStateField, resolveSetterFromRef, nodeToString, deriveEmptyLabel,
   inferModelFieldsFromDataSource,
   setter, wrapFormGroup,
@@ -21,11 +21,16 @@ import {
   findEnumValues, resolveDeepType, findEnumByName,
   analyzePageDependencies, getHookableStateProps,
   findFirstFormAction,
+  isAuthPageName, hasAuthRoutes,
 } from './helpers.js';
+
+// Module-level flag set during generateRootJSX — avoids threading through entire recursive tree
+let _hasAuthGating = false;
 
 // ---- Root JSX ----
 
-export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy = false): string[] {
+export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy = false, hasAuthGating = false, hasLayout = false): string[] {
+  _hasAuthGating = hasAuthGating;
   const rootClasses = 'min-h-screen bg-[var(--bg)] text-[var(--fg)]';
 
   const maxWidth = ctx.style.maxWidth;
@@ -34,6 +39,44 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
   const hasSidebar = ctx.uiNodes.some(n =>
     n.kind === 'element' && n.element === 'sidebar'
   );
+
+  // When Layout is generated for non-auth apps, use it instead of inline sidebar
+  if (hasLayout && !hasAuthGating && ctx.hasBackend && analysis.hasPages) {
+    const lines: string[] = [];
+    // Only pass user/logout to Layout if the app actually has user state (auth mutations)
+    const hasUserState = ctx.state.some(f => f.name === 'user');
+    const hasLogout = analysis.mutations.some(m => m.name === 'logout');
+    const layoutProps = (hasUserState && hasLogout)
+      ? 'currentPage={currentPage} setCurrentPage={setCurrentPage} user={user} logout={logout}'
+      : 'currentPage={currentPage} setCurrentPage={setCurrentPage}';
+    lines.push(`<div className="${rootClasses}">`);
+    lines.push(`  <Layout ${layoutProps}>`);
+
+    // Render only page component references (skip sidebar, main, nav nodes)
+    // Extract all @page scoped nodes from the UI tree
+    const allPages: AirUINode[] = [];
+    for (const node of ctx.uiNodes) {
+      allPages.push(...extractScopedPages(node));
+    }
+    const contentIndent = 4;
+    if (useLazy) {
+      lines.push(`    <Suspense fallback={<div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>}>`);
+      for (const pn of allPages) {
+        const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, contentIndent + 2);
+        if (jsx) lines.push(jsx);
+      }
+      lines.push(`    </Suspense>`);
+    } else {
+      for (const pn of allPages) {
+        const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, contentIndent);
+        if (jsx) lines.push(jsx);
+      }
+    }
+
+    lines.push('  </Layout>');
+    lines.push('</div>');
+    return lines;
+  }
 
   // Determine wrapper: explicit maxWidth > sidebar (no wrapper) > default 900px container
   // Fullstack pages handle their own padding — don't add px/space-y to wrapper
@@ -78,6 +121,22 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
 
   lines.push('</div>');
   return lines;
+}
+
+/** Recursively extract @page scoped nodes from a binary tree */
+function extractScopedPages(node: AirUINode): AirUINode[] {
+  if (node.kind === 'scoped' && node.scope === 'page') return [node];
+  if (node.kind === 'binary') {
+    return [...extractScopedPages(node.left), ...extractScopedPages(node.right)];
+  }
+  if (node.kind === 'element' && node.children) {
+    const pages: AirUINode[] = [];
+    for (const child of node.children) {
+      pages.push(...extractScopedPages(child));
+    }
+    return pages;
+  }
+  return [];
 }
 
 // ---- Core JSX Generator ----
@@ -147,7 +206,7 @@ export function generateElementJSX(
     const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
     if (options.length > 0) {
       return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-        + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+        + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
         + `${pad}</select>`;
     }
   }
@@ -221,7 +280,7 @@ export function generateElementJSX(
       const isAuthFormAction = firstAction === 'login' || firstAction === 'register' || firstAction === 'signup';
       const hasAuthRoutesForm = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
       const authAlertForm = isAuthFormAction && hasAuthRoutesForm
-        ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{authError}</div>}`
+        ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{authError}</div>}`
         : '';
       return `${pad}<form${classAttr(mapping.className)}${onSubmitAttr}>${authAlertForm}\n${childJsx}\n${pad}</form>`;
     }
@@ -291,10 +350,10 @@ export function generateScopedJSX(
   if (node.scope === 'section') {
     const sectionClasses = (() => {
       switch (node.name) {
-        case 'hero': return 'py-24 px-6 space-y-6 text-center';
+        case 'hero': return 'py-28 px-6 space-y-8 text-center';
         case 'footer': return 'py-8 px-6 space-y-4 border-t border-[var(--border)] text-center';
         case 'cta': return 'py-20 px-6 space-y-6 text-center';
-        default: return scope.insideSidebarPage ? 'py-4 space-y-4' : 'py-16 px-6 space-y-6';
+        default: return scope.insideSidebarPage ? 'py-4 space-y-4' : (analysis.hasPages ? 'py-8 px-6 space-y-6' : 'py-20 px-6 space-y-6 text-center');
       }
     })();
     const childJsx = node.children.map(c =>
@@ -325,6 +384,10 @@ export function pageHasFormContent(node: AirUINode & { kind: 'scoped' }): boolea
 /**
  * Render a page as a component reference: <DashboardPage prop1={val} ... />
  * Computes which props the page needs, excluding hook-covered state vars.
+ *
+ * When _hasAuthGating is true:
+ * - Auth pages get simplified props (login/authError/setCurrentPage)
+ * - Data pages get isAuthed gate + user/logout/currentPage/setCurrentPage
  */
 function generatePageComponentRef(
   node: AirUINode & { kind: 'scoped' },
@@ -334,6 +397,42 @@ function generatePageComponentRef(
 ): string {
   const pad = ' '.repeat(ind);
   const pageName = capitalize(node.name);
+  const isAuth = isAuthPageName(node.name);
+  const ctxHasAuth = hasAuthRoutes(ctx);
+
+  if (_hasAuthGating) {
+    // ---- Auth-gated mode: simplified props ----
+    if (isAuth) {
+      // Auth pages: only auth-related props, no isAuthed gate
+      const propAssignments: string[] = [];
+      // Pass mutation props detected by tree walk
+      const deps = analyzePageDependencies(node.children, ctx, analysis);
+      for (const m of deps.mutationProps) {
+        const safeName = m.replace(/\./g, '_');
+        propAssignments.push(`${safeName}={${safeName}}`);
+      }
+      if (!propAssignments.some(p => p.startsWith('authError='))) {
+        propAssignments.push('authError={authError}');
+      }
+      if (!propAssignments.some(p => p.startsWith('setCurrentPage='))) {
+        propAssignments.push('setCurrentPage={setCurrentPage}');
+      }
+      const propsStr = propAssignments.length > 0 ? ' ' + propAssignments.join(' ') : '';
+      return `${pad}{currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
+    } else {
+      // Data pages: require isAuthed, pass user/logout/nav props
+      const propAssignments = [
+        'user={user}',
+        'logout={logout}',
+        'currentPage={currentPage}',
+        'setCurrentPage={setCurrentPage}',
+      ];
+      const propsStr = ' ' + propAssignments.join(' ');
+      return `${pad}{isAuthed && currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
+    }
+  }
+
+  // ---- Original full-prop mode ----
   const deps = analyzePageDependencies(node.children, ctx, analysis);
   const hookMap = getHookableStateProps(ctx);
 
@@ -364,9 +463,7 @@ function generatePageComponentRef(
   }
 
   // Pass authError props for login/register pages
-  const isAuthPage = node.name === 'login' || node.name === 'register' || node.name === 'signup';
-  const hasAuthRoutes = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.includes('/auth/') || r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
-  if (isAuthPage && hasAuthRoutes) {
+  if (isAuth && ctxHasAuth) {
     if (!propAssignments.some(p => p.startsWith('authError='))) {
       propAssignments.push('authError={authError}');
     }
@@ -565,7 +662,7 @@ export function generateFlowJSX(
   // Pattern: element > *iter(...) → container with iteration
   if (node.right.kind === 'unary' && node.right.operator === '*') {
     // Check if left is itself a flow chain: list > (items|filter) then this > *iter
-    const dataSource = extractDataSource(node.left, scope);
+    const dataSource = extractDataSource(node.left, scope, ctx);
     return generateContainerWithIteration(node.left, dataSource, node.right, ctx, analysis, scope, ind);
   }
 
@@ -583,7 +680,7 @@ export function generateFlowJSX(
 
       // img/a: text becomes src/href attribute, not children
       if (mapping.tag === 'img') {
-        return `${pad}<img src="${node.right.text}"${classAttr(mapping.className)} alt="${leftResolved.modifiers[0] || 'image'}" />`;
+        return `${pad}<img src="${escapeAttr(node.right.text)}"${classAttr(mapping.className)} alt="${escapeAttr(leftResolved.modifiers[0] || 'image')}" />`;
       }
       if (mapping.tag === 'a') {
         const textContent = node.right.text;
@@ -598,12 +695,17 @@ export function generateFlowJSX(
           const pageName = href.slice(1);
           return `${pad}<a href="#"${classAttr(mapping.className)} onClick={(e) => { e.preventDefault(); setCurrentPage('${pageName}'); }}>${escapeText(textContent)}</a>`;
         }
-        const external = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
-        return `${pad}<a href="${href}"${classAttr(mapping.className)}${external}>${escapeText(textContent)}</a>`;
+        const external = (href.startsWith('http') || href.endsWith('.html'))
+          ? ' target="_blank" rel="noopener noreferrer"' : '';
+        return `${pad}<a href="${escapeAttr(href)}"${classAttr(mapping.className)}${external}>${escapeText(textContent)}</a>`;
       }
       const textContent = node.right.text.includes('#')
         ? `{${interpolateText(node.right.text, ctx, scope)}}`
         : escapeText(node.right.text);
+      // Header with heading child (e.g., header>h1>"Settings"): wrap text in <h1>
+      if (leftResolved.element === 'header' && leftResolved.children?.some(c => c.kind === 'element' && /^h[1-6]$/.test(c.element))) {
+        return `${pad}<${mapping.tag}${classAttr(mapping.className)}>\n${pad}  <h1 className="text-xl font-bold">${textContent}</h1>\n${pad}</${mapping.tag}>`;
+      }
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>${textContent}</${mapping.tag}>`;
     }
   }
@@ -618,7 +720,7 @@ export function generateFlowJSX(
         const bindInfo = resolveBindChain(node.left);
         if (bindInfo?.label) {
           const mapping = mapElement('stat', []);
-          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{'$' + (${ref}).toFixed(2)}</div>\n${pad}</div>`;
+          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{'$' + (${ref}).toFixed(2)}</div>\n${pad}</div>`;
         }
       }
       return `${pad}<span>{'$' + ${ref}}</span>`;
@@ -635,7 +737,7 @@ export function generateFlowJSX(
         const bindInfo = resolveBindChain(node.left);
         if (bindInfo?.label) {
           const mapping = mapElement('stat', []);
-          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
+          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
         }
       }
       return generateFlowBoundElement(leftResolved, ref, ctx, scope, ind);
@@ -657,7 +759,7 @@ export function generateFlowJSX(
       if (leftResolved.element === 'stat') {
         const resolved = node.left.kind === 'binary' && node.left.operator === ':' ? resolveBindChain(node.left) : null;
         const label = resolved?.label || '';
-        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(label)}</div>\n${pad}  <div className="text-2xl font-bold">{${expr}}</div>\n${pad}</div>`;
+        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(label)}</div>\n${pad}  <div className="text-2xl font-bold">{${expr}}</div>\n${pad}</div>`;
       }
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{${expr}}</${mapping.tag}>`;
     }
@@ -674,7 +776,7 @@ export function generateFlowJSX(
     const stateField = findStateField(stateVar, ctx);
     const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
     return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-      + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+      + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
       + `${pad}</select>`;
   }
 
@@ -722,7 +824,7 @@ export function generatePipeJSX(
       const valueNode = resolved.binding || resolved.action || node.left;
       const pipeExpr = resolvePipeExpr({ kind: 'binary', operator: '|', left: valueNode, right: node.right }, ctx, scope);
       if (resolved.element === 'stat') {
-        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(resolved.label || '')}</div>\n${pad}  <div className="text-2xl font-bold">{${pipeExpr}}</div>\n${pad}</div>`;
+        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(resolved.label || '')}</div>\n${pad}  <div className="text-2xl font-bold">{${pipeExpr}}</div>\n${pad}</div>`;
       }
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{${pipeExpr}}</${mapping.tag}>`;
     }
@@ -790,7 +892,7 @@ export function generateBindJSX(
   // Element with label (stat:"Total")
   if (resolved.label !== undefined) {
     if (resolved.element === 'stat') {
-      return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">--</div>\n${pad}</div>`;
+      return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">--</div>\n${pad}</div>`;
     }
     return `${pad}<${mapping.tag} className="${mapping.className}">${escapeText(resolved.label)}</${mapping.tag}>`;
   }
@@ -829,9 +931,17 @@ export function generateBindJSX(
     return `${pad}<span className="${mapping.className}">${emoji}</span>`;
   }
 
-  // Chart — render placeholder
+  // Chart — render polished placeholder with icon
   if (resolved.element === 'chart') {
-    return `${pad}<div className="${mapping.className}">${capitalize(resolved.modifiers[0] || 'chart')} chart placeholder</div>`;
+    const chartType = capitalize(resolved.modifiers[0] || 'chart');
+    return `${pad}<div className="${mapping.className}">\n`
+      + `${pad}  <div className="flex flex-col items-center gap-2 text-[var(--muted)]">\n`
+      + `${pad}    <svg className="w-8 h-8 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>\n`
+      + `${pad}      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />\n`
+      + `${pad}    </svg>\n`
+      + `${pad}    <span className="text-sm">${chartType} chart</span>\n`
+      + `${pad}  </div>\n`
+      + `${pad}</div>`;
   }
 
   // Pre/code:block — join text children as multi-line code block
@@ -842,7 +952,7 @@ export function generateBindJSX(
       else if (c.kind === 'element') codeLines.push(c.element);
     }
     const joined = codeLines.join('\\n');
-    return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{\`${joined.replace(/`/g, '\\`')}\`}</${mapping.tag}>`;
+    return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{\`${joined.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`}</${mapping.tag}>`;
   }
 
   // Element with children from resolved bind
@@ -856,10 +966,16 @@ export function generateBindJSX(
   // Simple styled element
   if (mapping.selfClosing) {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolved.element}"` : '';
-    const placeholder = mapping.inputType && resolved.element === 'input'
-      ? ` placeholder="${capitalize(mapping.inputType)}..."`
-      : '';
+    const resolvedName = resolved.modifiers[0] || mapping.inputType || resolved.element;
+    const nameAttr = scope.insideForm ? ` name="${resolvedName}"` : '';
+    // Smart placeholder based on element type/name
+    let placeholder = '';
+    if (resolved.element === 'search') {
+      placeholder = ' placeholder="Search..."';
+    } else if (resolved.element === 'input' && mapping.inputType) {
+      const label = resolved.modifiers[0] ? capitalize(resolved.modifiers[0]) : capitalize(mapping.inputType);
+      placeholder = ` placeholder="${escapeAttr(label === 'Text' ? 'Enter value' : label)}..."`;
+    }
     return `${pad}<${mapping.tag}${typeAttr}${nameAttr}${classAttr(mapping.className)}${placeholder} />`;
   }
 
@@ -885,7 +1001,7 @@ export function generateDotJSX(
       const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
       if (options.length > 0) {
         return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-          + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+          + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
           + `${pad}</select>`;
       }
     }
@@ -973,9 +1089,20 @@ export function generateBoundElement(
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
     const plainRef = ref.replace(/\?\./, '.');
     const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
-    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolvedFieldName}"` : '';
+    const nameAttr = scope.insideForm ? ` name="${resolvedFieldName}"` : '';
+    // Auth forms (login/register) use uncontrolled inputs — FormData reads values on submit
+    const isAuthForm = scope.insideForm && (scope.formAction === 'login' || scope.formAction === 'register' || scope.formAction === 'signup');
     const valueExpr = ref !== plainRef ? `${ref} ?? ''` : ref;
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${capitalize(resolved.modifiers[0] || resolved.element)}..." />`;
+    // Smart placeholder: "Search..." for search-related inputs, contextual for others
+    const isSearchLike = resolved.element === 'search' || resolvedFieldName === 'search' || resolvedFieldName === 'input' || mapping.inputType === 'search';
+    const placeholderText = isSearchLike
+      ? 'Search...'
+      : (resolvedFieldName === 'password' ? 'Enter password...'
+        : resolvedFieldName === 'email' ? 'Enter email...'
+        : `${capitalize(resolvedFieldName)}...`);
+    const inputJsx = isAuthForm
+      ? `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" placeholder="${placeholderText}" />`
+      : `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${placeholderText}" />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
@@ -985,11 +1112,27 @@ export function generateBoundElement(
 
   // Select bound to state
   if (resolved.element === 'select') {
-    const ref = resolveRef(binding.kind === 'unary' ? binding.operand : binding, scope);
+    const ref = resolveRef(binding.kind === 'unary' ? binding.operand : binding, scope, ctx);
+    const plainRef = ref.replace(/\?\./g, '.');
     const stateField = findStateField(ref, ctx);
-    const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
-    const optionsJsx = options.map(o => `${pad}    <option value="${o}">${o}</option>`).join('\n');
-    return `${pad}<select className="${mapping.className}" value={${ref}} onChange={(e) => ${resolveSetterFromRef(ref)}(e.target.value)}>\n${optionsJsx}\n${pad}</select>`;
+    let options: string[] = stateField?.type.kind === 'enum' ? stateField.type.values : [];
+    // Fall back to node children as options (e.g. select:#workspace.plan(free,pro,enterprise))
+    if (options.length === 0 && resolved.children && resolved.children.length > 0) {
+      options = resolved.children.map(c => c.kind === 'element' ? c.element : nodeToString(c));
+    }
+    // Also check binding operand children (parser attaches options there)
+    if (options.length === 0) {
+      const operand = binding.kind === 'unary' ? binding.operand : binding;
+      const deepChildren = operand.kind === 'binary' && operand.operator === '.'
+        ? (operand.right as AirUINode & { children?: AirUINode[] }).children
+        : (operand as AirUINode & { children?: AirUINode[] }).children;
+      if (deepChildren && deepChildren.length > 0) {
+        options = deepChildren.map((c: AirUINode) => c.kind === 'element' ? c.element : nodeToString(c));
+      }
+    }
+    const valueExpr = ref !== plainRef ? `${ref} ?? ''` : ref;
+    const optionsJsx = options.map(o => `${pad}    <option value="${o}">${capitalize(o)}</option>`).join('\n');
+    return `${pad}<select className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)}>\n${optionsJsx}\n${pad}</select>`;
   }
 
   // Badge showing value
@@ -1015,7 +1158,7 @@ export function generateBoundElement(
   // Stat element with label and value
   if (resolved.element === 'stat' && resolved.label !== undefined) {
     const ref = resolveRefNode(binding, scope);
-    return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
+    return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
   }
 
   // Image with src
@@ -1023,7 +1166,7 @@ export function generateBoundElement(
     const src = binding.kind === 'text' ? binding.text
       : binding.kind === 'element' ? binding.element
       : nodeToString(binding);
-    return `${pad}<img src="${src}" alt="${resolved.modifiers[0] || 'image'}" className="${mapping.className}" />`;
+    return `${pad}<img src="${escapeAttr(src)}" alt="${escapeAttr(resolved.modifiers[0] || 'image')}" className="${mapping.className}" />`;
   }
 
   // Link with href
@@ -1032,7 +1175,7 @@ export function generateBoundElement(
       : binding.kind === 'element' ? binding.element
       : '#';
     const externalLink = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
-    return `${pad}<a href="${href.startsWith('/') ? '#' + href : href}" className="${mapping.className}"${externalLink}>`;
+    return `${pad}<a href="${escapeAttr(href.startsWith('/') ? '#' + href : href)}" className="${mapping.className}"${externalLink}>`;
   }
 
   // Generic: render element displaying the binding value
@@ -1072,7 +1215,7 @@ export function generateElementWithAction(
     const isAuthForm = actionName === 'login' || actionName === 'register' || actionName === 'signup';
     const hasAuthRoutes = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
     const authAlert = isAuthForm && hasAuthRoutes
-      ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{authError}</div>}`
+      ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{authError}</div>}`
       : '';
     return `${pad}<form className="${mapping.className}" onSubmit={(e) => { e.preventDefault(); ${actionName}(${actionArgs}); }}>${authAlert}\n${childJsx}\n${pad}</form>`;
   }
@@ -1138,7 +1281,10 @@ export function generateIterationJSX(
   ).filter(Boolean).join('\n');
 
   const emptyLabel = deriveEmptyLabel(dataExpr);
-  return `${pad}{${dataExpr}.length === 0 ? (\n${pad}  <div className="empty-state">${emptyLabel}</div>\n${pad}) : ${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n${childJsx}\n${pad}  </div>\n${pad}))}`;
+  // Skip styled wrapper when children contain a card element (avoid double-wrapping)
+  const hasCardChild = children.some(c => c.kind === 'element' && c.element === 'card');
+  const iterItemClass = hasCardChild ? '' : ' className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3"';
+  return `${pad}{${dataExpr}.length === 0 ? (\n${pad}  <div className="empty-state">${emptyLabel}</div>\n${pad}) : ${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id}${iterItemClass}>\n${childJsx}\n${pad}  </div>\n${pad}))}`;
 }
 
 export function generateContainerWithIteration(
@@ -1190,11 +1336,13 @@ export function generateContainerWithIteration(
   ).filter(Boolean).join('\n');
 
   const emptyLabel = deriveEmptyLabel(dataSource);
+  const hasCardChild = children.some(c => c.kind === 'element' && c.element === 'card');
+  const iterItemClass = hasCardChild ? '' : ' className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3"';
   return `${pad}<${containerElement}${classAttr(containerClass)}>\n`
     + `${pad}  {${dataSource}.length === 0 ? (\n`
     + `${pad}    <div className="empty-state">${emptyLabel}</div>\n`
     + `${pad}  ) : ${dataSource}.map((${iterVar}) => (\n`
-    + `${pad}    <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n`
+    + `${pad}    <div key={${iterVar}.id}${iterItemClass}>\n`
     + `${childJsx}\n`
     + `${pad}    </div>\n`
     + `${pad}  ))}\n`
@@ -1216,11 +1364,20 @@ export function generateFlowBoundElement(
   // Input: value + onChange
   if (mapping.tag === 'input' || resolved.element === 'search') {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    const placeholder = resolved.modifiers[0] || resolved.element;
     const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
-    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolvedFieldName}"` : '';
+    const nameAttr = scope.insideForm ? ` name="${resolvedFieldName}"` : '';
     const valueExpr = stateRef !== plainRef ? `${stateRef} ?? ''` : stateRef;
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${capitalize(placeholder)}..." />`;
+    // Smart placeholder based on context
+    const isSearchLike = resolved.element === 'search' || resolvedFieldName === 'search' || resolvedFieldName === 'input' || mapping.inputType === 'search';
+    const placeholderText = isSearchLike ? 'Search...'
+      : (resolvedFieldName === 'password' ? 'Enter password...'
+        : resolvedFieldName === 'email' ? 'Enter email...'
+        : `${capitalize(resolvedFieldName)}...`);
+    // Auth forms (login/register) use uncontrolled inputs — FormData reads values on submit
+    const isAuthForm = scope.insideForm && (scope.formAction === 'login' || scope.formAction === 'register' || scope.formAction === 'signup');
+    const inputJsx = isAuthForm
+      ? `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" placeholder="${placeholderText}" />`
+      : `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${placeholderText}" />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
@@ -1231,7 +1388,7 @@ export function generateFlowBoundElement(
   // Select: value + onChange with enum options
   if (resolved.element === 'select') {
     const enumValues = findEnumValues(stateRef, resolved.modifiers, ctx);
-    const optionsJsx = enumValues.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n');
+    const optionsJsx = enumValues.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n');
     return `${pad}<select className="${mapping.className}" value={${stateRef}} onChange={(e) => ${setterExpr}(e.target.value)}>\n${optionsJsx}\n${pad}</select>`;
   }
 
@@ -1242,7 +1399,7 @@ export function generateFlowBoundElement(
       const optionsStr = enumValues.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateRef} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => ${setterExpr}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateRef} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => ${setterExpr}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }
@@ -1282,14 +1439,14 @@ export function generateSetterElement(
     const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
     return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
       + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-      + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+      + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
       + `${pad}  ))}\n`
       + `${pad}</div>`;
   }
 
   if (leftResolved?.element === 'select') {
     return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-      + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+      + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
       + `${pad}</select>`;
   }
 
@@ -1297,7 +1454,7 @@ export function generateSetterElement(
   const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
   return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
     + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-    + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+    + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
     + `${pad}  ))}\n`
     + `${pad}</div>`;
 }
@@ -1322,7 +1479,7 @@ export function generateFlowWithDot(
       const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }
@@ -1331,7 +1488,7 @@ export function generateFlowWithDot(
     if (leftResolved?.element === 'select') {
       const mapping = mapElement('select', []);
       return `${pad}<select className="${mapping.className}" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-        + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+        + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
         + `${pad}</select>`;
     }
   }
@@ -1343,7 +1500,7 @@ export function generateFlowWithDot(
       const stateField = findStateField(stateVar, ctx);
       const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
       return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-        + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+        + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
         + `${pad}</select>`;
     }
   }
@@ -1424,11 +1581,13 @@ export function generateFlowChain(
 
     const iterDataExpr = dataExpr || 'items';
     const emptyLabel = deriveEmptyLabel(iterDataExpr);
+    const hasCardChild = children.some(c => c.kind === 'element' && c.element === 'card');
+    const iterItemClass = hasCardChild ? '' : ' className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3"';
     return `${pad}<${containerMapping.tag}${classAttr(containerMapping.className)}>\n`
       + `${pad}  {${iterDataExpr}.length === 0 ? (\n`
       + `${pad}    <div className="empty-state">${emptyLabel}</div>\n`
       + `${pad}  ) : ${iterDataExpr}.map((${iterVar}) => (\n`
-      + `${pad}    <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n`
+      + `${pad}    <div key={${iterVar}.id}${iterItemClass}>\n`
       + `${childJsx}\n`
       + `${pad}    </div>\n`
       + `${pad}  ))}\n`
@@ -1571,7 +1730,7 @@ export function generateTabsElement(
       const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${filterField.name} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(filterField.name)}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${filterField.name} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(filterField.name)}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }

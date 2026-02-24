@@ -1,0 +1,165 @@
+# ================================================================
+# WarehouseOps — Warehouse & Location Management
+# ================================================================
+# Warehouses, zones, products, and stock movements.
+# Demonstrates location hierarchy, movement tracking, stock stats.
+# ================================================================
+
+@app:warehouseops
+
+@style(theme:dark,accent:#0284c7,radius:8,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  warehouses:[{id:int,name:str,location:str,capacity:int,utilization:float}],
+  zones:[{id:int,name:str,type:str,warehouseName:str,capacity:int}],
+  products:[{id:int,sku:str,name:str,category:str,quantity:int,minStock:int}],
+  movements:[{id:int,type:str,quantity:int,productName:str,zoneName:str,reason:?str,createdAt:str}],
+  stockStats:{totalProducts:int,lowStock:int,totalMovements:int,warehouseCount:int},
+  movementFilter:enum(all,inbound,outbound,transfer),
+  categoryFilter:enum(all,electronics,hardware,raw_material,finished_goods),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(operator,supervisor,admin),created_at:datetime:auto}
+  Warehouse{id:int:primary:auto,name:str:required,location:str:required,capacity:int:required,created_at:datetime:auto}
+  Zone{id:int:primary:auto,name:str:required,type:enum(receiving,storage,shipping,staging):required,capacity:int:required,warehouse_id:int:required,created_at:datetime:auto}
+  Product{id:int:primary:auto,sku:str:required,name:str:required,description:?str,category:enum(electronics,hardware,raw_material,finished_goods):required,weight:?float,min_stock:int:default(10),created_at:datetime:auto}
+  StockMovement{id:int:primary:auto,type:enum(inbound,outbound,transfer):required,quantity:int:required,reason:?str,product_id:int:required,zone_id:int:required,performed_by:int:required,created_at:datetime:auto}
+  @relation(Warehouse.zones<>Zone.warehouse)
+  @relation(Zone.movements<>StockMovement.zone)
+  @relation(Product.movements<>StockMovement.product)
+  @relation(User.movements<>StockMovement.performer)
+  @index(User.email:unique)
+  @index(Product.sku:unique)
+  @index(StockMovement.type+StockMovement.product_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/warehouses>~db.Warehouse.findMany
+  POST:/warehouses(name:str,location:str,capacity:int)>~db.Warehouse.create
+  PUT:/warehouses/:id(name:str,capacity:int)>~db.Warehouse.update
+  DELETE:/warehouses/:id>~db.Warehouse.delete
+  GET:/zones>~db.Zone.findMany
+  POST:/zones(name:str,type:str,capacity:int,warehouse_id:int)>~db.Zone.create
+  GET:/products>~db.Product.findMany
+  POST:/products(sku:str,name:str,category:str,min_stock:int)>~db.Product.create
+  PUT:/products/:id(name:str,min_stock:int)>~db.Product.update
+  DELETE:/products/:id>~db.Product.delete
+  GET:/movements>~db.StockMovement.findMany
+  POST:/movements(type:str,quantity:int,product_id:int,zone_id:int)>~db.StockMovement.create
+  GET:/stock/stats>~db.StockMovement.aggregate
+)
+
+@auth(required,role:enum(operator,supervisor,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /products>?user>products:login
+  /movements>?user>movements:login
+  /warehouses>?user>warehouses:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.products+~api.warehouses+~api.stats
+  onChange:movementFilter>~api.movements
+  onChange:categoryFilter>~api.products
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"WarehouseOps"
+        p:"muted">"Warehouse management system"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"WO"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Products",btn:ghost>"Movements",btn:ghost>"Warehouses")
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Products">#stockStats.totalProducts
+        stat:"Low Stock">#stockStats.lowStock
+        stat:"Movements">#stockStats.totalMovements
+        stat:"Warehouses">#stockStats.warehouseCount
+      )
+      @section:recentMovements(
+        h2>"Recent Movements"
+        table>movements>*mov(text>#mov.productName+badge:#mov.type+text>#mov.quantity+text>#mov.zoneName+text:"muted">#mov.createdAt)
+      )
+      @section:lowStock(
+        h2>"Low Stock Alerts"
+        list>products>*product(card(text>#product.name+text>#product.sku+badge:#product.category+stat:"Qty">#product.quantity))
+      )
+    )
+  )
+  @page:products(
+    sidebar(
+      logo>"WO"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Products",btn:ghost>"Movements",btn:ghost>"Warehouses")
+    )+main(
+      header>h1>"Products"+search:input>#search+tabs>categoryFilter.set(all,electronics,hardware,raw_material,finished_goods)+btn:primary>"Add Product"
+      table>products|categoryFilter|search>*product(
+        text>#product.sku
+        text>#product.name
+        badge:#product.category
+        text>#product.quantity
+        text:"muted">"Min: "+#product.minStock
+        row(btn:ghost>"Edit">!update(#product.id),btn:ghost>"Delete">!del(#product.id))
+      )
+    )
+  )
+  @page:movements(
+    sidebar(
+      logo>"WO"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Products",btn:ghost>"Movements",btn:ghost>"Warehouses")
+    )+main(
+      header>h1>"Stock Movements"+tabs>movementFilter.set(all,inbound,outbound,transfer)+btn:primary>"Record Movement"
+      table>movements|movementFilter>*mov(
+        text>#mov.productName
+        badge:#mov.type
+        text>#mov.quantity
+        text>#mov.zoneName
+        text:"muted">#mov.reason
+        text:"muted">#mov.createdAt
+      )
+    )
+  )
+  @page:warehouses(
+    sidebar(
+      logo>"WO"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Products",btn:ghost>"Movements",btn:ghost>"Warehouses")
+    )+main(
+      header>h1>"Warehouses"+btn:primary>"Add Warehouse"
+      grid:3>warehouses>*wh(
+        card(
+          h2>#wh.name
+          text:"muted">#wh.location
+          stat:"Capacity">#wh.capacity
+          text>"Utilization: "+#wh.utilization+"%"
+          row(btn:ghost>"Zones",btn:ghost>"Edit">!update(#wh.id),btn:ghost>"Delete">!del(#wh.id))
+        )
+      )
+    )
+  )
+)

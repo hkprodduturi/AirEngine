@@ -1,0 +1,109 @@
+# ================================================================
+# Kanban — Board & Card Management
+# ================================================================
+# Boards, columns, and cards with drag-style kanban layout.
+# Demonstrates multi-column layout, card ordering, labels.
+# ================================================================
+
+@app:kanban
+
+@style(theme:dark,accent:#6366f1,radius:10,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  boards:[{id:int,name:str,cardCount:int}],
+  columns:[{id:int,name:str,order:int}],
+  cards:[{id:int,title:str,description:?str,column:str,label:?str,assignee:?str}],
+  selectedBoard:?int,
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Board{id:int:primary:auto,name:str:required,user_id:int:required,created_at:datetime:auto}
+  Column{id:int:primary:auto,name:str:required,order_num:int:required,board_id:int:required}
+  Card{id:int:primary:auto,title:str:required,description:?str,label:enum(bug,feature,improvement,task):default(task),order_num:int:required,column_id:int:required,assignee_id:?int,created_at:datetime:auto}
+  @relation(User.boards<>Board.user)
+  @relation(Board.columns<>Column.board)
+  @relation(Column.cards<>Card.column)
+  @relation(User.cards<>Card.assignee)
+  @index(User.email:unique)
+  @index(Card.column_id+Card.order_num)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/boards>~db.Board.findMany
+  POST:/boards(name:str)>~db.Board.create
+  DELETE:/boards/:id>~db.Board.delete
+  GET:/boards/:id/columns>~db.Column.findMany
+  POST:/boards/:id/columns(name:str,order_num:int)>~db.Column.create
+  GET:/columns/:id/cards>~db.Card.findMany
+  POST:/columns/:id/cards(title:str,label:str)>~db.Card.create
+  PUT:/cards/:id(column_id:int,order_num:int)>~db.Card.update
+  DELETE:/cards/:id>~db.Card.delete
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>boards:login
+  /board>?user>board:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.boards
+  onChange:selectedBoard>~api.columns
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Kanban"
+        p:"muted">"Organize your work visually"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:boards(
+    header>h1>"My Boards"+btn:primary>"New Board"
+    grid:3>boards>*board(
+      card(
+        h2>#board.name
+        stat:"Cards">#board.cardCount
+        row(btn:primary>"Open">!selectBoard(#board.id),btn:icon:!del(#board.id))
+      )
+    )
+  )
+  @page:board(
+    header>h1>"Board"+btn:ghost>"Back to Boards"+btn:primary>"Add Column"
+    grid:4>columns>*col(
+      @section:column(
+        h2>#col.name
+        list>cards|col>*card(
+          card(
+            text>#card.title
+            ?card.description>p:"muted">#card.description
+            badge:#card.label
+            text:"muted">#card.assignee
+            row(btn:ghost>"Move">!move(#card.id),btn:icon:!del(#card.id))
+          )
+        )
+        btn:ghost>"Add Card">!addCard(#col.id)
+      )
+    )
+  )
+)

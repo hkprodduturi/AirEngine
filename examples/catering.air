@@ -1,0 +1,168 @@
+# CaterPro — Catering Event Management
+# Clients, events, menu items, and quotes.
+# Demonstrates event lifecycle, quote generation, client management.
+
+@app:caterPro
+
+@style(theme:dark,accent:#8b5cf6,radius:10,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  clients:[{id:int,name:str,email:str,phone:?str,company:?str,eventCount:int}],
+  events:[{id:int,name:str,date:str,guestCount:int,venue:str,status:str,client:str}],
+  menuItems:[{id:int,name:str,category:str,pricePerHead:float,dietary:str}],
+  quotes:[{id:int,eventName:str,clientName:str,total:float,status:str,createdAt:str}],
+  stats:{upcomingEvents:int,confirmedRevenue:float,totalClients:int,pendingQuotes:int},
+  statusFilter:enum(all,inquiry,confirmed,completed,cancelled),
+  categoryFilter:enum(all,appetizer,entree,dessert,beverage,package),
+  search:str
+}
+
+@db{
+  Client{id:int:primary:auto,name:str:required,email:str:required,phone:?str,company:?str,notes:?str,created_at:datetime:auto}
+  Event{id:int:primary:auto,name:str:required,date:date:required,guest_count:int:required,venue:str:required,status:enum(inquiry,confirmed,completed,cancelled):default(inquiry),dietary_notes:?str,client_id:int:required,created_at:datetime:auto}
+  MenuItem{id:int:primary:auto,name:str:required,description:?str,price_per_head:float:required,category:enum(appetizer,entree,dessert,beverage,package):required,dietary:enum(regular,vegetarian,vegan,gluten_free):default(regular),created_at:datetime:auto}
+  Quote{id:int:primary:auto,total:float:required,notes:?str,status:enum(draft,sent,accepted,rejected):default(draft),event_id:int:required,created_at:datetime:auto}
+  @relation(Client.events<>Event.client)
+  @relation(Event.quotes<>Quote.event)
+  @relation(Event.menuItems<>MenuItem.events)
+  @index(Client.email:unique)
+  @index(Event.date+Event.status)
+  @index(Quote.status)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/clients>~db.Client.findMany
+  POST:/clients(name:str,email:str,phone:?str,company:?str)>~db.Client.create
+  PUT:/clients/:id(name:str,email:str)>~db.Client.update
+  DELETE:/clients/:id>~db.Client.delete
+  GET:/events>~db.Event.findMany
+  POST:/events(name:str,date:str,guest_count:int,venue:str,client_id:int)>~db.Event.create
+  PUT:/events/:id(status:str)>~db.Event.update
+  DELETE:/events/:id>~db.Event.delete
+  GET:/menu>~db.MenuItem.findMany
+  POST:/menu(name:str,price_per_head:float,category:str)>~db.MenuItem.create
+  DELETE:/menu/:id>~db.MenuItem.delete
+  GET:/quotes>~db.Quote.findMany
+  POST:/quotes(total:float,event_id:int)>~db.Quote.create
+  PUT:/quotes/:id(status:str)>~db.Quote.update
+  GET:/stats>~db.Event.aggregate
+)
+
+@auth(required,role:enum(planner,chef,admin),redirect:/login)
+
+@email(
+  quoteReady(name:str,eventName:str)>"Your catering quote is ready"
+  eventConfirmed(name:str,eventName:str,date:str)>"Your event has been confirmed"
+)
+
+@nav(
+  />?user>dashboard:login
+  /events>?user>events:login
+  /clients>?user>clients:login
+  /menu>?user>menu:login
+  /quotes>?user>quotes:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.events+~api.clients+~api.stats
+  onChange:statusFilter>~api.events
+  onChange:categoryFilter>~api.menu
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"CaterPro"
+        p:"muted">"Catering event management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"CP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Clients",btn:ghost>"Menu",btn:ghost>"Quotes")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Upcoming Events">#stats.upcomingEvents
+        stat:"Confirmed Revenue">#stats.confirmedRevenue
+        stat:"Total Clients">#stats.totalClients
+        stat:"Pending Quotes">#stats.pendingQuotes
+      )
+      @section:upcoming(
+        h2>"Upcoming Events"
+        table>events>*event(text>#event.name+text>#event.date+text>#event.client+badge:#event.status+stat:"Guests">#event.guestCount)
+      )
+    )
+  )
+  @page:events(
+    sidebar(
+      logo>"CP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Clients",btn:ghost>"Menu",btn:ghost>"Quotes")
+    )+main(
+      header>h1>"Events"+tabs>statusFilter.set(all,inquiry,confirmed,completed,cancelled)+btn:primary>"New Event"
+      table>events|statusFilter>*event(
+        text>#event.name+text>#event.date+text>#event.venue+text>#event.client
+        badge:#event.status
+        stat:"Guests">#event.guestCount
+        row(btn:ghost>"Confirm">!confirm(#event.id),btn:ghost>"Complete">!complete(#event.id),btn:ghost>"Cancel">!cancel(#event.id))
+      )
+    )
+  )
+  @page:clients(
+    sidebar(
+      logo>"CP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Clients",btn:ghost>"Menu",btn:ghost>"Quotes")
+    )+main(
+      header>h1>"Clients"+search:input>#search+btn:primary>"Add Client"
+      table>clients|search>*client(
+        text>#client.name+text>#client.email+text:#client.phone+text:#client.company
+        stat:"Events">#client.eventCount
+        row(btn:ghost>"Edit">!edit(#client.id),btn:ghost>"Delete">!del(#client.id))
+      )
+    )
+  )
+  @page:menu(
+    sidebar(
+      logo>"CP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Clients",btn:ghost>"Menu",btn:ghost>"Quotes")
+    )+main(
+      header>h1>"Menu"+tabs>categoryFilter.set(all,appetizer,entree,dessert,beverage,package)+btn:primary>"Add Item"
+      grid:3>menuItems|categoryFilter>*item(
+        card(h2>#item.name+badge:#item.category+badge:#item.dietary+text:amount:$#item.pricePerHead+" per head"+row(btn:ghost>"Edit">!edit(#item.id),btn:ghost>"Delete">!del(#item.id)))
+      )
+    )
+  )
+  @page:quotes(
+    sidebar(
+      logo>"CP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Clients",btn:ghost>"Menu",btn:ghost>"Quotes")
+    )+main(
+      header>h1>"Quotes"+btn:primary>"Create Quote"
+      table>quotes>*quote(
+        text>#quote.eventName+text>#quote.clientName+text:amount:$#quote.total
+        badge:#quote.status
+        text:"muted">#quote.createdAt
+        row(btn:ghost>"Send">!send(#quote.id),btn:ghost>"Accept">!accept(#quote.id))
+      )
+    )
+  )
+)

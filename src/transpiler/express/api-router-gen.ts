@@ -9,13 +9,26 @@ import type { TranspileContext } from '../context.js';
 import type { AirRoute, AirDbBlock, AirType } from '../../parser/types.js';
 import { getGeneratedTypeNames } from '../types-gen.js';
 
+/** Pluralize a model name: Property → Properties, Batch → Batches */
+function pluralizeModel(name: string): string {
+  if (name.endsWith('y') && !'aeiou'.includes(name.charAt(name.length - 2).toLowerCase())) {
+    return name.slice(0, -1) + 'ies';
+  }
+  if (name.endsWith('s') || name.endsWith('sh') || name.endsWith('ch') || name.endsWith('x') || name.endsWith('z')) {
+    return name + 'es';
+  }
+  return name + 's';
+}
+
 /** Map AIR type to validation schema type string */
 function airTypeToValidation(type: AirType): string {
   if (type.kind === 'optional') return `optional_${airTypeToValidation(type.of).replace(/^optional_/, '')}`;
   if (type.kind === 'str' || type.kind === 'date' || type.kind === 'datetime' || type.kind === 'enum') return 'string';
   if (type.kind === 'int' || type.kind === 'float') return 'number';
   if (type.kind === 'bool') return 'boolean';
-  return 'string';
+  if (type.kind === 'array') return 'object'; // arrays are typeof 'object'
+  if (type.kind === 'object') return 'object';
+  return 'string'; // fallback for ref and other types
 }
 
 /** Generate a validateFields schema object literal from route params */
@@ -26,11 +39,39 @@ function generateValidationSchema(route: AirRoute): string | null {
   return `{ ${entries.join(', ')} }`;
 }
 
+// ---- Shared catch-block generator ----
+
+/** Generate a catch block that delegates to the error-classification middleware */
+function pushCatchBlock(lines: string[]): void {
+  lines.push('  } catch (error) {');
+  lines.push('    next(error);');
+  lines.push('  }');
+}
+
+/** Generate a response for a prisma result based on PrismaCallInfo */
+function pushPrismaResponse(lines: string[], info: PrismaCallInfo, method: string, handler: string): void {
+  if (info.isDelete) {
+    lines.push(`    ${info.call};`);
+    lines.push('    res.status(204).end();');
+  } else {
+    lines.push(`    const result = ${info.call};`);
+    if (info.needs404) {
+      lines.push("    if (!result) return res.status(404).json({ error: 'Not found' });");
+    }
+    if (method === 'post' && handler.includes('.create')) {
+      lines.push('    res.status(201).json(result);');
+    } else {
+      lines.push('    res.json(result);');
+    }
+  }
+}
+
 // ---- api.ts ----
 
 export function generateApiRouter(ctx: TranspileContext): string {
   const lines: string[] = [];
   lines.push("import { Router } from 'express';");
+  lines.push("import type { NextFunction, Request, Response } from 'express';");
   if (ctx.db) {
     lines.push("import { prisma } from './prisma.js';");
   }
@@ -75,7 +116,7 @@ export function generateApiRouter(ctx: TranspileContext): string {
     const path = route.path;
     const handler = route.handler;
 
-    lines.push(`apiRouter.${method}('${path}', async (req, res) => {`);
+    lines.push(`apiRouter.${method}('${path}', async (req: Request, res: Response, next: NextFunction) => {`);
     lines.push('  try {');
 
     // Validate :id param for integer primary keys
@@ -103,14 +144,28 @@ export function generateApiRouter(ctx: TranspileContext): string {
       }
     }
 
+    // Detect nested resource routes (e.g., /tasks/:id/comments)
+    const nestedMatch = path.match(/^\/(\w+)\/:id\/(\w+)$/);
     // Check if this is a findMany route — use enriched handler
     const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
-    if (isFindMany) {
-      const findManyLines = generateFindManyHandler(handler, ctx.db!);
+    if (isFindMany && nestedMatch && ctx.db) {
+      // Nested findMany: paginated, filtered by parent FK
+      const parentResource = nestedMatch[1];
+      const parentSingular = parentResource.endsWith('s') ? parentResource.slice(0, -1) : parentResource;
+      lines.push(`    const parentId = parseInt(req.params.id);`);
+      const nestedLines = generateNestedFindManyHandler(handler, ctx.db, parentSingular, 'parentId');
+      for (const l of nestedLines) lines.push(l);
+    } else if (isFindMany) {
+      const findManyLines = generateFindManyHandler(handler, ctx.db!, { hasAuth: !!ctx.auth });
       for (const l of findManyLines) lines.push(l);
     } else {
-    const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
-    if (prismaCall) {
+    // Check for aggregate handler
+    const aggregateLines = ctx.db ? generateAggregateHandler(handler, ctx.db) : null;
+    if (aggregateLines) {
+      for (const l of aggregateLines) lines.push(l);
+    } else {
+    const prismaInfo = mapHandlerToPrismaInfo(handler, route, ctx.db, bodyTypeName);
+    if (prismaInfo) {
       // Add typed destructuring with validation if we have params and a body type
       if (bodyTypeName && route.params && route.params.length > 0) {
         // Use _body to avoid collision when a param is named 'body'
@@ -137,8 +192,19 @@ export function generateApiRouter(ctx: TranspileContext): string {
           lines.push("    if (_errors.length > 0) return res.status(400).json({ error: 'Validation error', details: _errors });");
         }
       }
-      lines.push(`    const result = ${prismaCall};`);
-      lines.push('    res.json(result);');
+      // For nested POST: inject parent FK from URL param
+      if (nestedMatch && method === 'post' && ctx.db) {
+        const parentSingular = nestedMatch[1].endsWith('s') ? nestedMatch[1].slice(0, -1) : nestedMatch[1];
+        const modelMatch = handler.match(/^~db\.(\w+)\.\w+$/);
+        const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+        const fkField = `${parentSingular}_id`;
+        const bodyParams = route.params?.map(p => p.name).join(', ') || '';
+        lines.push(`    const parentId = parseInt(req.params.id);`);
+        lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: parentId } });`);
+        lines.push('    res.status(201).json(result);');
+      } else {
+        pushPrismaResponse(lines, prismaInfo, method, handler);
+      }
     } else {
       // Check for auth handler before falling through to 501
       const authType = ctx.auth ? isAuthHandler(handler, path) : null;
@@ -150,12 +216,10 @@ export function generateApiRouter(ctx: TranspileContext): string {
         lines.push("    res.status(501).json({ error: 'Not implemented' });");
       }
     }
+    } // end aggregate else
     } // end else (non-findMany)
 
-    lines.push('  } catch (error) {');
-    lines.push("    const details = process.env.NODE_ENV !== 'production' && error instanceof Error ? error.message : undefined;");
-    lines.push("    res.status(500).json({ error: 'Internal server error', ...(details && { details }) });");
-    lines.push('  }');
+    pushCatchBlock(lines);
     lines.push('});');
     lines.push('');
   }
@@ -163,9 +227,55 @@ export function generateApiRouter(ctx: TranspileContext): string {
   return lines.join('\n');
 }
 
+// ---- Nested findMany with pagination ----
+
+/**
+ * Generate a paginated nested findMany handler.
+ * E.g., GET /tasks/:id/comments → paginated comments filtered by task_id.
+ */
+export function generateNestedFindManyHandler(
+  handler: string,
+  db: AirDbBlock,
+  parentSingular: string,
+  parentIdVar: string,
+): string[] {
+  const match = handler.match(/^~db\.(\w+)\.findMany$/);
+  if (!match) return [];
+
+  const [, modelName] = match;
+  const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+  const model = db.models.find(m => m.name === modelName);
+  const fkField = `${parentSingular}_id`;
+  const lines: string[] = [];
+
+  // Pagination
+  lines.push("    const page = Math.max(1, parseInt(req.query.page as string) || 1);");
+  lines.push("    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);");
+  lines.push("    const skip = (page - 1) * limit;");
+
+  // Default orderBy
+  let defaultOrderBy = "{ id: 'desc' }";
+  if (model) {
+    const hasCreatedAt = model.fields.some(f => f.name === 'created_at');
+    const hasCreatedAtCamel = model.fields.some(f => f.name === 'createdAt');
+    if (hasCreatedAt) defaultOrderBy = "{ created_at: 'desc' }";
+    else if (hasCreatedAtCamel) defaultOrderBy = "{ createdAt: 'desc' }";
+  }
+
+  const where = `{ ${fkField}: ${parentIdVar} }`;
+  lines.push(`    const [result, total] = await Promise.all([`);
+  lines.push(`      prisma.${modelVar}.findMany({ where: ${where}, orderBy: ${defaultOrderBy}, skip, take: limit }),`);
+  lines.push(`      prisma.${modelVar}.count({ where: ${where} }),`);
+  lines.push("    ]);");
+  lines.push("    res.setHeader('X-Total-Count', String(total));");
+  lines.push(`    res.json({ data: result, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } });`);
+
+  return lines;
+}
+
 // ---- findMany enrichment ----
 
-export function generateFindManyHandler(handler: string, db: AirDbBlock): string[] {
+export function generateFindManyHandler(handler: string, db: AirDbBlock, options?: { hasAuth?: boolean }): string[] {
   const match = handler.match(/^~db\.(\w+)\.findMany$/);
   if (!match) return [];
 
@@ -175,28 +285,44 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
   const lines: string[] = [];
 
   // Pagination
-  lines.push("    const page = parseInt(req.query.page as string) || 1;");
-  lines.push("    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);");
+  lines.push("    const page = Math.max(1, parseInt(req.query.page as string) || 1);");
+  lines.push("    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);");
   lines.push("    const skip = (page - 1) * limit;");
 
-  // orderBy: prefer created_at > createdAt > id > omit
-  let orderByExpr = '';
+  // Determine sortable fields for the sort query parameter (exclude sensitive fields)
+  const SENSITIVE_FIELDS = new Set(['password', 'password_hash', 'secret', 'token', 'refresh_token']);
+  // If auth exists and this is the User model, password is injected at Prisma level — treat as sensitive
+  const hasInjectedPassword = options?.hasAuth && modelName === 'User' && model && !model.fields.some(f => f.name === 'password');
+  const sortableFields = model
+    ? model.fields.filter(f => (!f.primary || f.name === 'id') && !SENSITIVE_FIELDS.has(f.name)).map(f => f.name)
+    : [];
+
+  // orderBy: support ?sort=field:asc, fall back to created_at > createdAt > id
+  let defaultOrderBy = "{ id: 'desc' }";
   if (model) {
     const hasCreatedAt = model.fields.some(f => f.name === 'created_at');
     const hasCreatedAtCamel = model.fields.some(f => f.name === 'createdAt');
-    const hasId = model.fields.some(f => f.name === 'id');
-    if (hasCreatedAt) orderByExpr = "{ created_at: 'desc' }";
-    else if (hasCreatedAtCamel) orderByExpr = "{ createdAt: 'desc' }";
-    else if (hasId) orderByExpr = "{ id: 'desc' }";
+    if (hasCreatedAt) defaultOrderBy = "{ created_at: 'desc' }";
+    else if (hasCreatedAtCamel) defaultOrderBy = "{ createdAt: 'desc' }";
   }
 
-  // Text search: find string fields (non-PK)
+  if (sortableFields.length > 0) {
+    lines.push(`    const sortParam = (req.query.sort as string) || '';`);
+    lines.push(`    const allowedSort = new Set(${JSON.stringify(sortableFields)});`);
+    lines.push("    let orderBy: Record<string, string> = " + defaultOrderBy + ";");
+    lines.push("    if (sortParam) {");
+    lines.push("      const [field, dir] = sortParam.split(':');");
+    lines.push("      if (allowedSort.has(field)) orderBy = { [field]: dir === 'asc' ? 'asc' : 'desc' };");
+    lines.push("    }");
+  }
+
+  // Text search: find string fields (non-PK, non-sensitive)
   const stringFields = model
     ? model.fields.filter(f => {
         const baseKind = f.type.kind === 'optional'
           ? (f.type as { kind: 'optional'; of: { kind: string } }).of.kind
           : f.type.kind;
-        return baseKind === 'str' && !f.primary;
+        return baseKind === 'str' && !f.primary && !SENSITIVE_FIELDS.has(f.name);
       }).map(f => f.name)
     : [];
 
@@ -212,10 +338,25 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
     lines.push("    } : {};");
   }
 
+  // Exclude sensitive fields from response via select
+  const hasSensitiveFields = hasInjectedPassword || (model
+    ? model.fields.some(f => SENSITIVE_FIELDS.has(f.name))
+    : false);
+  if (hasSensitiveFields && model) {
+    const safeFields = model.fields.filter(f => !SENSITIVE_FIELDS.has(f.name));
+    const selectObj = safeFields.map(f => `${f.name}: true`).join(', ');
+    lines.push(`    const select = { ${selectObj} };`);
+  }
+
   // Build prisma query args
   const queryParts: string[] = [];
+  if (hasSensitiveFields) queryParts.push('select');
   if (stringFields.length > 0) queryParts.push('where');
-  if (orderByExpr) queryParts.push(`orderBy: ${orderByExpr}`);
+  if (sortableFields.length > 0) {
+    queryParts.push('orderBy');
+  } else if (defaultOrderBy) {
+    queryParts.push(`orderBy: ${defaultOrderBy}`);
+  }
   queryParts.push('skip');
   queryParts.push('take: limit');
 
@@ -231,12 +372,21 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
   }
   lines.push("    ]);");
   lines.push("    res.setHeader('X-Total-Count', String(total));");
-  lines.push("    res.json(result);");
+  lines.push(`    res.json({ data: result, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } });`);
 
   return lines;
 }
 
 // ---- Handler → Prisma mapping ----
+
+/** Metadata about a Prisma call to inform response generation */
+export interface PrismaCallInfo {
+  call: string;
+  /** Whether the caller needs a 404 check after the call */
+  needs404: boolean;
+  /** Whether this is a delete operation (→ 204 No Content) */
+  isDelete: boolean;
+}
 
 export function mapHandlerToPrisma(
   handler: string,
@@ -244,6 +394,16 @@ export function mapHandlerToPrisma(
   db: AirDbBlock | null,
   bodyTypeName?: string,
 ): string | null {
+  const info = mapHandlerToPrismaInfo(handler, route, db, bodyTypeName);
+  return info ? info.call : null;
+}
+
+export function mapHandlerToPrismaInfo(
+  handler: string,
+  route: AirRoute,
+  db: AirDbBlock | null,
+  bodyTypeName?: string,
+): PrismaCallInfo | null {
   // Pattern: ~db.Model.operation
   const match = handler.match(/^~db\.(\w+)\.(\w+)$/);
   if (!match || !db) return null;
@@ -263,21 +423,161 @@ export function mapHandlerToPrisma(
 
   switch (operation) {
     case 'findMany':
-      return `await prisma.${modelVar}.findMany()`;
+      return { call: `await prisma.${modelVar}.findMany()`, needs404: false, isDelete: false };
+    case 'findFirst':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.findFirst({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.findFirst({ where: req.query })`,
+        needs404: true,
+        isDelete: false,
+      };
     case 'findUnique':
-      return hasIdParam
-        ? `await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } })`
-        : `await prisma.${modelVar}.findUnique({ where: req.body })`;
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.findUnique({ where: req.body })`,
+        needs404: true,
+        isDelete: false,
+      };
     case 'create':
-      return `await prisma.${modelVar}.create({ data: ${dataExpr} })`;
+      return { call: `await prisma.${modelVar}.create({ data: ${dataExpr} })`, needs404: false, isDelete: false };
     case 'update':
-      return hasIdParam
-        ? `await prisma.${modelVar}.update({ where: { id: ${idExpr} }, data: ${dataExpr} })`
-        : `await prisma.${modelVar}.update({ where: req.body.where, data: req.body.data })`;
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.update({ where: { id: ${idExpr} }, data: ${dataExpr} })`
+          : `await prisma.${modelVar}.update({ where: req.body.where, data: req.body.data })`,
+        needs404: false,
+        isDelete: false,
+      };
     case 'delete':
-      return hasIdParam
-        ? `await prisma.${modelVar}.delete({ where: { id: ${idExpr} } })`
-        : `await prisma.${modelVar}.delete({ where: req.body })`;
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.delete({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.delete({ where: req.body })`,
+        needs404: false,
+        isDelete: true,
+      };
+    case 'aggregate':
+      return null; // Handled specially by generateAggregateHandler
+    default:
+      return null;
+  }
+}
+
+/**
+ * Generate aggregate handler lines for ~db.Model.aggregate routes.
+ * Produces per-status counts if the model has a status enum field.
+ */
+export function generateAggregateHandler(handler: string, db: AirDbBlock): string[] | null {
+  const match = handler.match(/^~db\.(\w+)\.aggregate$/);
+  if (!match || !db) return null;
+
+  const [, modelName] = match;
+  const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+  const model = db.models.find(m => m.name === modelName);
+  if (!model) return null;
+
+  const lines: string[] = [];
+  const statusField = model.fields.find(f => {
+    const base = f.type.kind === 'optional' ? (f.type as { of: { kind: string } }).of : f.type;
+    return f.name === 'status' && base.kind === 'enum';
+  });
+
+  if (statusField) {
+    const baseType = statusField.type.kind === 'optional'
+      ? (statusField.type as { of: { kind: 'enum'; values: string[] } }).of
+      : statusField.type as { kind: 'enum'; values: string[] };
+    const values = baseType.values;
+
+    lines.push(`    const total = await prisma.${modelVar}.count();`);
+    for (const val of values) {
+      const camelVal = val.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase());
+      lines.push(`    const ${camelVal} = await prisma.${modelVar}.count({ where: { status: '${val}' } });`);
+    }
+    const lcModelName = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+    const totalKey = `total${pluralizeModel(modelName)}`;
+    const resultEntries = [
+      `${totalKey}: total`,
+      ...values.map(v => {
+        const camel = v.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase());
+        return `${camel}: ${camel}`;
+      }),
+    ];
+    lines.push(`    res.json({ ${resultEntries.join(', ')} });`);
+  } else {
+    lines.push(`    const total = await prisma.${modelVar}.count();`);
+    lines.push(`    res.json({ total });`);
+  }
+
+  return lines;
+}
+
+/**
+ * Like mapHandlerToPrismaInfo, but uses the `id` local variable when assertIntParam was used.
+ * This avoids redundant parseInt(req.params.id) calls.
+ */
+export function mapHandlerToPrismaInfoWithId(
+  handler: string,
+  route: AirRoute,
+  db: AirDbBlock | null,
+  bodyTypeName?: string,
+  hasAssertedId?: boolean,
+): PrismaCallInfo | null {
+  const match = handler.match(/^~db\.(\w+)\.(\w+)$/);
+  if (!match || !db) return null;
+
+  const [, modelName, operation] = match;
+  const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+
+  const hasIdParam = route.path.includes(':id');
+  // Use the `id` variable if it was asserted, otherwise fall back to the expression
+  const idExpr = hasAssertedId ? 'id' : getIdExpression(modelName, db);
+
+  const hasTypedBody = bodyTypeName && route.params && route.params.length > 0;
+  const dataExpr = hasTypedBody
+    ? `{ ${route.params!.map(p => p.name).join(', ')} }`
+    : 'req.body';
+
+  switch (operation) {
+    case 'findMany':
+      return { call: `await prisma.${modelVar}.findMany()`, needs404: false, isDelete: false };
+    case 'findFirst':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.findFirst({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.findFirst({ where: req.query })`,
+        needs404: true,
+        isDelete: false,
+      };
+    case 'findUnique':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.findUnique({ where: req.body })`,
+        needs404: true,
+        isDelete: false,
+      };
+    case 'create':
+      return { call: `await prisma.${modelVar}.create({ data: ${dataExpr} })`, needs404: false, isDelete: false };
+    case 'update':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.update({ where: { id: ${idExpr} }, data: ${dataExpr} })`
+          : `await prisma.${modelVar}.update({ where: req.body.where, data: req.body.data })`,
+        needs404: false,
+        isDelete: false,
+      };
+    case 'delete':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.delete({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.delete({ where: req.body })`,
+        needs404: false,
+        isDelete: true,
+      };
+    case 'aggregate':
+      return null;
     default:
       return null;
   }
@@ -348,8 +648,16 @@ export function generateAuthHandlerLines(
 ): string[] {
   const lines: string[] = [];
 
-  // Determine the user model name — prefer "User", fallback to first model with email field
-  const userModel = ctx.db?.models.find(m => m.name === 'User')
+  // Determine the user model name — ordered priority:
+  // 1. Model named "User" (must have password field for auth)
+  // 2. Model with both email AND password fields (most likely auth model)
+  // 3. First model with email field (fallback for simple schemas)
+  const userModelByName = ctx.db?.models.find(m => m.name === 'User');
+  const userModel = (userModelByName && userModelByName.fields.some(f => f.name === 'password') ? userModelByName : null)
+    || ctx.db?.models.find(m =>
+      m.fields.some(f => f.name === 'email') && m.fields.some(f => f.name === 'password')
+    )
+    || userModelByName
     || ctx.db?.models.find(m => m.fields.some(f => f.name === 'email'));
   const modelVar = userModel
     ? userModel.name.charAt(0).toLowerCase() + userModel.name.slice(1)
@@ -410,12 +718,18 @@ export function groupRoutesByModel(routes: AirRoute[]): Map<string, AirRoute[]> 
     if (modelMatch) {
       const model = modelMatch[1];
       const key = model.charAt(0).toLowerCase() + model.slice(1) + 's';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(route);
-    } else {
-      if (!groups.has('__misc__')) groups.set('__misc__', []);
-      groups.get('__misc__')!.push(route);
+      // Only group if route path starts with the expected resource prefix
+      // e.g., /tasks routes go with "tasks" key, but /stats with ~db.Task.aggregate goes to __misc__
+      // Also handles nested resources: /tasks/:id/comments → model "Comment" → key "comments"
+      // but path starts with /tasks, not /comments → goes to __misc__
+      if (route.path.startsWith('/' + key)) {
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(route);
+        continue;
+      }
     }
+    if (!groups.has('__misc__')) groups.set('__misc__', []);
+    groups.get('__misc__')!.push(route);
   }
   return groups;
 }
@@ -438,10 +752,25 @@ export function generateResourceRouter(
   const lines: string[] = [];
 
   lines.push("import { Router } from 'express';");
+  lines.push("import type { NextFunction, Request, Response } from 'express';");
   if (ctx.db) {
     lines.push("import { prisma } from '../prisma.js';");
   }
-  lines.push("import { assertRequired, assertIntParam } from '../validation.js';");
+
+  // Only import validation helpers if routes actually need them
+  const needsAssertRequired = routes.some(r => r.params && r.params.length > 0 && r.params.some(p => p.type.kind !== 'optional'));
+  const needsAssertIntParam = routes.some(r => {
+    const relPath = findCommonBasePath(routes) ? r.path.replace(findCommonBasePath(routes), '') || '/' : r.path;
+    if (!relPath.includes(':id') || !ctx.db) return false;
+    const m = r.handler.match(/^~db\.(\w+)\./);
+    return m ? hasIntPrimaryKey(m[1], ctx.db) : false;
+  });
+  if (needsAssertRequired || needsAssertIntParam) {
+    const imports: string[] = [];
+    if (needsAssertRequired) imports.push('assertRequired');
+    if (needsAssertIntParam) imports.push('assertIntParam');
+    lines.push(`import { ${imports.join(', ')} } from '../validation.js';`);
+  }
 
   // Import createToken if any route is an auth handler
   const hasAuthRoutes = ctx.auth && routes.some(r => isAuthHandler(r.handler, r.path));
@@ -476,15 +805,17 @@ export function generateResourceRouter(
     const relativePath = basePath ? route.path.replace(basePath, '') || '/' : route.path;
     const handler = route.handler;
 
-    lines.push(`${resourceKey}Router.${method}('${relativePath}', async (req, res) => {`);
+    lines.push(`${resourceKey}Router.${method}('${relativePath}', async (req: Request, res: Response, next: NextFunction) => {`);
     lines.push('  try {');
 
-    // Validate :id param
+    // Validate :id param — use the parsed `id` variable throughout
     const hasIdParam = relativePath.includes(':id');
+    let hasAssertedId = false;
     if (hasIdParam && ctx.db) {
       const modelMatch = handler.match(/^~db\.(\w+)\./);
       if (modelMatch && hasIntPrimaryKey(modelMatch[1], ctx.db)) {
         lines.push("    const id = assertIntParam(req.params.id);");
+        hasAssertedId = true;
       }
     }
 
@@ -499,13 +830,29 @@ export function generateResourceRouter(
       }
     }
 
+    // Detect nested resource routes (e.g., /:id/comments → parent/:id/child)
+    const nestedMatch = relativePath.match(/^\/:id\/(\w+)$/);
     const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
-    if (isFindMany) {
-      const findManyLines = generateFindManyHandler(handler, ctx.db!);
+    const isAggregate = handler.match(/^~db\.(\w+)\.aggregate$/) && ctx.db;
+    if (isFindMany && nestedMatch && ctx.db) {
+      // Nested findMany: paginated, filtered by parent FK
+      const parentResource = resourceKey.endsWith('s') ? resourceKey.slice(0, -1) : resourceKey;
+      if (!hasAssertedId) {
+        lines.push(`    const parentId = parseInt(req.params.id);`);
+      }
+      const parentIdVar = hasAssertedId ? 'id' : 'parentId';
+      const nestedLines = generateNestedFindManyHandler(handler, ctx.db, parentResource, parentIdVar);
+      for (const l of nestedLines) lines.push(l);
+    } else if (isFindMany) {
+      const findManyLines = generateFindManyHandler(handler, ctx.db!, { hasAuth: !!ctx.auth });
       for (const l of findManyLines) lines.push(l);
+    } else if (isAggregate) {
+      const aggLines = generateAggregateHandler(handler, ctx.db!);
+      if (aggLines) for (const l of aggLines) lines.push(l);
     } else {
-      const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
-      if (prismaCall) {
+      // Use PrismaCallInfo for richer response handling
+      const prismaInfo = mapHandlerToPrismaInfoWithId(handler, route, ctx.db, bodyTypeName, hasAssertedId);
+      if (prismaInfo) {
         if (bodyTypeName && route.params && route.params.length > 0) {
           const hasBodyParam = route.params.some(p => p.name === 'body');
           const bodyVar = hasBodyParam ? '_body' : 'body';
@@ -519,8 +866,22 @@ export function generateResourceRouter(
             lines.push(`    assertRequired(${bodyVar} as Record<string, unknown>, [${names}]);`);
           }
         }
-        lines.push(`    const result = ${prismaCall};`);
-        lines.push('    res.json(result);');
+        // For nested POST: inject parent FK from URL param
+        if (nestedMatch && route.method.toLowerCase() === 'post' && ctx.db) {
+          const parentResource = resourceKey.endsWith('s') ? resourceKey.slice(0, -1) : resourceKey;
+          const modelMatch = handler.match(/^~db\.(\w+)\.\w+$/);
+          const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+          const fkField = `${parentResource}_id`;
+          const bodyParams = route.params?.map(p => p.name).join(', ') || '';
+          if (!hasAssertedId) {
+            lines.push(`    const parentId = parseInt(req.params.id);`);
+          }
+          const parentIdVar = hasAssertedId ? 'id' : 'parentId';
+          lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: ${parentIdVar} } });`);
+          lines.push('    res.status(201).json(result);');
+        } else {
+          pushPrismaResponse(lines, prismaInfo, method, handler);
+        }
       } else {
         // Check for auth handler before falling through to 501
         const authType = ctx.auth ? isAuthHandler(handler, route.path) : null;
@@ -534,11 +895,7 @@ export function generateResourceRouter(
       }
     }
 
-    lines.push('  } catch (error) {');
-    lines.push("    const details = process.env.NODE_ENV !== 'production' && error instanceof Error ? error.message : undefined;");
-    lines.push("    const status = (error as any)?.status ?? 500;");
-    lines.push("    res.status(status).json({ error: status === 400 ? 'Validation error' : 'Internal server error', ...(details && { details }) });");
-    lines.push('  }');
+    pushCatchBlock(lines);
     lines.push('});');
     lines.push('');
   }
@@ -578,6 +935,7 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
   const lines: string[] = [];
 
   lines.push("import { Router } from 'express';");
+  lines.push("import type { NextFunction, Request, Response } from 'express';");
 
   // Import resource routers
   const modelKeys = Array.from(groups.keys()).filter(k => k !== '__misc__');
@@ -632,8 +990,22 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
     const typeNames = getGeneratedTypeNames(ctx);
     for (const route of miscRoutes) {
       const method = route.method.toLowerCase();
-      lines.push(`apiRouter.${method}('${route.path}', async (req, res) => {`);
+      const handler = route.handler;
+
+      // Validate :id param for integer primary keys
+      const hasIdParam = route.path.includes(':id');
+
+      lines.push(`apiRouter.${method}('${route.path}', async (req: Request, res: Response, next: NextFunction) => {`);
       lines.push('  try {');
+
+      if (hasIdParam && ctx.db) {
+        const modelMatch = handler.match(/^~db\.(\w+)\./);
+        if (modelMatch) {
+          lines.push("    if (isNaN(parseInt(req.params.id))) {");
+          lines.push("      return res.status(400).json({ error: 'Invalid id', details: 'id must be an integer' });");
+          lines.push('    }');
+        }
+      }
 
       let bodyTypeName: string | undefined;
       if (route.params && route.params.length > 0) {
@@ -645,33 +1017,64 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
         }
       }
 
-      const prismaCall = mapHandlerToPrisma(route.handler, route, ctx.db, bodyTypeName);
-      if (prismaCall) {
-        if (bodyTypeName && route.params && route.params.length > 0) {
-          const hasBodyParam = route.params.some(p => p.name === 'body');
-          const bodyVar = hasBodyParam ? '_body' : 'body';
-          lines.push(`    const ${bodyVar} = (req.body ?? {}) as ${bodyTypeName};`);
-          const paramNames = route.params.map(p => p.name).join(', ');
-          lines.push(`    const { ${paramNames} } = ${bodyVar};`);
-        }
-        lines.push(`    const result = ${prismaCall};`);
-        lines.push('    res.json(result);');
-      } else {
-        // Check for auth handler before falling through to 501
-        const authType = ctx.auth ? isAuthHandler(route.handler, route.path) : null;
-        if (authType) {
-          const authLines = generateAuthHandlerLines(authType, route, ctx);
-          for (const l of authLines) lines.push(l);
+      // Detect nested resource routes (e.g., /tasks/:id/comments)
+      const nestedMatch = route.path.match(/^\/(\w+)\/:id\/(\w+)$/);
+      const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
+      const isAggregate = handler.match(/^~db\.(\w+)\.aggregate$/) && ctx.db;
+
+      if (isFindMany && ctx.db) {
+        if (nestedMatch) {
+          // Nested findMany: paginated, filtered by parent FK
+          const parentResource = nestedMatch[1];
+          const parentSingular = parentResource.endsWith('s') ? parentResource.slice(0, -1) : parentResource;
+          lines.push(`    const parentId = parseInt(req.params.id);`);
+          const nestedLines = generateNestedFindManyHandler(handler, ctx.db, parentSingular, 'parentId');
+          for (const l of nestedLines) lines.push(l);
         } else {
-          lines.push(`    // TODO: implement handler: ${route.handler}`);
-          lines.push("    res.status(501).json({ error: 'Not implemented' });");
+          const findManyLines = generateFindManyHandler(handler, ctx.db, { hasAuth: !!ctx.auth });
+          for (const l of findManyLines) lines.push(l);
+        }
+      } else if (isAggregate && ctx.db) {
+        const aggLines = generateAggregateHandler(handler, ctx.db);
+        if (aggLines) for (const l of aggLines) lines.push(l);
+      } else {
+        const prismaInfo = mapHandlerToPrismaInfo(handler, route, ctx.db, bodyTypeName);
+        if (prismaInfo) {
+          if (bodyTypeName && route.params && route.params.length > 0) {
+            const hasBodyParam = route.params.some(p => p.name === 'body');
+            const bodyVar = hasBodyParam ? '_body' : 'body';
+            lines.push(`    const ${bodyVar} = (req.body ?? {}) as ${bodyTypeName};`);
+            const paramNames = route.params.map(p => p.name).join(', ');
+            lines.push(`    const { ${paramNames} } = ${bodyVar};`);
+          }
+          // For nested create: inject parent FK from URL param
+          if (nestedMatch && route.method === 'POST') {
+            const parentResource = nestedMatch[1];
+            const parentSingular = parentResource.endsWith('s') ? parentResource.slice(0, -1) : parentResource;
+            const fkField = `${parentSingular}_id`;
+            const modelMatch = handler.match(/^~db\.(\w+)\.\w+$/);
+            const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+            const bodyParams = route.params?.map(p => p.name).join(', ') || '';
+            lines.push(`    const parentId = parseInt(req.params.id);`);
+            lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: parentId } });`);
+            lines.push('    res.status(201).json(result);');
+          } else {
+            pushPrismaResponse(lines, prismaInfo, method, handler);
+          }
+        } else {
+          // Check for auth handler before falling through to 501
+          const authType = ctx.auth ? isAuthHandler(handler, route.path) : null;
+          if (authType) {
+            const authLines = generateAuthHandlerLines(authType, route, ctx);
+            for (const l of authLines) lines.push(l);
+          } else {
+            lines.push(`    // TODO: implement handler: ${handler}`);
+            lines.push("    res.status(501).json({ error: 'Not implemented' });");
+          }
         }
       }
 
-      lines.push('  } catch (error) {');
-      lines.push("    const details = process.env.NODE_ENV !== 'production' && error instanceof Error ? error.message : undefined;");
-      lines.push("    res.status(500).json({ error: 'Internal server error', ...(details && { details }) });");
-      lines.push('  }');
+      pushCatchBlock(lines);
       lines.push('});');
       lines.push('');
     }

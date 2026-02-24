@@ -1,0 +1,172 @@
+# ================================================================
+# StayBook — Vacation Rental Booking Platform
+# ================================================================
+# Properties, guests, bookings, and reviews.
+# Demonstrates booking lifecycle, review ratings, search+filter.
+# ================================================================
+
+@app:stayBook
+
+@style(theme:dark,accent:#10b981,radius:12,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  properties:[{id:int,name:str,location:str,price:float,bedrooms:int,bathrooms:int,maxGuests:int,rating:float}],
+  guests:[{id:int,name:str,email:str,phone:?str,bookingCount:int}],
+  bookings:[{id:int,checkIn:str,checkOut:str,status:str,totalPrice:float,guestName:str,propertyName:str,guests:int}],
+  reviews:[{id:int,rating:int,comment:str,guestName:str,propertyName:str,created:str}],
+  stats:{totalBookings:int,confirmed:int,revenue:float,avgRating:float},
+  bookingFilter:enum(all,pending,confirmed,completed,cancelled),
+  search:str
+}
+
+@db{
+  Property{id:int:primary:auto,name:str:required,location:str:required,description:?str,price_per_night:float:required,bedrooms:int:required,bathrooms:int:required,max_guests:int:required,amenities:?str,created_at:datetime:auto}
+  Guest{id:int:primary:auto,name:str:required,email:str:required,phone:?str,address:?str,created_at:datetime:auto}
+  Booking{id:int:primary:auto,check_in:date:required,check_out:date:required,status:enum(pending,confirmed,completed,cancelled):default(pending),total_price:float:required,guest_count:int:required,notes:?str,guest_id:int:required,property_id:int:required,created_at:datetime:auto}
+  Review{id:int:primary:auto,rating:int:required,comment:str:required,guest_id:int:required,property_id:int:required,booking_id:int:required,created_at:datetime:auto}
+  @relation(Property.bookings<>Booking.property)
+  @relation(Guest.bookings<>Booking.guest)
+  @relation(Property.reviews<>Review.property)
+  @relation(Guest.reviews<>Review.guest)
+  @relation(Booking.review<>Review.booking)
+  @index(Guest.email:unique)
+  @index(Booking.status+Booking.check_in)
+  @index(Review.property_id+Review.rating)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/properties>~db.Property.findMany
+  POST:/properties(name:str,location:str,price_per_night:float,bedrooms:int,bathrooms:int,max_guests:int)>~db.Property.create
+  PUT:/properties/:id(price_per_night:float)>~db.Property.update
+  DELETE:/properties/:id>~db.Property.delete
+  GET:/guests>~db.Guest.findMany
+  POST:/guests(name:str,email:str)>~db.Guest.create
+  GET:/bookings>~db.Booking.findMany
+  POST:/bookings(check_in:str,check_out:str,total_price:float,guest_count:int,guest_id:int,property_id:int)>~db.Booking.create
+  PUT:/bookings/:id(status:str)>~db.Booking.update
+  DELETE:/bookings/:id>~db.Booking.delete
+  GET:/reviews>~db.Review.findMany
+  POST:/reviews(rating:int,comment:str,guest_id:int,property_id:int,booking_id:int)>~db.Review.create
+  GET:/stats>~db.Booking.aggregate
+)
+
+@auth(required,role:enum(guest,host,admin),redirect:/login)
+
+@email(
+  bookingConfirmed(name:str,property:str,checkIn:str)>"Your booking is confirmed"
+  bookingCancelled(name:str,property:str)>"Booking cancelled"
+  reviewRequest(name:str,property:str)>"How was your stay?"
+)
+
+@nav(
+  />?user>dashboard:login
+  /properties>?user>properties:login
+  /bookings>?user>bookings:login
+  /reviews>?user>reviews:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.bookings+~api.properties+~api.stats
+  onChange:bookingFilter>~api.bookings
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"StayBook"
+        p:"muted">"Vacation rental management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"SB"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Properties",btn:ghost>"Bookings",btn:ghost>"Reviews")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Bookings">#stats.totalBookings
+        stat:"Confirmed">#stats.confirmed
+        stat:"Revenue">#stats.revenue
+        stat:"Avg Rating">#stats.avgRating
+      )
+      @section:upcoming(
+        h2>"Upcoming Bookings"
+        table>bookings>*book(text>#book.guestName+text>#book.propertyName+text>#book.checkIn+text>#book.checkOut+badge:#book.status+text:amount:$#book.totalPrice)
+      )
+      @section:topProperties(
+        h2>"Top Rated Properties"
+        list>properties>*prop(card(h2>#prop.name+text:"muted">#prop.location+row(stat:"Rating">#prop.rating+stat:"Price">#prop.price)))
+      )
+    )
+  )
+  @page:properties(
+    sidebar(
+      logo>"SB"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Properties",btn:ghost>"Bookings",btn:ghost>"Reviews")
+    )+main(
+      header>h1>"Properties"+search:input>#search+btn:primary>"Add Property"
+      grid:3>properties|search>*prop(
+        card(
+          h2>#prop.name
+          text:"muted">#prop.location
+          text:amount:$#prop.price
+          row(stat:"Beds">#prop.bedrooms+stat:"Baths">#prop.bathrooms+stat:"Guests">#prop.maxGuests)
+          stat:"Rating">#prop.rating
+          row(btn:ghost>"Edit",btn:ghost>"Delete">!del(#prop.id))
+        )
+      )
+    )
+  )
+  @page:bookings(
+    sidebar(
+      logo>"SB"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Properties",btn:ghost>"Bookings",btn:ghost>"Reviews")
+    )+main(
+      header>h1>"Bookings"+tabs>bookingFilter.set(all,pending,confirmed,completed,cancelled)+btn:primary>"New Booking"
+      table>bookings|bookingFilter>*book(
+        text>#book.guestName
+        text>#book.propertyName
+        text>#book.checkIn
+        text>#book.checkOut
+        text:amount:$#book.totalPrice
+        badge:#book.status
+        stat:"Guests">#book.guests
+        row(btn:ghost>"Confirm">!confirm(#book.id),btn:ghost>"Cancel">!cancel(#book.id))
+      )
+    )
+  )
+  @page:reviews(
+    sidebar(
+      logo>"SB"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Properties",btn:ghost>"Bookings",btn:ghost>"Reviews")
+    )+main(
+      header>h1>"Reviews"
+      table>reviews>*rev(
+        text>#rev.guestName
+        text>#rev.propertyName
+        stat:"Rating">#rev.rating
+        text>#rev.comment
+        text:"muted">#rev.created
+      )
+    )
+  )
+)

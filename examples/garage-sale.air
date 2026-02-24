@@ -1,0 +1,144 @@
+# GarageSale — Manage items, categories, sales, and buyers
+
+@app:garageSale
+@style(theme:dark,accent:#f59e0b,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  items:[{id:int,name:str,description:str,price:float,status:str,category_id:int}],
+  categories:[{id:int,name:str,itemCount:int}],
+  sales:[{id:int,total:float,date:date,buyer_id:int,itemCount:int}],
+  buyers:[{id:int,name:str,email:str,phone:str,totalSpent:float}],
+  stats:{totalItems:int,listed:int,sold:int,revenue:float,buyerCount:int},
+  itemFilter:enum(all,listed,reserved,sold,removed),
+  search:str
+}
+
+@db{
+  Item{id:int:primary:auto,name:str:required,description:?str,price:float:required,status:enum(listed,reserved,sold,removed):default(listed),condition:?str,image:?str,category_id:int:required,sale_id:?int,created_at:datetime:auto}
+  Category{id:int:primary:auto,name:str:required,description:?str,created_at:datetime:auto}
+  Sale{id:int:primary:auto,total:float:required,date:date:required,notes:?str,buyer_id:int:required,created_at:datetime:auto}
+  Buyer{id:int:primary:auto,name:str:required,email:?str,phone:?str,created_at:datetime:auto}
+  @relation(Category.items<>Item.category)
+  @relation(Sale.items<>Item.sale)
+  @relation(Buyer.sales<>Sale.buyer)
+  @index(Category.name:unique)
+  @index(Item.status+Item.category_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/items>~db.Item.findMany
+  POST:/items(name:str,price:float,category_id:int)>~db.Item.create
+  PUT:/items/:id(status:str,price:float)>~db.Item.update
+  DELETE:/items/:id>~db.Item.delete
+  GET:/categories>~db.Category.findMany
+  POST:/categories(name:str)>~db.Category.create
+  DELETE:/categories/:id>~db.Category.delete
+  GET:/sales>~db.Sale.findMany
+  POST:/sales(total:float,date:date,buyer_id:int)>~db.Sale.create
+  DELETE:/sales/:id>~db.Sale.delete
+  GET:/buyers>~db.Buyer.findMany
+  POST:/buyers(name:str,email:str,phone:str)>~db.Buyer.create
+  PUT:/buyers/:id(name:str,email:str)>~db.Buyer.update
+  DELETE:/buyers/:id>~db.Buyer.delete
+  GET:/stats>~db.Item.aggregate
+)
+
+@auth(required,role:enum(admin,seller,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /items>?user>items:login
+  /sales>?user>sales:login
+  /buyers>?user>buyers:login
+  /categories>?user>categories:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.items
+  onChange:itemFilter>~api.items
+  onChange:search>~api.items
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Garage Sale"
+        p:"muted">"Manage your sale with ease"
+        form(input:email>#user.email+input:password>#user.password+btn:primary>"Sign In">!login)
+        p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"GS"
+      nav:vertical(dashboard,items,sales,buyers,categories)
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Items">#stats.totalItems
+        stat:"Listed">#stats.listed
+        stat:"Sold">#stats.sold
+        stat:"Revenue">#stats.revenue
+      )
+      grid:2(
+        card(h2>"Recent Sales"+list>sales>*sale(text>"$"+#sale.total+text:"muted">#sale.date+badge:#sale.itemCount+" items"))
+        card(h2>"Top Buyers"+list>buyers>*buyer(text>#buyer.name+stat:"Spent">#buyer.totalSpent))
+      )
+    )
+  )
+  @page:items(
+    sidebar(
+      logo>"GS"
+      nav:vertical(dashboard,items,sales,buyers,categories)
+    )+main(
+      header>h1>"Items"+tabs>itemFilter.set(all,listed,reserved,sold,removed)+btn:primary>"Add Item"
+      search:input>#search
+      grid:3>items|itemFilter|search>*item(
+        card(h2>#item.name+badge:#item.status+text>#item.description+stat:"Price">#item.price+row(btn:ghost>"Edit",btn:ghost>"Reserve">!reserve(#item.id),btn:ghost>"Remove">!del(#item.id)))
+      )
+    )
+  )
+  @page:sales(
+    sidebar(
+      logo>"GS"
+      nav:vertical(dashboard,items,sales,buyers,categories)
+    )+main(
+      header>h1>"Sales"+btn:primary>"Record Sale"
+      table(data:#sales,cols:[total,date,buyer_id,notes],actions:[!del])
+    )
+  )
+  @page:buyers(
+    sidebar(
+      logo>"GS"
+      nav:vertical(dashboard,items,sales,buyers,categories)
+    )+main(
+      header>h1>"Buyers"+btn:primary>"Add Buyer"
+      table(data:#buyers,cols:[name,email,phone,totalSpent],actions:[edit,!del])
+    )
+  )
+  @page:categories(
+    sidebar(
+      logo>"GS"
+      nav:vertical(dashboard,items,sales,buyers,categories)
+    )+main(
+      header>h1>"Categories"+btn:primary>"Add Category"
+      grid:3>categories>*cat(
+        card(h2>#cat.name+stat:"Items">#cat.itemCount+row(btn:ghost>"Edit",btn:ghost>"Remove">!del(#cat.id)))
+      )
+    )
+  )
+)

@@ -1,0 +1,136 @@
+# ================================================================
+# Melodia — Music Library & Playlists
+# ================================================================
+# Artists, albums, songs, and playlists with m:n relations.
+# Demonstrates deep nesting, many-to-many, playback UI.
+# ================================================================
+
+@app:melodia
+
+@style(theme:dark,accent:#22c55e,radius:12,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  artists:[{id:int,name:str,genre:str,albumCount:int}],
+  albums:[{id:int,title:str,artist:str,year:int,songCount:int}],
+  songs:[{id:int,title:str,artist:str,album:str,duration:int}],
+  playlists:[{id:int,name:str,songCount:int,createdAt:str}],
+  currentSong:?{id:int,title:str,artist:str,album:str,duration:int},
+  genreFilter:enum(all,rock,pop,jazz,electronic,classical,hip_hop),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Artist{id:int:primary:auto,name:str:required,genre:enum(rock,pop,jazz,electronic,classical,hip_hop):required,bio:?str,created_at:datetime:auto}
+  Album{id:int:primary:auto,title:str:required,year:int:required,cover_url:?str,artist_id:int:required,created_at:datetime:auto}
+  Song{id:int:primary:auto,title:str:required,duration:int:required,track_number:int:required,album_id:int:required}
+  Playlist{id:int:primary:auto,name:str:required,user_id:int:required,created_at:datetime:auto}
+  @relation(Artist.albums<>Album.artist)
+  @relation(Album.songs<>Song.album)
+  @relation(User.playlists<>Playlist.user)
+  @relation(Playlist.songs<>Song.playlists)
+  @index(User.email:unique)
+  @index(Artist.name:unique)
+  @index(Song.album_id+Song.track_number)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/artists>~db.Artist.findMany
+  GET:/artists/:id>~db.Artist.findFirst
+  POST:/artists(name:str,genre:str)>~db.Artist.create
+  GET:/albums>~db.Album.findMany
+  GET:/albums/:id>~db.Album.findFirst
+  GET:/songs>~db.Song.findMany
+  POST:/songs(title:str,duration:int,track_number:int,album_id:int)>~db.Song.create
+  GET:/playlists>~db.Playlist.findMany
+  POST:/playlists(name:str)>~db.Playlist.create
+  DELETE:/playlists/:id>~db.Playlist.delete
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>library:login
+  /artists>?user>artists:login
+  /playlists>?user>playlists:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.artists+~api.albums+~api.songs+~api.playlists
+  onChange:genreFilter>~api.artists
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Melodia"
+        p:"muted">"Your music, your way"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:library(
+    header>h1>"Library"+search:input>#search+tabs>genreFilter.set(all,rock,pop,jazz,electronic,classical,hip_hop)
+    ?currentSong>card(
+      row(h2>#currentSong.title+text:"muted">#currentSong.artist)
+      row(btn:ghost>"Prev">!prev,btn:primary>"Play">!play,btn:ghost>"Next">!next)
+    )
+    @section:recentAlbums(
+      h2>"Albums"
+      grid:4>albums>*album(
+        card(
+          h2>#album.title
+          text:"muted">#album.artist
+          text:"muted">#album.year
+          stat:"Songs">#album.songCount
+        )
+      )
+    )
+    @section:allSongs(
+      h2>"Songs"
+      table>songs|search>*song(
+        text>#song.title
+        text:"muted">#song.artist
+        text:"muted">#song.album
+        text:"muted">#song.duration
+        btn:ghost>"Play">!playSong(#song.id)
+      )
+    )
+  )
+  @page:artists(
+    header>h1>"Artists"
+    grid:3>artists|genreFilter>*artist(
+      card(
+        h2>#artist.name
+        badge:#artist.genre
+        stat:"Albums">#artist.albumCount
+      )
+    )
+  )
+  @page:playlists(
+    header>h1>"Playlists"+btn:primary>"New Playlist"
+    grid:3>playlists>*playlist(
+      card(
+        h2>#playlist.name
+        stat:"Songs">#playlist.songCount
+        text:"muted">#playlist.createdAt
+        row(btn:primary>"Play">!playPlaylist(#playlist.id),btn:icon:!del(#playlist.id))
+      )
+    )
+  )
+)

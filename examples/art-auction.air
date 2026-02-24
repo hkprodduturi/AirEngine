@@ -1,0 +1,148 @@
+# ArtAuction — Manage artists, artworks, auctions, and bids
+
+@app:artAuction
+@style(theme:dark,accent:#a855f7,radius:12,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  artists:[{id:int,name:str,bio:str,country:str,artworkCount:int}],
+  artworks:[{id:int,title:str,medium:str,year:int,estimate:float,artist_id:int}],
+  auctions:[{id:int,title:str,status:str,startDate:date,endDate:date,artworkCount:int}],
+  bids:[{id:int,amount:float,bidder:str,date:datetime,artwork_id:int,auction_id:int}],
+  stats:{totalAuctions:int,liveAuctions:int,totalArtworks:int,totalBids:int,highestBid:float},
+  auctionFilter:enum(all,upcoming,live,closed),
+  search:str
+}
+
+@db{
+  Artist{id:int:primary:auto,name:str:required,bio:?str,country:?str,email:?str,website:?str,created_at:datetime:auto}
+  Artwork{id:int:primary:auto,title:str:required,medium:str:required,year:int:required,estimate:float:default(0),description:?str,image:?str,artist_id:int:required,auction_id:?int,created_at:datetime:auto}
+  Auction{id:int:primary:auto,title:str:required,status:enum(upcoming,live,closed):default(upcoming),startDate:date:required,endDate:date:required,description:?str,created_at:datetime:auto}
+  Bid{id:int:primary:auto,amount:float:required,bidder:str:required,date:datetime:required,artwork_id:int:required,auction_id:int:required,created_at:datetime:auto}
+  @relation(Artist.artworks<>Artwork.artist)
+  @relation(Auction.artworks<>Artwork.auction)
+  @relation(Auction.bids<>Bid.auction)
+  @relation(Artwork.bids<>Bid.artwork)
+  @index(Auction.status)
+  @index(Bid.artwork_id+Bid.amount)
+  @index(Artist.name:unique)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/artists>~db.Artist.findMany
+  POST:/artists(name:str,bio:str,country:str)>~db.Artist.create
+  PUT:/artists/:id(bio:str)>~db.Artist.update
+  DELETE:/artists/:id>~db.Artist.delete
+  GET:/artworks>~db.Artwork.findMany
+  POST:/artworks(title:str,medium:str,year:int,estimate:float,artist_id:int)>~db.Artwork.create
+  PUT:/artworks/:id(auction_id:int)>~db.Artwork.update
+  DELETE:/artworks/:id>~db.Artwork.delete
+  GET:/auctions>~db.Auction.findMany
+  POST:/auctions(title:str,startDate:date,endDate:date)>~db.Auction.create
+  PUT:/auctions/:id(status:str)>~db.Auction.update
+  DELETE:/auctions/:id>~db.Auction.delete
+  GET:/bids>~db.Bid.findMany
+  POST:/bids(amount:float,bidder:str,artwork_id:int,auction_id:int)>~db.Bid.create
+  GET:/stats>~db.Auction.aggregate
+)
+
+@auth(required,role:enum(admin,auctioneer,bidder),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /auctions>?user>auctions:login
+  /artworks>?user>artworks:login
+  /artists>?user>artists:login
+  /bids>?user>bids:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.auctions
+  onChange:auctionFilter>~api.auctions
+  onChange:search>~api.artworks
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Art Auction"
+        p:"muted">"Discover and bid on fine art"
+        form(input:email>#user.email+input:password>#user.password+btn:primary>"Sign In">!login)
+        p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"AA"
+      nav:vertical(dashboard,auctions,artworks,artists,bids)
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Auctions">#stats.totalAuctions
+        stat:"Live Now">#stats.liveAuctions
+        stat:"Artworks">#stats.totalArtworks
+        stat:"Total Bids">#stats.totalBids
+      )
+      grid:2(
+        card(h2>"Highest Bid"+stat:"Amount">#stats.highestBid)
+        card(h2>"Live Auctions"+list>auctions|live>*auction(text>#auction.title+badge:#auction.status+text:"muted">"Ends: "+#auction.endDate))
+      )
+    )
+  )
+  @page:auctions(
+    sidebar(
+      logo>"AA"
+      nav:vertical(dashboard,auctions,artworks,artists,bids)
+    )+main(
+      header>h1>"Auctions"+tabs>auctionFilter.set(all,upcoming,live,closed)+btn:primary>"New Auction"
+      grid:3>auctions|auctionFilter>*auction(
+        card(h2>#auction.title+badge:#auction.status+text>"Start: "+#auction.startDate+text>"End: "+#auction.endDate+stat:"Artworks">#auction.artworkCount+row(btn:ghost>"View",btn:primary>"Enter">!enter(#auction.id)))
+      )
+    )
+  )
+  @page:artworks(
+    sidebar(
+      logo>"AA"
+      nav:vertical(dashboard,auctions,artworks,artists,bids)
+    )+main(
+      header>h1>"Artworks"+btn:primary>"Add Artwork"
+      search:input>#search
+      grid:3>artworks|search>*art(
+        card(h2>#art.title+text>"Medium: "+#art.medium+text>"Year: "+#art.year+stat:"Estimate">#art.estimate+row(btn:ghost>"Details",btn:primary>"Bid">!bid(#art.id)))
+      )
+    )
+  )
+  @page:artists(
+    sidebar(
+      logo>"AA"
+      nav:vertical(dashboard,auctions,artworks,artists,bids)
+    )+main(
+      header>h1>"Artists"+btn:primary>"Add Artist"
+      grid:3>artists>*artist(
+        card(h2>#artist.name+badge:#artist.country+p>#artist.bio+stat:"Artworks">#artist.artworkCount+row(btn:ghost>"View",btn:ghost>"Remove">!del(#artist.id)))
+      )
+    )
+  )
+  @page:bids(
+    sidebar(
+      logo>"AA"
+      nav:vertical(dashboard,auctions,artworks,artists,bids)
+    )+main(
+      header>h1>"Bid History"
+      table(data:#bids,cols:[amount,bidder,date,artwork_id,auction_id],actions:[!del])
+    )
+  )
+)

@@ -26,6 +26,10 @@ export function generateResourceHooks(ctx: TranspileContext): OutputFile[] {
     );
     if (!route) continue;
 
+    // Skip routes with URL params (e.g., /tasks/:id/comments) — these are nested
+    // resources that need a parent ID and can't be used as standalone hooks.
+    if (route.path.includes(':')) continue;
+
     const pluralName = pluralize(model.name);
     const stateVarName = pluralName.charAt(0).toLowerCase() + pluralName.slice(1);
 

@@ -1,0 +1,126 @@
+# ================================================================
+# Blog CMS — Full-Stack Blog / Content Management System
+# ================================================================
+# Posts, authors, categories, tags with many-to-many.
+# Demonstrates m:n relations, search, and multi-page editor.
+# ================================================================
+
+@app:blog
+
+@style(theme:light,accent:#3b82f6,radius:10,font:sans)
+
+@state{
+  posts:[{id:int,title:str,slug:str,status:str,featured:bool,publishedAt:?str}],
+  categories:[{id:int,name:str,slug:str}],
+  tags:[{id:int,name:str,slug:str}],
+  selectedPost:?{id:int,title:str,slug:str,content:str,excerpt:str,status:str,featured:bool,category:?str},
+  filter:enum(all,draft,published),
+  search:str
+}
+
+@db{
+  Author{id:int:primary:auto,name:str:required,email:str:required,bio:?str,avatar:?str,created_at:datetime:auto}
+  Category{id:int:primary:auto,name:str:required,slug:str:required,created_at:datetime:auto}
+  Tag{id:int:primary:auto,name:str:required,slug:str:required}
+  Post{id:int:primary:auto,title:str:required,slug:str:required,content:str:required,excerpt:?str,status:enum(draft,published):default(draft),featured:bool:default(false),published_at:?datetime,author_id:int:required,category_id:?int,created_at:datetime:auto}
+  @relation(Author.posts<>Post.author)
+  @relation(Category.posts<>Post.category)
+  @relation(Post.tags<>Tag.posts)
+  @index(Author.email:unique)
+  @index(Post.slug:unique)
+  @index(Category.slug:unique)
+  @index(Tag.slug:unique)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@deploy(target:docker,port:3001,node:20)
+
+@api(
+  GET:/posts>~db.Post.findMany
+  GET:/posts/:slug>~db.Post.findFirst
+  POST:/posts(title:str,slug:str,content:str,excerpt:str,status:str,category_id:int)>~db.Post.create
+  PUT:/posts/:id(title:str,content:str,status:str,featured:bool)>~db.Post.update
+  DELETE:/posts/:id>~db.Post.delete
+  GET:/categories>~db.Category.findMany
+  POST:/categories(name:str,slug:str)>~db.Category.create
+  GET:/tags>~db.Tag.findMany
+  POST:/tags(name:str,slug:str)>~db.Tag.create
+  GET:/authors>~db.Author.findMany
+)
+
+@auth(required,role:enum(author,editor,admin),redirect:/login)
+
+@nav(
+  />blog
+  /manage>?user>posts:login
+  /editor>?user>editor:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.posts+~api.categories+~api.tags
+  onChange:filter>~api.posts
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Blog CMS"
+        p:"muted">"Sign in to manage your content"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:posts(
+    sidebar(
+      logo>"Blog CMS"
+      nav:vertical(btn:ghost>"Posts",btn:ghost>"Blog",btn:ghost>"Settings")
+    )+main(
+      header>h1>"Posts"+search:input>#search+tabs>filter.set(all,draft,published)+btn:primary>"New Post"
+      table(data:#posts|filter|search,cols:[title,slug,status:badge,featured:toggle,publishedAt],actions:[edit,!del])
+    )
+  )
+  @page:editor(
+    sidebar(
+      logo>"Blog CMS"
+      nav:vertical(btn:ghost>"Posts",btn:ghost>"Blog",btn:ghost>"Settings")
+    )+main(
+      header>h1>"Post Editor"
+      card(
+        form(
+          input:text>#selectedPost.title
+          input:text>#selectedPost.slug
+          input:text>#selectedPost.excerpt
+          select:#selectedPost.category(categories)
+          select:#selectedPost.status(draft,published)
+          input:text>#selectedPost.content
+          btn:primary>"Save">!save(#selectedPost)
+        )
+      )
+    )
+  )
+  @page:blog(
+    header>"Blog"+p:"muted">"Latest articles"
+    grid:3>posts|published>*post(
+      card(
+        h2>#post.title
+        badge:#post.status
+        p:"muted">#post.excerpt
+        text:"muted">#post.publishedAt
+        btn:ghost>"Read More"
+      )
+    )
+  )
+)

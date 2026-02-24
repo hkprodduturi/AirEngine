@@ -1,0 +1,142 @@
+# Shipping — Shipment Tracking & Package Management
+
+@app:shipping
+
+@style(theme:dark,accent:#0ea5e9,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  shipments:[{id:int,tracking:str,status:str,origin:str,destination:str,carrier:str,created:str}],
+  packages:[{id:int,label:str,weight:float,dimensions:str,shipment:str}],
+  carriers:[{id:int,name:str,code:str,rating:float,active:bool}],
+  stats:{totalShipments:int,inTransit:int,delivered:int,returned:int},
+  statusFilter:enum(all,pending,picked_up,in_transit,delivered,returned),
+  search:str
+}
+
+@db{
+  Shipper{id:int:primary:auto,name:str:required,email:str:required,company:str:required,phone:?str,created_at:datetime:auto}
+  Carrier{id:int:primary:auto,name:str:required,code:str:required,contact_email:str:required,rating:float:default(0),active:bool:default(true),created_at:datetime:auto}
+  Shipment{id:int:primary:auto,tracking_number:str:required,status:enum(pending,picked_up,in_transit,delivered,returned):default(pending),origin:str:required,destination:str:required,shipper_id:int:required,carrier_id:int:required,estimated_arrival:?date,created_at:datetime:auto}
+  Package{id:int:primary:auto,label:str:required,weight:float:required,length:float:required,width:float:required,height:float:required,shipment_id:int:required,created_at:datetime:auto}
+  @relation(Shipper.shipments<>Shipment.shipper)
+  @relation(Carrier.shipments<>Shipment.carrier)
+  @relation(Shipment.packages<>Package.shipment)
+  @index(Shipper.email:unique)
+  @index(Carrier.code:unique)
+  @index(Shipment.tracking_number:unique)
+  @index(Shipment.status+Shipment.carrier_id)
+}
+
+@env(DATABASE_URL:str:required JWT_SECRET:str:required PORT:int:3001)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/carriers>~db.Carrier.findMany
+  POST:/carriers(name:str,code:str,contact_email:str)>~db.Carrier.create
+  PUT:/carriers/:id(active:bool)>~db.Carrier.update
+  GET:/shipments>~db.Shipment.findMany
+  POST:/shipments(tracking_number:str,origin:str,destination:str,shipper_id:int,carrier_id:int)>~db.Shipment.create
+  PUT:/shipments/:id(status:str)>~db.Shipment.update
+  DELETE:/shipments/:id>~db.Shipment.delete
+  GET:/packages>~db.Package.findMany
+  POST:/packages(label:str,weight:float,length:float,width:float,height:float,shipment_id:int)>~db.Package.create
+  DELETE:/packages/:id>~db.Package.delete
+  GET:/stats>~db.Shipment.aggregate
+)
+
+@auth(required,role:enum(admin,dispatcher,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /shipments>?user>shipments:login
+  /packages>?user>packages:login
+  /carriers>?user>carriers:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.shipments
+  onChange:statusFilter>~api.shipments
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"ShipTrack"
+        p:"muted">"Real-time shipment tracking for logistics teams"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"ST"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Packages",btn:ghost>"Carriers")
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Shipments">#stats.totalShipments
+        stat:"In Transit">#stats.inTransit
+        stat:"Delivered">#stats.delivered
+        stat:"Returned">#stats.returned
+      )
+      @section:recent(
+        h2>"Recent Shipments"
+        table>shipments>*shipment(
+          text>#shipment.tracking+text>#shipment.origin+text>#shipment.destination+badge:#shipment.status+text:"muted">#shipment.carrier
+        )
+      )
+    )
+  )
+  @page:shipments(
+    sidebar(
+      logo>"ST"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Packages",btn:ghost>"Carriers")
+    )+main(
+      header>h1>"Shipments"+tabs>statusFilter.set(all,pending,picked_up,in_transit,delivered,returned)+btn:primary>"New Shipment"
+      search:input>#search
+      table>shipments|statusFilter|search>*shipment(
+        text>#shipment.tracking+text>#shipment.origin+text>#shipment.destination+badge:#shipment.status+text:"muted">#shipment.carrier
+        row(btn:ghost>"Update">!update(#shipment.id),btn:icon:!del(#shipment.id))
+      )
+    )
+  )
+  @page:packages(
+    sidebar(
+      logo>"ST"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Packages",btn:ghost>"Carriers")
+    )+main(
+      header>h1>"Packages"+btn:primary>"Add Package"
+      table>packages>*pkg(
+        text>#pkg.label+text>#pkg.weight+text>#pkg.dimensions+text:"muted">#pkg.shipment+btn:icon:!del(#pkg.id)
+      )
+    )
+  )
+  @page:carriers(
+    sidebar(
+      logo>"ST"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Packages",btn:ghost>"Carriers")
+    )+main(
+      header>h1>"Carriers"+btn:primary>"Add Carrier"
+      grid:3>carriers>*carrier(
+        card(
+          h2>#carrier.name
+          text>"Code: "+text>#carrier.code
+          text>"Rating: "+text>#carrier.rating
+          badge:#carrier.active
+          row(btn:ghost>"Edit",btn:icon:!del(#carrier.id))
+        )
+      )
+    )
+  )
+)

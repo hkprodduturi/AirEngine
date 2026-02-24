@@ -1,0 +1,137 @@
+# ================================================================
+# HelpDesk — Ticket Support System
+# ================================================================
+# Tickets, agents, departments, and SLA tracking.
+# Demonstrates priority/status workflows, assignment, stats.
+# ================================================================
+
+@app:helpdesk
+
+@style(theme:dark,accent:#ef4444,radius:8,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  tickets:[{id:int,subject:str,status:str,priority:str,assignee:?str,createdAt:str}],
+  agents:[{id:int,name:str,email:str,department:str,ticketCount:int}],
+  departments:[{id:int,name:str}],
+  stats:{open:int,inProgress:int,resolved:int,avgResponseTime:float},
+  statusFilter:enum(all,open,in_progress,waiting,resolved,closed),
+  priorityFilter:enum(all,low,medium,high,urgent),
+  search:str
+}
+
+@db{
+  Department{id:int:primary:auto,name:str:required}
+  Agent{id:int:primary:auto,name:str:required,email:str:required,department_id:int:required,created_at:datetime:auto}
+  Customer{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Ticket{id:int:primary:auto,subject:str:required,description:str:required,status:enum(open,in_progress,waiting,resolved,closed):default(open),priority:enum(low,medium,high,urgent):default(medium),agent_id:?int,customer_id:int:required,created_at:datetime:auto}
+  TicketReply{id:int:primary:auto,body:str:required,is_internal:bool:default(false),ticket_id:int:required,author_id:int:required,created_at:datetime:auto}
+  @relation(Department.agents<>Agent.department)
+  @relation(Agent.tickets<>Ticket.agent)
+  @relation(Customer.tickets<>Ticket.customer)
+  @relation(Ticket.replies<>TicketReply.ticket)
+  @index(Agent.email:unique)
+  @index(Customer.email:unique)
+  @index(Ticket.status+Ticket.priority)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/tickets>~db.Ticket.findMany
+  POST:/tickets(subject:str,description:str,priority:str)>~db.Ticket.create
+  PUT:/tickets/:id(status:str,agent_id:?int)>~db.Ticket.update
+  DELETE:/tickets/:id>~db.Ticket.delete
+  GET:/tickets/:id/replies>~db.TicketReply.findMany
+  POST:/tickets/:id/replies(body:str)>~db.TicketReply.create
+  GET:/agents>~db.Agent.findMany
+  GET:/departments>~db.Department.findMany
+  GET:/stats>~db.Ticket.aggregate
+)
+
+@auth(required,role:enum(customer,agent,admin),redirect:/login)
+
+@email(
+  ticketCreated(name:str,subject:str)>"New support ticket created"
+  ticketResolved(name:str,subject:str)>"Your ticket has been resolved"
+)
+
+@nav(
+  />?user>dashboard:login
+  /tickets>?user>tickets:login
+  /agents>?user>agents:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.tickets+~api.stats
+  onChange:statusFilter>~api.tickets
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"HelpDesk"
+        p:"muted">"Support ticket management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"HD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Tickets",btn:ghost>"Agents")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Open">#stats.open
+        stat:"In Progress">#stats.inProgress
+        stat:"Resolved">#stats.resolved
+        stat:"Avg Response">#stats.avgResponseTime
+      )
+      @section:recent(
+        h2>"Recent Tickets"
+        table>tickets>*ticket(text>#ticket.subject+badge:#ticket.status+badge:#ticket.priority+text:"muted">#ticket.assignee+text:"muted">#ticket.createdAt)
+      )
+    )
+  )
+  @page:tickets(
+    sidebar(
+      logo>"HD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Tickets",btn:ghost>"Agents")
+    )+main(
+      header>h1>"Tickets"+search:input>#search+tabs>statusFilter.set(all,open,in_progress,waiting,resolved)+btn:primary>"New Ticket"
+      table>tickets|statusFilter|search>*ticket(
+        text>#ticket.subject
+        badge:#ticket.status
+        badge:#ticket.priority
+        text:"muted">#ticket.assignee
+        text:"muted">#ticket.createdAt
+        row(btn:ghost>"Assign">!assign(#ticket.id),btn:ghost>"Resolve">!resolve(#ticket.id))
+      )
+    )
+  )
+  @page:agents(
+    sidebar(
+      logo>"HD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Tickets",btn:ghost>"Agents")
+    )+main(
+      header>h1>"Agents"
+      grid:3>agents>*agent(
+        card(h2>#agent.name+badge:#agent.department+stat:"Tickets">#agent.ticketCount+text:"muted">#agent.email)
+      )
+    )
+  )
+)

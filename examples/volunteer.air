@@ -1,0 +1,158 @@
+# ================================================================
+# VolunteerHub — Volunteer Management System
+# ================================================================
+# Volunteers, events, shifts, and organizations.
+# Demonstrates shift status workflow, org hierarchy, stats.
+# ================================================================
+
+@app:volunteerHub
+
+@style(theme:dark,accent:#10b981,radius:10,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  volunteers:[{id:int,name:str,email:str,phone:?str,org:str,totalHours:float}],
+  events:[{id:int,name:str,description:str,date:str,location:str,shiftCount:int,orgName:str}],
+  shifts:[{id:int,eventName:str,role:str,status:str,startTime:str,endTime:str,volunteerName:?str}],
+  organizations:[{id:int,name:str,contactEmail:str,volunteerCount:int}],
+  stats:{totalVolunteers:int,activeEvents:int,openShifts:int,hoursLogged:float},
+  statusFilter:enum(all,open,filled,completed),
+  search:str
+}
+
+@db{
+  Organization{id:int:primary:auto,name:str:required,description:?str,contact_email:str:required,website:?str,created_at:datetime:auto}
+  Volunteer{id:int:primary:auto,name:str:required,email:str:required,phone:?str,total_hours:float:default(0),org_id:int:required,created_at:datetime:auto}
+  Event{id:int:primary:auto,name:str:required,description:str:required,date:date:required,location:str:required,org_id:int:required,created_at:datetime:auto}
+  Shift{id:int:primary:auto,role:str:required,start_time:str:required,end_time:str:required,status:enum(open,filled,completed):default(open),event_id:int:required,volunteer_id:?int,created_at:datetime:auto}
+  @relation(Organization.volunteers<>Volunteer.org)
+  @relation(Organization.events<>Event.org)
+  @relation(Event.shifts<>Shift.event)
+  @relation(Volunteer.shifts<>Shift.volunteer)
+  @index(Volunteer.email:unique)
+  @index(Organization.contact_email:unique)
+  @index(Shift.status+Shift.event_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/volunteers>~db.Volunteer.findMany
+  POST:/volunteers(name:str,email:str,org_id:int)>~db.Volunteer.create
+  PUT:/volunteers/:id(name:str,email:str)>~db.Volunteer.update
+  DELETE:/volunteers/:id>~db.Volunteer.delete
+  GET:/events>~db.Event.findMany
+  POST:/events(name:str,description:str,date:str,location:str,org_id:int)>~db.Event.create
+  DELETE:/events/:id>~db.Event.delete
+  GET:/shifts>~db.Shift.findMany
+  POST:/shifts(role:str,start_time:str,end_time:str,event_id:int)>~db.Shift.create
+  PUT:/shifts/:id(status:str,volunteer_id:?int)>~db.Shift.update
+  GET:/organizations>~db.Organization.findMany
+  POST:/organizations(name:str,contact_email:str)>~db.Organization.create
+  GET:/stats>~db.Volunteer.aggregate
+)
+
+@auth(required,role:enum(volunteer,coordinator,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /events>?user>events:login
+  /shifts>?user>shifts:login
+  /volunteers>?user>volunteers:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.events+~api.stats+~api.organizations
+  onChange:statusFilter>~api.shifts
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"VolunteerHub"
+        p:"muted">"Organize volunteers, make an impact"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"VH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Shifts",btn:ghost>"Volunteers")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Volunteers">#stats.totalVolunteers
+        stat:"Active Events">#stats.activeEvents
+        stat:"Open Shifts">#stats.openShifts
+        stat:"Hours Logged">#stats.hoursLogged
+      )
+      @section:upcoming(
+        h2>"Upcoming Events"
+        list>events>*event(card(row(h2>#event.name+badge:#event.orgName)+row(text>"muted">#event.date+text:"muted">#event.location)+stat:"Shifts">#event.shiftCount))
+      )
+    )
+  )
+  @page:events(
+    sidebar(
+      logo>"VH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Shifts",btn:ghost>"Volunteers")
+    )+main(
+      header>h1>"Events"+search:input>#search+btn:primary>"New Event"
+      grid:3>events|search>*event(
+        card(
+          h2>#event.name
+          p:"muted">#event.description
+          row(text>#event.date+text:"muted">#event.location)
+          row(badge:#event.orgName+stat:"Shifts">#event.shiftCount)
+          row(btn:ghost>"View Shifts">!viewShifts(#event.id),btn:ghost>"Delete">!del(#event.id))
+        )
+      )
+    )
+  )
+  @page:shifts(
+    sidebar(
+      logo>"VH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Shifts",btn:ghost>"Volunteers")
+    )+main(
+      header>h1>"Shifts"+tabs>statusFilter.set(all,open,filled,completed)+btn:primary>"New Shift"
+      table>shifts|statusFilter>*shift(
+        text>#shift.eventName
+        text>#shift.role
+        text>#shift.startTime
+        text>#shift.endTime
+        badge:#shift.status
+        text:"muted">#shift.volunteerName
+        row(btn:ghost>"Assign">!assign(#shift.id),btn:ghost>"Complete">!complete(#shift.id))
+      )
+    )
+  )
+  @page:volunteers(
+    sidebar(
+      logo>"VH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Shifts",btn:ghost>"Volunteers")
+    )+main(
+      header>h1>"Volunteers"+search:input>#search+btn:primary>"Add Volunteer"
+      table>volunteers|search>*vol(
+        text>#vol.name
+        text>#vol.email
+        text:"muted">#vol.phone
+        badge:#vol.org
+        stat:"Hours">#vol.totalHours
+        row(btn:ghost>"Edit">!edit(#vol.id),btn:ghost>"Delete">!del(#vol.id))
+      )
+    )
+  )
+)

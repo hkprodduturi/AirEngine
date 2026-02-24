@@ -1,0 +1,168 @@
+# BrewHouse — Brewery Production Management
+# Beers, ingredients, batches, and sales records.
+# Demonstrates batch lifecycle, production tracking, ingredient inventory.
+
+@app:brewHouse
+
+@style(theme:dark,accent:#d97706,radius:10,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  beers:[{id:int,name:str,style:str,abv:float,ibu:int,description:?str}],
+  ingredients:[{id:int,name:str,type:str,quantity:float,unit:str,supplier:?str}],
+  batches:[{id:int,beerName:str,status:str,volume:float,startDate:str,targetDate:?str}],
+  sales:[{id:int,beer:str,quantity:int,amount:float,channel:str,soldAt:str}],
+  stats:{activeBatches:int,totalProduction:float,monthlyRevenue:float,beerCount:int},
+  batchStatus:enum(all,fermenting,conditioning,ready,sold),
+  ingredientType:enum(all,grain,hops,yeast,adjunct,water),
+  search:str
+}
+
+@db{
+  Beer{id:int:primary:auto,name:str:required,style:str:required,abv:float:required,ibu:int:default(0),description:?str,recipe_notes:?str,created_at:datetime:auto}
+  Ingredient{id:int:primary:auto,name:str:required,type:enum(grain,hops,yeast,adjunct,water):required,quantity:float:required,unit:str:required,supplier:?str,cost_per_unit:float:default(0),created_at:datetime:auto}
+  Batch{id:int:primary:auto,volume:float:required,status:enum(fermenting,conditioning,ready,sold):default(fermenting),start_date:date:required,target_date:?date,actual_abv:?float,notes:?str,beer_id:int:required,created_at:datetime:auto}
+  SalesRecord{id:int:primary:auto,quantity:int:required,amount:float:required,channel:enum(taproom,wholesale,online,event):required,beer_id:int:required,batch_id:?int,sold_at:datetime:auto}
+  @relation(Beer.batches<>Batch.beer)
+  @relation(Beer.sales<>SalesRecord.beer)
+  @relation(Batch.sales<>SalesRecord.batch)
+  @relation(Beer.ingredients<>Ingredient.beers)
+  @index(Beer.name:unique)
+  @index(Batch.status+Batch.start_date)
+  @index(SalesRecord.sold_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/beers>~db.Beer.findMany
+  POST:/beers(name:str,style:str,abv:float,ibu:int)>~db.Beer.create
+  PUT:/beers/:id(name:str,abv:float)>~db.Beer.update
+  DELETE:/beers/:id>~db.Beer.delete
+  GET:/ingredients>~db.Ingredient.findMany
+  POST:/ingredients(name:str,type:str,quantity:float,unit:str)>~db.Ingredient.create
+  PUT:/ingredients/:id(quantity:float)>~db.Ingredient.update
+  DELETE:/ingredients/:id>~db.Ingredient.delete
+  GET:/batches>~db.Batch.findMany
+  POST:/batches(volume:float,start_date:str,beer_id:int)>~db.Batch.create
+  PUT:/batches/:id(status:str)>~db.Batch.update
+  GET:/sales>~db.SalesRecord.findMany
+  POST:/sales(quantity:int,amount:float,channel:str,beer_id:int)>~db.SalesRecord.create
+  GET:/stats>~db.Batch.aggregate
+)
+
+@auth(required,role:enum(brewer,manager,owner),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /beers>?user>beers:login
+  /batches>?user>batches:login
+  /ingredients>?user>ingredients:login
+  /sales>?user>sales:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.beers+~api.batches+~api.stats
+  onChange:batchStatus>~api.batches
+  onChange:ingredientType>~api.ingredients
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"BrewHouse"
+        p:"muted">"Brewery production management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"BH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Beers",btn:ghost>"Batches",btn:ghost>"Ingredients",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Active Batches">#stats.activeBatches
+        stat:"Total Production">#stats.totalProduction
+        stat:"Monthly Revenue">#stats.monthlyRevenue
+        stat:"Beer Varieties">#stats.beerCount
+      )
+      @section:active(
+        h2>"Active Batches"
+        list>batches|fermenting>*batch(
+          card(row(text>#batch.beerName+badge:#batch.status+stat:"Volume">#batch.volume+text:"muted">#batch.startDate))
+        )
+      )
+      @section:recent(
+        h2>"Recent Sales"
+        table>sales>*sale(text>#sale.beer+text>#sale.quantity+text:amount:$#sale.amount+badge:#sale.channel+text:"muted">#sale.soldAt)
+      )
+    )
+  )
+  @page:beers(
+    sidebar(
+      logo>"BH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Beers",btn:ghost>"Batches",btn:ghost>"Ingredients",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Beers"+search:input>#search+btn:primary>"Add Beer"
+      grid:3>beers|search>*beer(
+        card(
+          h2>#beer.name
+          text>#beer.style
+          row(stat:"ABV">#beer.abv+stat:"IBU">#beer.ibu)
+          text:"muted">#beer.description
+          row(btn:ghost>"New Batch">!newBatch(#beer.id),btn:ghost>"Edit">!edit(#beer.id),btn:ghost>"Delete">!del(#beer.id))
+        )
+      )
+    )
+  )
+  @page:batches(
+    sidebar(
+      logo>"BH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Beers",btn:ghost>"Batches",btn:ghost>"Ingredients",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Batches"+tabs>batchStatus.set(all,fermenting,conditioning,ready,sold)+btn:primary>"New Batch"
+      table>batches|batchStatus>*batch(
+        text>#batch.beerName+badge:#batch.status+stat:"Volume">#batch.volume
+        text>#batch.startDate+text:"muted">#batch.targetDate
+        row(btn:ghost>"Condition">!condition(#batch.id),btn:ghost>"Ready">!ready(#batch.id),btn:ghost>"Sold">!sold(#batch.id))
+      )
+    )
+  )
+  @page:ingredients(
+    sidebar(
+      logo>"BH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Beers",btn:ghost>"Batches",btn:ghost>"Ingredients",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Ingredients"+tabs>ingredientType.set(all,grain,hops,yeast,adjunct,water)+btn:primary>"Add Ingredient"
+      table>ingredients|ingredientType>*ing(
+        text>#ing.name+badge:#ing.type+stat:"Qty">#ing.quantity
+        text>#ing.unit+text:"muted">#ing.supplier
+        row(btn:ghost>"Restock">!restock(#ing.id),btn:ghost>"Delete">!del(#ing.id))
+      )
+    )
+  )
+  @page:sales(
+    sidebar(
+      logo>"BH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Beers",btn:ghost>"Batches",btn:ghost>"Ingredients",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Sales"+btn:primary>"Record Sale"
+      table>sales>*sale(text>#sale.beer+text>#sale.quantity+text:amount:$#sale.amount+badge:#sale.channel+text:"muted">#sale.soldAt)
+    )
+  )
+)

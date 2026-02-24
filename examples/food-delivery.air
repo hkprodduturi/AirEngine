@@ -1,0 +1,169 @@
+# ================================================================
+# FoodDelivery — Delivery Platform
+# ================================================================
+# Restaurants, menu items, orders, and drivers.
+# Demonstrates delivery status tracking, order management, stats.
+# ================================================================
+
+@app:foodDelivery
+
+@style(theme:dark,accent:#ef4444,radius:12,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  restaurants:[{id:int,name:str,cuisine:str,rating:float,address:str}],
+  menuItems:[{id:int,name:str,price:float,restaurant:str,category:str}],
+  orders:[{id:int,restaurant:str,customer:str,driver:?str,status:str,total:float,createdAt:str}],
+  drivers:[{id:int,name:str,phone:str,status:str,deliveryCount:int}],
+  stats:{totalOrders:int,activeDeliveries:int,avgDeliveryTime:float,revenue:float},
+  statusFilter:enum(all,placed,preparing,delivering,delivered),
+  cuisineFilter:enum(all,italian,mexican,chinese,indian,american),
+  search:str
+}
+
+@db{
+  Restaurant{id:int:primary:auto,name:str:required,cuisine:enum(italian,mexican,chinese,indian,american):required,rating:float:default(0),address:str:required,phone:?str,created_at:datetime:auto}
+  MenuItem{id:int:primary:auto,name:str:required,description:?str,price:float:required,category:str:required,available:bool:default(true),restaurant_id:int:required,created_at:datetime:auto}
+  Driver{id:int:primary:auto,name:str:required,email:str:required,phone:str:required,status:enum(available,busy,offline):default(available),created_at:datetime:auto}
+  Order{id:int:primary:auto,status:enum(placed,preparing,delivering,delivered):default(placed),total:float:required,delivery_address:str:required,notes:?str,restaurant_id:int:required,customer_id:int:required,driver_id:?int,created_at:datetime:auto}
+  Customer{id:int:primary:auto,name:str:required,email:str:required,phone:?str,address:?str,created_at:datetime:auto}
+  @relation(Restaurant.menuItems<>MenuItem.restaurant)
+  @relation(Restaurant.orders<>Order.restaurant)
+  @relation(Customer.orders<>Order.customer)
+  @relation(Driver.orders<>Order.driver)
+  @index(Customer.email:unique)
+  @index(Driver.email:unique)
+  @index(Order.status+Order.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/restaurants>~db.Restaurant.findMany
+  POST:/restaurants(name:str,cuisine:str,address:str)>~db.Restaurant.create
+  GET:/restaurants/:id/menu>~db.MenuItem.findMany
+  POST:/menu(name:str,price:float,category:str,restaurant_id:int)>~db.MenuItem.create
+  GET:/orders>~db.Order.findMany
+  POST:/orders(total:float,delivery_address:str,restaurant_id:int,customer_id:int)>~db.Order.create
+  PUT:/orders/:id(status:str,driver_id:?int)>~db.Order.update
+  GET:/drivers>~db.Driver.findMany
+  PUT:/drivers/:id(status:str)>~db.Driver.update
+  GET:/stats>~db.Order.aggregate
+)
+
+@auth(required,role:enum(customer,restaurant,driver,admin),redirect:/login)
+
+@email(
+  orderPlaced(name:str,orderId:int)>"Your order has been placed"
+  orderDelivered(name:str,orderId:int)>"Your order has been delivered"
+)
+
+@nav(
+  />?user>dashboard:login
+  /orders>?user>orders:login
+  /restaurants>?user>restaurants:login
+  /drivers>?user>drivers:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.orders+~api.restaurants+~api.stats
+  onChange:statusFilter>~api.orders
+  onChange:cuisineFilter>~api.restaurants
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"FoodDelivery"
+        p:"muted">"Fast food, delivered fast"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"FD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Restaurants",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Orders">#stats.totalOrders
+        stat:"Active Deliveries">#stats.activeDeliveries
+        stat:"Avg Delivery">#stats.avgDeliveryTime
+        stat:"Revenue">#stats.revenue
+      )
+      @section:recent(
+        h2>"Recent Orders"
+        table>orders>*order(
+          text>#order.restaurant
+          text>#order.customer
+          badge:#order.status
+          text:amount:$#order.total
+          text:"muted">#order.createdAt
+        )
+      )
+    )
+  )
+  @page:orders(
+    sidebar(
+      logo>"FD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Restaurants",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Orders"+tabs>statusFilter.set(all,placed,preparing,delivering,delivered)+btn:primary>"New Order"
+      table>orders|statusFilter>*order(
+        text>#order.restaurant
+        text>#order.customer
+        text>#order.driver
+        badge:#order.status
+        text:amount:$#order.total
+        text:"muted">#order.createdAt
+        row(btn:ghost>"Prepare">!prepare(#order.id),btn:ghost>"Dispatch">!dispatch(#order.id),btn:ghost>"Deliver">!deliver(#order.id))
+      )
+    )
+  )
+  @page:restaurants(
+    sidebar(
+      logo>"FD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Restaurants",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Restaurants"+search:input>#search+tabs>cuisineFilter.set(all,italian,mexican,chinese,indian,american)+btn:primary>"Add Restaurant"
+      grid:3>restaurants|cuisineFilter|search>*rest(
+        card(
+          h2>#rest.name
+          badge:#rest.cuisine
+          stat:"Rating">#rest.rating
+          text:"muted">#rest.address
+          row(btn:ghost>"View Menu",btn:ghost>"Edit">!edit(#rest.id))
+        )
+      )
+    )
+  )
+  @page:drivers(
+    sidebar(
+      logo>"FD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Restaurants",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Drivers"+btn:primary>"Add Driver"
+      table>drivers>*driver(
+        text>#driver.name
+        text>#driver.phone
+        badge:#driver.status
+        stat:"Deliveries">#driver.deliveryCount
+        row(btn:ghost>"Available">!setAvailable(#driver.id),btn:ghost>"Offline">!setOffline(#driver.id))
+      )
+    )
+  )
+)

@@ -1,0 +1,111 @@
+# ================================================================
+# FitTrack — Fitness Tracking Application
+# ================================================================
+# Workouts, exercises, and workout logs.
+# Demonstrates exercise library, progress tracking, stats.
+# ================================================================
+
+@app:fittrack
+
+@style(theme:dark,accent:#10b981,radius:12,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  exercises:[{id:int,name:str,category:str,muscle:str}],
+  workouts:[{id:int,name:str,date:str,duration:int,exerciseCount:int}],
+  logs:[{id:int,exercise:str,sets:int,reps:int,weight:float}],
+  stats:{totalWorkouts:int,thisWeek:int,totalTime:int,favoriteExercise:str},
+  categoryFilter:enum(all,strength,cardio,flexibility,balance),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Exercise{id:int:primary:auto,name:str:required,category:enum(strength,cardio,flexibility,balance):required,muscle_group:str:required,description:?str}
+  Workout{id:int:primary:auto,name:str:required,date:date:required,duration:int:required,notes:?str,user_id:int:required,created_at:datetime:auto}
+  WorkoutLog{id:int:primary:auto,sets:int:required,reps:int:required,weight:float:default(0),exercise_id:int:required,workout_id:int:required}
+  @relation(User.workouts<>Workout.user)
+  @relation(Workout.logs<>WorkoutLog.workout)
+  @relation(Exercise.logs<>WorkoutLog.exercise)
+  @index(User.email:unique)
+  @index(Exercise.name:unique)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/exercises>~db.Exercise.findMany
+  POST:/exercises(name:str,category:str,muscle_group:str)>~db.Exercise.create
+  GET:/workouts>~db.Workout.findMany
+  POST:/workouts(name:str,date:str,duration:int)>~db.Workout.create
+  DELETE:/workouts/:id>~db.Workout.delete
+  POST:/workouts/:id/logs(exercise_id:int,sets:int,reps:int,weight:float)>~db.WorkoutLog.create
+  GET:/stats>~db.Workout.aggregate
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /exercises>?user>exercises:login
+  /workouts>?user>workouts:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.workouts+~api.exercises+~api.stats
+  onChange:categoryFilter>~api.exercises
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"FitTrack"
+        p:"muted">"Track your fitness journey"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    header>h1>"Dashboard"
+    grid:4(
+      stat:"Total Workouts">#stats.totalWorkouts
+      stat:"This Week">#stats.thisWeek
+      stat:"Total Hours">#stats.totalTime
+      stat:"Favorite">#stats.favoriteExercise
+    )
+    @section:recent(
+      h2>"Recent Workouts"
+      list>workouts>*workout(
+        card(h2>#workout.name+text:"muted">#workout.date+row(stat:"Duration">#workout.duration+stat:"Exercises">#workout.exerciseCount))
+      )
+    )
+  )
+  @page:exercises(
+    header>h1>"Exercise Library"+search:input>#search+tabs>categoryFilter.set(all,strength,cardio,flexibility,balance)
+    grid:3>exercises|categoryFilter|search>*exercise(
+      card(h2>#exercise.name+badge:#exercise.category+text:"muted">#exercise.muscle)
+    )
+  )
+  @page:workouts(
+    header>h1>"My Workouts"+btn:primary>"New Workout"
+    list>workouts>*workout(
+      card(
+        row(h2>#workout.name+text:"muted">#workout.date+stat:"Duration">#workout.duration)
+        list>logs>*log(row(text>#log.exercise+text>#log.sets+"x"+#log.reps+text>#log.weight+"kg"))
+        btn:icon:!del(#workout.id)
+      )
+    )
+  )
+)

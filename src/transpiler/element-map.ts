@@ -23,7 +23,7 @@ interface MappingEntry {
 const ELEMENT_MAP: Record<string, MappingEntry> = {
   header: {
     tag: 'header',
-    className: 'flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 border-b border-[var(--border)]',
+    className: 'sticky top-0 z-40 flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-b border-[var(--border)] bg-[var(--bg)]/80 backdrop-blur-lg',
   },
   footer: {
     tag: 'footer',
@@ -57,11 +57,11 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   card: {
     tag: 'div',
-    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-6 space-y-3 shadow-[var(--card-shadow)]',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-6 space-y-3 shadow-[var(--card-shadow)] hover:border-[color-mix(in_srgb,var(--border)_60%,var(--accent))] transition-all',
   },
   btn: {
     tag: 'button',
-    className: 'px-5 py-2.5 rounded-[var(--radius)] cursor-pointer transition-colors',
+    className: 'bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors',
     modifiers: {
       primary: { className: 'bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium hover:brightness-110 min-w-[80px] cursor-pointer transition-colors' },
       secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors' },
@@ -72,7 +72,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   input: {
     tag: 'input',
-    className: 'rounded-[var(--radius)] px-3.5 py-2.5',
+    className: 'border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent',
     selfClosing: true,
     modifiers: {
       text: { inputType: 'text' },
@@ -118,15 +118,15 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   badge: {
     tag: 'span',
-    className: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[var(--accent)]/20 text-[var(--accent)]',
+    className: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] text-[var(--accent)]',
   },
   list: {
     tag: 'ul',
     className: 'space-y-3',
   },
   table: {
-    tag: 'table',
-    className: 'w-full',
+    tag: 'div',
+    className: 'w-full border border-[var(--border)] rounded-[var(--radius)] overflow-hidden',
   },
   tabs: {
     tag: 'div',
@@ -146,24 +146,25 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   alert: {
     tag: 'div',
-    className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded',
+    className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded-[var(--radius)] text-sm',
     modifiers: {
-      error: { className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded' },
-      success: { className: 'border-l-4 border-green-500 bg-green-500/10 p-4 rounded' },
-      warning: { className: 'border-l-4 border-yellow-500 bg-yellow-500/10 p-4 rounded' },
+      error: { className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded-[var(--radius)] text-sm' },
+      success: { className: 'border-l-4 border-green-500 bg-green-500/10 p-4 rounded-[var(--radius)] text-sm' },
+      warning: { className: 'border-l-4 border-yellow-500 bg-yellow-500/10 p-4 rounded-[var(--radius)] text-sm' },
+      info: { className: 'border-l-4 border-blue-500 bg-blue-500/10 p-4 rounded-[var(--radius)] text-sm' },
     },
   },
   spinner: {
     tag: 'div',
-    className: 'animate-spin h-6 w-6 border-2 border-current border-t-transparent rounded-full mx-auto',
+    className: 'animate-spin h-6 w-6 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto',
   },
   link: {
     tag: 'a',
     className: 'text-[var(--accent)] hover:underline cursor-pointer block text-center text-sm',
     modifiers: {
-      primary: { className: 'bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium hover:brightness-110 cursor-pointer transition-colors inline-flex items-center justify-center no-underline' },
-      secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors inline-flex items-center justify-center no-underline' },
-      ghost: { className: 'bg-transparent hover:bg-[var(--hover)] px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors inline-flex items-center justify-center no-underline' },
+      primary: { className: 'bg-[var(--accent)] text-white px-6 py-3 rounded-[var(--radius)] font-semibold hover:brightness-110 hover:shadow-lg hover:shadow-[var(--accent)]/20 cursor-pointer transition-all duration-200 inline-flex items-center justify-center no-underline' },
+      secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-6 py-3 rounded-[var(--radius)] font-semibold cursor-pointer hover:bg-[var(--accent)]/10 transition-all duration-200 inline-flex items-center justify-center no-underline' },
+      ghost: { className: 'bg-transparent hover:bg-[var(--hover)] px-4 py-2 rounded-[var(--radius)] font-medium cursor-pointer transition-all duration-200 inline-flex items-center justify-center no-underline' },
     },
   },
   form: {
@@ -172,7 +173,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   stat: {
     tag: 'div',
-    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-5',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-5 hover:border-[color-mix(in_srgb,var(--border)_60%,var(--accent))] transition-colors',
   },
   progress: {
     tag: 'div',
@@ -191,7 +192,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   search: {
     tag: 'input',
-    className: 'rounded-[var(--radius)] px-3.5 py-2.5',
+    className: 'border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent',
     selfClosing: true,
     modifiers: {
       input: { inputType: 'search' },

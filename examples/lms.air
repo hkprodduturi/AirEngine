@@ -1,0 +1,137 @@
+# ================================================================
+# LearnAIR — Learning Management System
+# ================================================================
+# Courses, lessons, enrollment, and progress tracking.
+# Demonstrates junction with extra fields, email, queue.
+# ================================================================
+
+@app:learnair
+
+@style(theme:dark,accent:#8b5cf6,radius:12,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  courses:[{id:int,title:str,description:str,level:str,published:bool,price:float,lessonCount:int}],
+  lessons:[{id:int,title:str,content:str,order:int,duration:int,completed:bool}],
+  enrollments:[{id:int,courseId:int,courseTitle:str,progress:float,completedAt:?str}],
+  selectedCourse:?int,
+  currentLesson:?int,
+  search:str,
+  levelFilter:enum(all,beginner,intermediate,advanced),
+  stats:{totalStudents:int,totalCourses:int,avgProgress:float,completions:int}
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(student,instructor,admin),created_at:datetime:auto}
+  Course{id:int:primary:auto,title:str:required,description:str:required,level:enum(beginner,intermediate,advanced),published:bool:default(true),price:float:required,instructor_id:int:required,created_at:datetime:auto}
+  Lesson{id:int:primary:auto,title:str:required,content:str:required,order_num:int:required,duration:int:required,course_id:int:required,created_at:datetime:auto}
+  Enrollment{id:int:primary:auto,progress:float:default(0),completed_at:?datetime,user_id:int:required,course_id:int:required,created_at:datetime:auto}
+  @relation(Course.instructor<>User.courses)
+  @relation(Course.lessons<>Lesson.course)
+  @relation(User.enrollments<>Enrollment.user)
+  @relation(Course.enrollments<>Enrollment.course)
+  @index(User.email:unique)
+  @index(Enrollment.user_id+Enrollment.course_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:"smtp.sendgrid.net"
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/courses>~db.Course.findMany
+  GET:/courses/:id>~db.Course.findFirst
+  POST:/courses(title:str,description:str,level:str,price:float)>~db.Course.create
+  GET:/courses/:id/lessons>~db.Lesson.findMany
+  POST:/courses/:id/lessons(title:str,content:str,order_num:int,duration:int)>~db.Lesson.create
+  POST:/enroll(course_id:int)>~db.Enrollment.create
+  GET:/enrollments>~db.Enrollment.findMany
+  PUT:/enrollments/:id(progress:float)>~db.Enrollment.update
+  GET:/stats>~db.Enrollment.aggregate
+)
+
+@auth(required,role:enum(student,instructor,admin),redirect:/login)
+
+@email(
+  enrollmentConfirmation(name:str,course:str)>"You are enrolled in a new course"
+  courseCertificate(name:str,course:str)>"Congratulations on completing the course"
+)
+
+@queue(
+  generateCertificate(user_id:int,course_id:int)>!certificates.generate
+)
+
+@nav(
+  />?user>catalog:login
+  /my-courses>?user>myCourses:login
+  /course>?user>courseView:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.courses
+  onChange:selectedCourse>~api.lessons
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"LearnAIR"
+        p:"muted">"Master new skills at your own pace"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"New here? "+btn:ghost>"Create Account">!register
+        )
+      )
+    )
+  )
+  @page:catalog(
+    header>h1>"Course Catalog"+search:input>#search
+    row(tabs>levelFilter.set(all,beginner,intermediate,advanced))
+    grid:3>courses|levelFilter|search>*course(
+      card(
+        h2>#course.title
+        p:"muted">#course.description
+        row(badge:#course.level+text:"muted">#course.lessonCount+" lessons")
+        row(text:amount:$#course.price+btn:primary>"Enroll">!enroll(#course.id))
+      )
+    )
+  )
+  @page:myCourses(
+    header>h1>"My Courses"
+    grid:3>enrollments>*enrollment(
+      card(
+        h2>#enrollment.courseTitle
+        progress:bar(value:#enrollment.progress,max:100)
+        text:"muted">#enrollment.progress+"% complete"
+        ?enrollment.completedAt>badge:"Completed"
+        btn:primary>"Continue">!selectCourse(#enrollment.courseId)
+      )
+    )
+  )
+  @page:courseView(
+    sidebar(
+      h2>"Lessons"
+      list>lessons>*lesson(
+        btn:ghost>#lesson.title+text:"muted">#lesson.duration+"min">!selectLesson(#lesson.id)
+      )
+    )+main(
+      header>h1>"Course Details"
+      card(
+        h2>#lesson.title
+        p>#lesson.content
+        btn:primary>"Complete Lesson">!updateProgress
+      )
+    )
+  )
+)

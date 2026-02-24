@@ -1,0 +1,171 @@
+# ================================================================
+# DataPulse — Analytics Dashboard
+# ================================================================
+# Dashboards, metrics, data sources, and visualizations.
+# Demonstrates stats-heavy UI, multiple chart types, cron jobs.
+# ================================================================
+
+@app:datapulse
+
+@style(theme:dark,accent:#a855f7,radius:10,font:sans+mono,maxWidth:1400,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  dashboards:[{id:int,name:str,metricCount:int,updatedAt:str}],
+  metrics:[{id:int,name:str,value:float,change:float,type:str}],
+  dataSources:[{id:int,name:str,type:str,status:str,lastSync:str}],
+  alerts:[{id:int,metric:str,condition:str,threshold:float,triggered:bool}],
+  stats:{totalMetrics:int,activeSources:int,alertsTriggered:int,lastRefresh:str},
+  sourceFilter:enum(all,database,api,file,stream),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(viewer,analyst,admin):default(viewer),created_at:datetime:auto}
+  Dashboard{id:int:primary:auto,name:str:required,description:?str,user_id:int:required,created_at:datetime:auto,updated_at:datetime:auto}
+  DataSource{id:int:primary:auto,name:str:required,type:enum(database,api,file,stream):required,connection_string:str:required,status:enum(active,inactive,error):default(active),last_sync:?datetime,created_at:datetime:auto}
+  Metric{id:int:primary:auto,name:str:required,value:float:default(0),change_pct:float:default(0),unit:?str,dashboard_id:int:required,source_id:int:required,created_at:datetime:auto}
+  Alert{id:int:primary:auto,condition:enum(above,below,equals):required,threshold:float:required,triggered:bool:default(false),metric_id:int:required,user_id:int:required,created_at:datetime:auto}
+  @relation(User.dashboards<>Dashboard.user)
+  @relation(Dashboard.metrics<>Metric.dashboard)
+  @relation(DataSource.metrics<>Metric.source)
+  @relation(Metric.alerts<>Alert.metric)
+  @relation(User.alerts<>Alert.user)
+  @index(User.email:unique)
+  @index(Metric.dashboard_id+Metric.name)
+  @index(Alert.triggered)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/dashboards>~db.Dashboard.findMany
+  POST:/dashboards(name:str,description:str)>~db.Dashboard.create
+  DELETE:/dashboards/:id>~db.Dashboard.delete
+  GET:/metrics>~db.Metric.findMany
+  POST:/metrics(name:str,unit:str,dashboard_id:int,source_id:int)>~db.Metric.create
+  PUT:/metrics/:id(value:float)>~db.Metric.update
+  GET:/sources>~db.DataSource.findMany
+  POST:/sources(name:str,type:str,connection_string:str)>~db.DataSource.create
+  PUT:/sources/:id(status:str)>~db.DataSource.update
+  GET:/alerts>~db.Alert.findMany
+  POST:/alerts(condition:str,threshold:float,metric_id:int)>~db.Alert.create
+  DELETE:/alerts/:id>~db.Alert.delete
+  GET:/stats>~db.Metric.aggregate
+)
+
+@auth(required,role:enum(viewer,analyst,admin),redirect:/login)
+
+@cron(
+  refreshMetrics>"*/15 * * * *">!db.metrics.refresh
+  syncSources>"0 * * * *">!db.sources.sync
+)
+
+@email(
+  alertTriggered(name:str,metric:str,value:float)>"Alert: {metric} threshold exceeded"
+)
+
+@nav(
+  />?user>overview:login
+  /dashboards>?user>dashboards:login
+  /sources>?user>sources:login
+  /alerts>?user>alerts:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.dashboards+~api.metrics+~api.sources+~api.alerts+~api.stats
+  onChange:sourceFilter>~api.sources
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"DataPulse"
+        p:"muted">"Real-time analytics dashboard"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:overview(
+    sidebar(
+      logo>"DP"
+      nav:vertical(btn:ghost>"Overview",btn:ghost>"Dashboards",btn:ghost>"Sources",btn:ghost>"Alerts")
+    )+main(
+      header>h1>"Overview"
+      grid:4(
+        stat:"Metrics">#stats.totalMetrics
+        stat:"Active Sources">#stats.activeSources
+        stat:"Alerts">#stats.alertsTriggered
+        stat:"Last Refresh">#stats.lastRefresh
+      )
+      @section:keyMetrics(
+        h2>"Key Metrics"
+        grid:4>metrics>*metric(
+          card(
+            text>#metric.name
+            stat:#metric.type>#metric.value
+            text:"muted">#metric.change
+          )
+        )
+      )
+    )
+  )
+  @page:dashboards(
+    sidebar(
+      logo>"DP"
+      nav:vertical(btn:ghost>"Overview",btn:ghost>"Dashboards",btn:ghost>"Sources",btn:ghost>"Alerts")
+    )+main(
+      header>h1>"Dashboards"+btn:primary>"New Dashboard"
+      grid:3>dashboards>*dash(
+        card(
+          h2>#dash.name
+          stat:"Metrics">#dash.metricCount
+          text:"muted">#dash.updatedAt
+          row(btn:primary>"Open">!selectDashboard(#dash.id),btn:icon:!del(#dash.id))
+        )
+      )
+    )
+  )
+  @page:sources(
+    sidebar(
+      logo>"DP"
+      nav:vertical(btn:ghost>"Overview",btn:ghost>"Dashboards",btn:ghost>"Sources",btn:ghost>"Alerts")
+    )+main(
+      header>h1>"Data Sources"+tabs>sourceFilter.set(all,database,api,file,stream)+btn:primary>"Add Source"
+      table>dataSources|sourceFilter>*source(
+        text>#source.name
+        badge:#source.type
+        badge:#source.status
+        text:"muted">#source.lastSync
+        row(btn:ghost>"Sync">!syncSource(#source.id),btn:ghost>"Disable">!disableSource(#source.id))
+      )
+    )
+  )
+  @page:alerts(
+    sidebar(
+      logo>"DP"
+      nav:vertical(btn:ghost>"Overview",btn:ghost>"Dashboards",btn:ghost>"Sources",btn:ghost>"Alerts")
+    )+main(
+      header>h1>"Alerts"+btn:primary>"New Alert"
+      table>alerts>*alert(
+        text>#alert.metric
+        text>#alert.condition
+        text>#alert.threshold
+        badge:#alert.triggered
+        btn:icon:!del(#alert.id)
+      )
+    )
+  )
+)

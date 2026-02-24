@@ -46,6 +46,7 @@ import {
 
 import {
   generateDockerfile,
+  generateDockerCompose,
   generateDockerignore,
   generateEnvExample,
 } from '../deploy-gen.js';
@@ -68,7 +69,7 @@ export function generateServer(ctx: TranspileContext): OutputFile[] {
 
   // Prisma schema (only if @db exists)
   if (ctx.db) {
-    files.push({ path: 'server/prisma/schema.prisma', content: generatePrismaSchema(ctx.db) });
+    files.push({ path: 'server/prisma/schema.prisma', content: generatePrismaSchema(ctx.db, { hasAuth: !!ctx.auth }) });
   }
 
   // prisma.ts — PrismaClient singleton (avoids circular imports)
@@ -156,6 +157,8 @@ export function generateServer(ctx: TranspileContext): OutputFile[] {
     if (dockerignore) files.push({ path: 'server/.dockerignore', content: dockerignore });
     const envExample = generateEnvExample(ctx);
     if (envExample) files.push({ path: 'server/.env.example', content: envExample });
+    const compose = generateDockerCompose(ctx);
+    if (compose) files.push({ path: 'docker-compose.yml', content: compose });
   }
 
   return files;

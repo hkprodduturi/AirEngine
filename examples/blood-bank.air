@@ -1,0 +1,165 @@
+# ================================================================
+# BloodLink — Blood Bank & Donation Management
+# ================================================================
+# Donors, donations, blood units, and transfusion requests.
+# Demonstrates blood type enums, inventory tracking, request workflows.
+# ================================================================
+
+@app:bloodlink
+
+@style(theme:dark,accent:#dc2626,radius:8,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  donors:[{id:int,name:str,email:str,phone:str,bloodType:str,lastDonation:?str,donationCount:int}],
+  donations:[{id:int,donorName:str,bloodType:str,units:int,date:str,status:str}],
+  bloodUnits:[{id:int,bloodType:str,units:int,expiryDate:str,status:str}],
+  requests:[{id:int,patientName:str,bloodType:str,unitsNeeded:int,urgency:str,status:str,requestedAt:str}],
+  stats:{totalDonors:int,unitsAvailable:int,pendingRequests:int,donationsThisMonth:int},
+  bloodTypeFilter:enum(all,a_pos,a_neg,b_pos,b_neg,ab_pos,ab_neg,o_pos,o_neg),
+  requestStatusFilter:enum(all,pending,approved,fulfilled,rejected),
+  donationStatusFilter:enum(all,scheduled,completed,deferred),
+  search:str
+}
+
+@db{
+  Donor{id:int:primary:auto,name:str:required,email:str:required,phone:str:required,blood_type:enum(a_pos,a_neg,b_pos,b_neg,ab_pos,ab_neg,o_pos,o_neg):required,date_of_birth:date:required,weight:float:required,address:?str,created_at:datetime:auto}
+  Donation{id:int:primary:auto,units:int:default(1),date:date:required,status:enum(scheduled,completed,deferred):default(scheduled),hemoglobin:?float,notes:?str,donor_id:int:required,collected_by:str:required,created_at:datetime:auto}
+  BloodUnit{id:int:primary:auto,blood_type:enum(a_pos,a_neg,b_pos,b_neg,ab_pos,ab_neg,o_pos,o_neg):required,unit_number:str:required,volume_ml:int:default(450),status:enum(available,reserved,used,expired):default(available),expiry_date:date:required,donation_id:int:required,created_at:datetime:auto}
+  Request{id:int:primary:auto,patient_name:str:required,blood_type:enum(a_pos,a_neg,b_pos,b_neg,ab_pos,ab_neg,o_pos,o_neg):required,units_needed:int:required,urgency:enum(routine,urgent,emergency):default(routine),status:enum(pending,approved,fulfilled,rejected):default(pending),hospital:str:required,requesting_doctor:str:required,created_at:datetime:auto}
+  @relation(Donor.donations<>Donation.donor)
+  @relation(Donation.bloodUnits<>BloodUnit.donation)
+  @index(Donor.email:unique)
+  @index(BloodUnit.unit_number:unique)
+  @index(BloodUnit.blood_type+BloodUnit.status)
+  @index(Request.status+Request.urgency)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/donors>~db.Donor.findMany
+  POST:/donors(name:str,email:str,phone:str,blood_type:str,date_of_birth:str,weight:float)>~db.Donor.create
+  PUT:/donors/:id(phone:str,address:str)>~db.Donor.update
+  GET:/donations>~db.Donation.findMany
+  POST:/donations(date:str,donor_id:int,collected_by:str)>~db.Donation.create
+  PUT:/donations/:id(status:str,hemoglobin:float)>~db.Donation.update
+  GET:/blood-units>~db.BloodUnit.findMany
+  POST:/blood-units(blood_type:str,unit_number:str,expiry_date:str,donation_id:int)>~db.BloodUnit.create
+  PUT:/blood-units/:id(status:str)>~db.BloodUnit.update
+  GET:/requests>~db.Request.findMany
+  POST:/requests(patient_name:str,blood_type:str,units_needed:int,urgency:str,hospital:str,requesting_doctor:str)>~db.Request.create
+  PUT:/requests/:id(status:str)>~db.Request.update
+  GET:/stats>~db.BloodUnit.aggregate
+)
+
+@auth(required,role:enum(technician,doctor,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /donors>?user>donors:login
+  /donations>?user>donations:login
+  /requests>?user>requests:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.donors+~api.blood-units+~api.stats
+  onChange:requestStatusFilter>~api.requests
+  onChange:donationStatusFilter>~api.donations
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"BloodLink"
+        p:"muted">"Blood bank and donation management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"BL"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Donors",btn:ghost>"Donations",btn:ghost>"Requests")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Donors">#stats.totalDonors
+        stat:"Units Available">#stats.unitsAvailable
+        stat:"Pending Requests">#stats.pendingRequests
+        stat:"This Month">#stats.donationsThisMonth
+      )
+      @section:inventory(
+        h2>"Blood Inventory"
+        grid:4>bloodUnits>*unit(card(badge:#unit.bloodType+stat:"Units">#unit.units+text:"muted">"Expires: "+#unit.expiryDate+badge:#unit.status))
+      )
+      @section:urgentRequests(
+        h2>"Urgent Requests"
+        table>requests>*req(text>#req.patientName+badge:#req.bloodType+text>#req.unitsNeeded+" units"+badge:#req.urgency+badge:#req.status)
+      )
+    )
+  )
+  @page:donors(
+    sidebar(
+      logo>"BL"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Donors",btn:ghost>"Donations",btn:ghost>"Requests")
+    )+main(
+      header>h1>"Donors"+search:input>#search+tabs>bloodTypeFilter.set(all,a_pos,a_neg,b_pos,b_neg,o_pos,o_neg)+btn:primary>"Register Donor"
+      table>donors|bloodTypeFilter|search>*donor(
+        text>#donor.name
+        text>#donor.email
+        text>#donor.phone
+        badge:#donor.bloodType
+        text:"muted">#donor.lastDonation
+        stat:"Donations">#donor.donationCount
+        row(btn:ghost>"Schedule",btn:ghost>"Edit">!edit(#donor.id))
+      )
+    )
+  )
+  @page:donations(
+    sidebar(
+      logo>"BL"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Donors",btn:ghost>"Donations",btn:ghost>"Requests")
+    )+main(
+      header>h1>"Donations"+tabs>donationStatusFilter.set(all,scheduled,completed,deferred)+btn:primary>"New Donation"
+      table>donations|donationStatusFilter>*donation(
+        text>#donation.donorName
+        badge:#donation.bloodType
+        text>#donation.units+" units"
+        text>#donation.date
+        badge:#donation.status
+        row(btn:ghost>"Complete">!complete(#donation.id),btn:ghost>"Defer">!defer(#donation.id))
+      )
+    )
+  )
+  @page:requests(
+    sidebar(
+      logo>"BL"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Donors",btn:ghost>"Donations",btn:ghost>"Requests")
+    )+main(
+      header>h1>"Transfusion Requests"+tabs>requestStatusFilter.set(all,pending,approved,fulfilled,rejected)+btn:primary>"New Request"
+      table>requests|requestStatusFilter>*req(
+        text>#req.patientName
+        badge:#req.bloodType
+        text>#req.unitsNeeded+" units"
+        badge:#req.urgency
+        badge:#req.status
+        text:"muted">#req.requestedAt
+        row(btn:ghost>"Approve">!approve(#req.id),btn:ghost>"Fulfill">!fulfill(#req.id),btn:ghost>"Reject">!reject(#req.id))
+      )
+    )
+  )
+)

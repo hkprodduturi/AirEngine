@@ -1,0 +1,159 @@
+# ================================================================
+# MediClinic — Appointment Scheduling & Patient Management
+# ================================================================
+# Doctors, patients, appointments, and department tracking.
+# Demonstrates scheduling workflows, department filters, stats.
+# ================================================================
+
+@app:mediclinic
+
+@style(theme:dark,accent:#14b8a6,radius:10,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  doctors:[{id:int,name:str,email:str,specialty:str,department:str,appointmentCount:int}],
+  patients:[{id:int,name:str,email:str,phone:?str,dob:str,lastVisit:?str}],
+  appointments:[{id:int,date:str,time:str,status:str,patientName:str,doctorName:str,department:str,reason:str}],
+  departments:[{id:int,name:str,doctorCount:int}],
+  stats:{totalAppointments:int,scheduledToday:int,completed:int,cancelled:int},
+  statusFilter:enum(all,scheduled,completed,cancelled),
+  departmentFilter:?int,
+  search:str
+}
+
+@db{
+  Department{id:int:primary:auto,name:str:required,floor:?int,created_at:datetime:auto}
+  Doctor{id:int:primary:auto,name:str:required,email:str:required,phone:?str,specialty:str:required,license_no:str:required,department_id:int:required,created_at:datetime:auto}
+  Patient{id:int:primary:auto,name:str:required,email:str:required,phone:?str,date_of_birth:date:required,gender:enum(male,female,other):required,blood_type:?str,address:?str,created_at:datetime:auto}
+  Appointment{id:int:primary:auto,date:date:required,time:str:required,status:enum(scheduled,completed,cancelled):default(scheduled),reason:str:required,notes:?str,doctor_id:int:required,patient_id:int:required,created_at:datetime:auto}
+  @relation(Department.doctors<>Doctor.department)
+  @relation(Doctor.appointments<>Appointment.doctor)
+  @relation(Patient.appointments<>Appointment.patient)
+  @index(Doctor.email:unique)
+  @index(Doctor.license_no:unique)
+  @index(Patient.email:unique)
+  @index(Appointment.date+Appointment.doctor_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/doctors>~db.Doctor.findMany
+  POST:/doctors(name:str,email:str,specialty:str,license_no:str,department_id:int)>~db.Doctor.create
+  GET:/patients>~db.Patient.findMany
+  POST:/patients(name:str,email:str,date_of_birth:str,gender:str)>~db.Patient.create
+  PUT:/patients/:id(phone:str,address:str)>~db.Patient.update
+  GET:/appointments>~db.Appointment.findMany
+  POST:/appointments(date:str,time:str,reason:str,doctor_id:int,patient_id:int)>~db.Appointment.create
+  PUT:/appointments/:id(status:str,notes:str)>~db.Appointment.update
+  DELETE:/appointments/:id>~db.Appointment.delete
+  GET:/departments>~db.Department.findMany
+  GET:/stats>~db.Appointment.aggregate
+)
+
+@auth(required,role:enum(receptionist,doctor,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /appointments>?user>appointments:login
+  /patients>?user>patients:login
+  /doctors>?user>doctors:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.appointments+~api.doctors+~api.stats
+  onChange:statusFilter>~api.appointments
+  onChange:departmentFilter>~api.doctors
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"MediClinic"
+        p:"muted">"Appointment scheduling made simple"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"MC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Appointments",btn:ghost>"Patients",btn:ghost>"Doctors")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Appointments">#stats.totalAppointments
+        stat:"Scheduled Today">#stats.scheduledToday
+        stat:"Completed">#stats.completed
+        stat:"Cancelled">#stats.cancelled
+      )
+      @section:today(
+        h2>"Today's Appointments"
+        table>appointments>*appt(text>#appt.time+text>#appt.patientName+text>#appt.doctorName+badge:#appt.department+badge:#appt.status)
+      )
+    )
+  )
+  @page:appointments(
+    sidebar(
+      logo>"MC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Appointments",btn:ghost>"Patients",btn:ghost>"Doctors")
+    )+main(
+      header>h1>"Appointments"+tabs>statusFilter.set(all,scheduled,completed,cancelled)+btn:primary>"New Appointment"
+      table>appointments|statusFilter>*appt(
+        text>#appt.date
+        text>#appt.time
+        text>#appt.patientName
+        text>#appt.doctorName
+        text>#appt.reason
+        badge:#appt.status
+        row(btn:ghost>"Complete">!complete(#appt.id),btn:ghost>"Cancel">!cancel(#appt.id))
+      )
+    )
+  )
+  @page:patients(
+    sidebar(
+      logo>"MC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Appointments",btn:ghost>"Patients",btn:ghost>"Doctors")
+    )+main(
+      header>h1>"Patients"+search:input>#search+btn:primary>"Register Patient"
+      table>patients|search>*patient(
+        text>#patient.name
+        text>#patient.email
+        text:#patient.phone
+        text:"muted">#patient.dob
+        text:"muted">#patient.lastVisit
+        row(btn:ghost>"View",btn:ghost>"Edit">!edit(#patient.id))
+      )
+    )
+  )
+  @page:doctors(
+    sidebar(
+      logo>"MC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Appointments",btn:ghost>"Patients",btn:ghost>"Doctors")
+    )+main(
+      header>h1>"Doctors"+select:#departmentFilter+btn:primary>"Add Doctor"
+      grid:3>doctors>*doctor(
+        card(
+          h2>#doctor.name
+          badge:#doctor.specialty
+          text:"muted">#doctor.department
+          text>#doctor.email
+          stat:"Appointments">#doctor.appointmentCount
+        )
+      )
+    )
+  )
+)

@@ -1,0 +1,171 @@
+# ================================================================
+# InspectPro — Property Inspection Management
+# ================================================================
+# Properties, inspectors, inspections, and findings.
+# Demonstrates inspection status, finding severity, checklists.
+# ================================================================
+
+@app:inspectPro
+
+@style(theme:dark,accent:#ef4444,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  properties:[{id:int,name:str,address:str,type:str,lastInspection:?str}],
+  inspectors:[{id:int,name:str,email:str,certification:str,inspectionCount:int}],
+  inspections:[{id:int,date:str,status:str,type:str,propertyName:str,inspectorName:str,findingCount:int}],
+  findings:[{id:int,title:str,description:str,severity:str,status:str,location:str,inspectionDate:str}],
+  stats:{totalInspections:int,scheduled:int,criticalFindings:int,passRate:float},
+  inspectionFilter:enum(all,scheduled,in_progress,completed,failed),
+  severityFilter:enum(all,low,medium,high,critical),
+  search:str
+}
+
+@db{
+  Property{id:int:primary:auto,name:str:required,address:str:required,property_type:enum(residential,commercial,industrial):required,year_built:?int,sqft:?int,created_at:datetime:auto}
+  Inspector{id:int:primary:auto,name:str:required,email:str:required,phone:?str,certification:str:required,specialization:?str,created_at:datetime:auto}
+  Inspection{id:int:primary:auto,date:date:required,status:enum(scheduled,in_progress,completed,failed):default(scheduled),inspection_type:enum(routine,pre_lease,post_lease,emergency):required,notes:?str,property_id:int:required,inspector_id:int:required,created_at:datetime:auto}
+  Finding{id:int:primary:auto,title:str:required,description:str:required,severity:enum(low,medium,high,critical):required,status:enum(open,in_repair,resolved,deferred):default(open),location:str:required,estimated_cost:?float,inspection_id:int:required,created_at:datetime:auto}
+  @relation(Property.inspections<>Inspection.property)
+  @relation(Inspector.inspections<>Inspection.inspector)
+  @relation(Inspection.findings<>Finding.inspection)
+  @index(Inspector.email:unique)
+  @index(Inspection.status+Inspection.date)
+  @index(Finding.severity+Finding.status)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/properties>~db.Property.findMany
+  POST:/properties(name:str,address:str,property_type:str)>~db.Property.create
+  PUT:/properties/:id(name:str)>~db.Property.update
+  GET:/inspectors>~db.Inspector.findMany
+  POST:/inspectors(name:str,email:str,certification:str)>~db.Inspector.create
+  DELETE:/inspectors/:id>~db.Inspector.delete
+  GET:/inspections>~db.Inspection.findMany
+  POST:/inspections(date:str,inspection_type:str,property_id:int,inspector_id:int)>~db.Inspection.create
+  PUT:/inspections/:id(status:str,notes:?str)>~db.Inspection.update
+  DELETE:/inspections/:id>~db.Inspection.delete
+  GET:/findings>~db.Finding.findMany
+  POST:/findings(title:str,description:str,severity:str,location:str,inspection_id:int)>~db.Finding.create
+  PUT:/findings/:id(status:str,estimated_cost:?float)>~db.Finding.update
+  GET:/stats>~db.Inspection.aggregate
+)
+
+@auth(required,role:enum(inspector,manager,admin),redirect:/login)
+
+@email(
+  inspectionScheduled(name:str,property:str,date:str)>"Inspection scheduled"
+  criticalFinding(name:str,property:str,title:str)>"Critical finding reported"
+)
+
+@nav(
+  />?user>dashboard:login
+  /inspections>?user>inspections:login
+  /findings>?user>findings:login
+  /inspectors>?user>inspectors:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.inspections+~api.findings+~api.stats
+  onChange:inspectionFilter>~api.inspections
+  onChange:severityFilter>~api.findings
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"InspectPro"
+        p:"muted">"Property inspection management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"IP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Inspections",btn:ghost>"Findings",btn:ghost>"Inspectors")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Inspections">#stats.totalInspections
+        stat:"Scheduled">#stats.scheduled
+        stat:"Critical Findings">#stats.criticalFindings
+        stat:"Pass Rate">#stats.passRate
+      )
+      @section:upcoming(
+        h2>"Upcoming Inspections"
+        table>inspections>*insp(text>#insp.propertyName+text>#insp.inspectorName+text>#insp.date+badge:#insp.status+badge:#insp.type)
+      )
+      @section:recentFindings(
+        h2>"Recent Critical Findings"
+        list>findings>*find(card(text>#find.title+badge:#find.severity+text:"muted">#find.location+text:"muted">#find.inspectionDate))
+      )
+    )
+  )
+  @page:inspections(
+    sidebar(
+      logo>"IP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Inspections",btn:ghost>"Findings",btn:ghost>"Inspectors")
+    )+main(
+      header>h1>"Inspections"+tabs>inspectionFilter.set(all,scheduled,in_progress,completed,failed)+btn:primary>"Schedule Inspection"
+      table>inspections|inspectionFilter>*insp(
+        text>#insp.propertyName
+        text>#insp.inspectorName
+        text>#insp.date
+        badge:#insp.type
+        badge:#insp.status
+        stat:"Findings">#insp.findingCount
+        row(btn:ghost>"Start">!start(#insp.id),btn:ghost>"Complete">!complete(#insp.id))
+      )
+    )
+  )
+  @page:findings(
+    sidebar(
+      logo>"IP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Inspections",btn:ghost>"Findings",btn:ghost>"Inspectors")
+    )+main(
+      header>h1>"Findings"+tabs>severityFilter.set(all,low,medium,high,critical)+search:input>#search
+      table>findings|severityFilter|search>*find(
+        text>#find.title
+        text>#find.location
+        badge:#find.severity
+        badge:#find.status
+        text:"muted">#find.description
+        text:"muted">#find.inspectionDate
+        row(btn:ghost>"Repair">!repair(#find.id),btn:ghost>"Resolve">!resolve(#find.id))
+      )
+    )
+  )
+  @page:inspectors(
+    sidebar(
+      logo>"IP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Inspections",btn:ghost>"Findings",btn:ghost>"Inspectors")
+    )+main(
+      header>h1>"Inspectors"+btn:primary>"Add Inspector"
+      grid:3>inspectors>*insp(
+        card(
+          h2>#insp.name
+          text>#insp.email
+          badge:#insp.certification
+          stat:"Inspections">#insp.inspectionCount
+          row(btn:ghost>"Edit",btn:ghost>"Remove">!del(#insp.id))
+        )
+      )
+    )
+  )
+)

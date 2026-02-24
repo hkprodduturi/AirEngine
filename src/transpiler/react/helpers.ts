@@ -8,6 +8,21 @@ import type { UIAnalysis, ResolvedBind } from '../normalize-ui.js';
 import { resolveBindChain } from '../normalize-ui.js';
 import { mapElement } from '../element-map.js';
 
+// ---- Auth Detection Helpers ----
+
+export const AUTH_PAGE_NAMES = new Set(['login', 'signup', 'register', 'auth']);
+export const AUTH_MUTATION_NAMES = new Set(['login', 'logout', 'signup', 'register']);
+
+export function isAuthPageName(name: string): boolean {
+  return AUTH_PAGE_NAMES.has(name);
+}
+
+export function hasAuthRoutes(ctx: TranspileContext): boolean {
+  return ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(
+    r => r.path.includes('/auth/') || r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')
+  ));
+}
+
 // ---- Icon emoji map ----
 
 export const ICON_EMOJI: Record<string, string> = {
@@ -41,11 +56,34 @@ export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Convert hyphenated-name to camelCase (e.g. "stock-levels" → "stockLevels") */
+export function toCamelCase(s: string): string {
+  return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+/** Convert camelCase to human-readable label (e.g. "myCourses" → "My Courses") */
+export function camelToLabel(s: string): string {
+  return s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+}
+
 export function escapeText(text: string): string {
   return text.replace(/[{}<>]/g, c => {
     switch (c) {
       case '{': return '&#123;';
       case '}': return '&#125;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      default: return c;
+    }
+  });
+}
+
+/** Escape a string for use inside an HTML attribute (double-quoted context) */
+export function escapeAttr(text: string): string {
+  return text.replace(/["&<>]/g, c => {
+    switch (c) {
+      case '"': return '&quot;';
+      case '&': return '&amp;';
       case '<': return '&lt;';
       case '>': return '&gt;';
       default: return c;
@@ -74,14 +112,29 @@ export function interpolateText(text: string, ctx: TranspileContext, scope: Scop
 
       for (let i = 1; i < parts.length; i++) {
         const pipe = parts[i];
+        // Split pipe on first dot to separate pipe name from chained accessor
+        const pipeDot = pipe.indexOf('.');
+        const pipeName = pipeDot >= 0 ? pipe.slice(0, pipeDot) : pipe;
+        const pipeRest = pipeDot >= 0 ? pipe.slice(pipeDot + 1) : '';
         if (pipe.startsWith('!')) {
           // Filter negation: !done → .filter(i => !i.done)
           const field = pipe.slice(1).split('.')[0];
           const rest = pipe.slice(1).split('.').slice(1).join('.');
           expr = `${expr}.filter(i => !i.${field})`;
           if (rest) expr = `${expr}.${rest}`;
+        } else if (pipeName === 'count' || pipeName === 'length') {
+          expr = `${expr}.length`;
+          if (pipeRest) expr = `${expr}.${pipeRest}`;
+        } else if (pipeName === 'sum') {
+          const field = pipeRest || 'amount';
+          expr = `${expr}.reduce((s, x) => s + x.${field}, 0)`;
+        } else if (pipeName === 'filter') {
+          // Generic filter — leave as-is (requires context)
+          expr = `${expr}`;
         } else {
-          expr = `${expr}.${pipe}`;
+          // Literal filter value (e.g., |pending): filter by status
+          expr = `${expr}.filter(i => i.status === '${pipeName}')`;
+          if (pipeRest) expr = `${expr}.${pipeRest}`;
         }
       }
       return `\${${expr}}`;
@@ -145,8 +198,14 @@ export function nodeToString(node: AirUINode): string {
 }
 
 export function pluralize(s: string): string {
-  if (s.endsWith('y')) return s.slice(0, -1) + 'ies';
-  if (s.endsWith('s') || s.endsWith('x') || s.endsWith('z')) return s + 'es';
+  // consonant+y → ies (company → companies), vowel+y → ys (survey → surveys)
+  if (s.endsWith('y') && s.length > 1 && !'aeiou'.includes(s[s.length - 2])) {
+    return s.slice(0, -1) + 'ies';
+  }
+  if (s.endsWith('s') || s.endsWith('x') || s.endsWith('z') ||
+      s.endsWith('sh') || s.endsWith('ch')) {
+    return s + 'es';
+  }
   return s + 's';
 }
 
@@ -281,7 +340,8 @@ export function resolvePipeExpr(
         // Check if there's an enum filter state
         const filterField = ctx.state.find(f => f.name === 'filter' && f.type.kind === 'enum');
         if (filterField) {
-          return `${left}.filter(_item => filter === 'all' || _item.category === filter || _item.done === (filter === 'done'))`;
+          const matchField = inferFilterField(left, 'filter', ctx);
+          return `${left}.filter(_item => filter === 'all' || _item.${matchField} === filter)`;
         }
         return `${left}`;
       }
@@ -307,8 +367,20 @@ export function resolvePipeExpr(
       case 'search': {
         return `${left}.filter(_item => Object.values(_item).some(v => String(v).toLowerCase().includes(search.toLowerCase())))`;
       }
-      default:
+      default: {
+        // Check if the pipe name is a state variable with enum type (e.g., taskFilter)
+        const stateFilter = ctx.state.find(f => f.name === fn && f.type.kind === 'enum');
+        if (stateFilter) {
+          const matchField = inferFilterField(left, fn, ctx);
+          return `${left}.filter(_item => ${fn} === 'all' || _item.${matchField} === ${fn})`;
+        }
+        // Literal filter value (e.g., tasks|todo → filter by status === 'todo')
+        if (ctx.db) {
+          const matchField = inferFilterField(left, fn, ctx) || 'status';
+          return `${left}.filter(_item => _item.${matchField} === '${fn}')`;
+        }
         return `${left} /* |${fn} */`;
+      }
     }
   }
 
@@ -349,6 +421,42 @@ export function resolvePipeExprSimple(node: AirUINode & { kind: 'binary' }, scop
   return left;
 }
 
+/**
+ * Infer which model field to filter on, given a source array name and filter state variable.
+ * Checks @db model enum fields for overlap with filter enum values.
+ */
+function inferFilterField(source: string, filterName: string, ctx: TranspileContext): string {
+  const filterState = ctx.state.find(f => f.name === filterName);
+  if (!filterState || filterState.type.kind !== 'enum') {
+    // Extract field hint from filter name: "categoryFilter" → "category", "priorityFilter" → "priority"
+    const hintMatch = filterName.match(/^(.+?)Filter$/i);
+    return hintMatch ? hintMatch[1] : 'status';
+  }
+  const filterValues = (filterState.type as { kind: 'enum'; values: string[] }).values.filter(v => v !== 'all');
+
+  if (ctx.db) {
+    // Derive model name from source: "tasks" → "Task", "projects" → "Project"
+    // Handle chained filter expressions: strip .filter(...) suffix to get raw source name
+    const rawSource = source.replace(/\.filter\(.*$/, '');
+    const singular = rawSource.endsWith('s') ? rawSource.slice(0, -1) : rawSource;
+    const modelName = singular.charAt(0).toUpperCase() + singular.slice(1);
+    const model = ctx.db.models.find(m => m.name === modelName);
+    if (model) {
+      for (const f of model.fields) {
+        const baseType = f.type.kind === 'optional' ? (f.type as { of: { kind: string; values?: string[] } }).of : f.type;
+        if (baseType.kind === 'enum' && (baseType as { values: string[] }).values) {
+          const overlap = (baseType as { values: string[] }).values.filter(v => filterValues.includes(v));
+          if (overlap.length > 0) return f.name;
+        }
+      }
+    }
+  }
+
+  // Extract field hint from filter name: "categoryFilter" → "category", "priorityFilter" → "priority"
+  const hintMatch = filterName.match(/^(.+?)Filter$/i);
+  return hintMatch ? hintMatch[1] : 'status';
+}
+
 export function resolvePipeSource(node: AirUINode, ctx: TranspileContext, scope: Scope): string {
   if (node.kind === 'element') return node.element;
   if (node.kind === 'unary' && node.operator === '#') return resolveRef(node.operand, scope);
@@ -363,23 +471,40 @@ export function resolvePipeSource(node: AirUINode, ctx: TranspileContext, scope:
   return nodeToString(node);
 }
 
-export function extractDataSource(node: AirUINode, scope: Scope): string {
+export function extractDataSource(node: AirUINode, scope: Scope, ctx?: TranspileContext): string {
   // From a flow chain, extract the data expression
   if (node.kind === 'binary' && node.operator === '>') {
     // e.g., list > items|filter → data is from the right side
-    return extractDataSource(node.right, scope);
+    return extractDataSource(node.right, scope, ctx);
   }
   if (node.kind === 'binary' && node.operator === '|') {
     // Pipe chain — recursively resolve left side for chained pipes
-    const left = extractDataSource(node.left, scope);
+    const left = extractDataSource(node.left, scope, ctx);
     const right = node.right;
     if (right.kind === 'element') {
       const fn = right.element;
       if (fn === 'filter') {
-        return `${left}.filter(_item => filter === 'all' || _item.category === filter || _item.done === (filter === 'done'))`;
+        const matchField = ctx ? inferFilterField(left, 'filter', ctx) : 'status';
+        return `${left}.filter(_item => filter === 'all' || _item.${matchField} === filter)`;
       }
       if (fn === 'sort') {
         return `[...${left}].sort((a, b) => sort === 'newest' ? b.id - a.id : sort === 'oldest' ? a.id - b.id : sort === 'highest' ? b.amount - a.amount : a.amount - b.amount)`;
+      }
+      if (fn === 'search') {
+        return `${left}.filter(_item => Object.values(_item).some(v => String(v).toLowerCase().includes(search.toLowerCase())))`;
+      }
+      // Check if fn is a state enum variable (e.g., taskFilter)
+      if (ctx) {
+        const stateFilter = ctx.state.find(f => f.name === fn && f.type.kind === 'enum');
+        if (stateFilter) {
+          const matchField = inferFilterField(left, fn, ctx);
+          return `${left}.filter(_item => ${fn} === 'all' || _item.${matchField} === ${fn})`;
+        }
+      }
+      // Literal filter value (e.g., tasks|todo → filter by status === 'todo')
+      if (ctx && ctx.db) {
+        const matchField = inferFilterField(left, fn, ctx) || 'status';
+        return `${left}.filter(_item => _item.${matchField} === '${fn}')`;
       }
       return `${left}`;
     }
@@ -685,6 +810,9 @@ export function getHookableStateProps(ctx: TranspileContext): Map<string, HookMa
       r => r.method === 'GET' && r.handler === `~db.${model.name}.findMany`,
     );
     if (!route) continue;
+
+    // Skip nested routes with URL params (e.g., /tasks/:id/comments)
+    if (route.path.includes(':')) continue;
 
     const modelPlural = pluralize(model.name);
     const hookName = `use${capitalize(modelPlural)}`;

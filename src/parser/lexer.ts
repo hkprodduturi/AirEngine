@@ -37,7 +37,7 @@ export interface Token {
   col: number;
 }
 
-const TYPE_KEYWORDS = new Set(['str', 'int', 'float', 'bool', 'date', 'datetime', 'enum']);
+const TYPE_KEYWORDS = new Set(['str', 'int', 'float', 'bool', 'date', 'datetime', 'enum', 'list', 'map', 'any']);
 const SINGLE_CHAR_TOKENS: Record<string, TokenKind> = {
   '(': 'open_paren',
   ')': 'close_paren',

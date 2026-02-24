@@ -97,13 +97,24 @@ export function extractPathParams(path: string): string[] {
 
 function capitalize(s: string): string {
   if (!s) return s;
+  // Convert hyphens to camelCase: "leave-requests" → "LeaveRequests"
+  if (s.includes('-')) {
+    return s.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+  }
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function singularize(s: string): string {
+  // For hyphenated segments, singularize the last part: "leave-requests" → "leave-request"
+  if (s.includes('-')) {
+    const parts = s.split('-');
+    parts[parts.length - 1] = singularize(parts[parts.length - 1]);
+    return parts.join('-');
+  }
   if (s.endsWith('ies')) return s.slice(0, -3) + 'y';
+  if (s.endsWith('ches') || s.endsWith('shes')) return s.slice(0, -2);
   if (s.endsWith('ses') || s.endsWith('xes') || s.endsWith('zes')) return s.slice(0, -2);
-  if (s.endsWith('s') && !s.endsWith('ss') && !s.endsWith('us')) return s.slice(0, -1);
+  if (s.endsWith('s') && !s.endsWith('ss') && !s.endsWith('us') && !s.endsWith('is')) return s.slice(0, -1);
   return s;
 }
 

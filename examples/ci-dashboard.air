@@ -1,0 +1,170 @@
+# ================================================================
+# CIDashboard — CI/CD Pipeline Dashboard
+# ================================================================
+# Repositories, pipelines, builds, and deployments tracking.
+# Demonstrates build status workflows, deployment history, stats.
+# ================================================================
+
+@app:ciDashboard
+
+@style(theme:dark,accent:#22c55e,radius:8,font:mono,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  repositories:[{id:int,name:str,url:str,branch:str,pipelineCount:int}],
+  pipelines:[{id:int,name:str,status:str,repoName:str,lastRun:?str}],
+  builds:[{id:int,commitHash:str,status:str,pipelineName:str,duration:?int,createdAt:str}],
+  deployments:[{id:int,environment:str,version:str,status:str,buildId:int,deployedAt:str}],
+  stats:{queued:int,running:int,passed:int,failed:int},
+  statusFilter:enum(all,queued,running,passed,failed),
+  envFilter:enum(all,staging,production,development),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(admin,engineer,viewer),created_at:datetime:auto}
+  Repository{id:int:primary:auto,name:str:required,url:str:required,branch:str:default("main"),owner_id:int:required,created_at:datetime:auto}
+  Pipeline{id:int:primary:auto,name:str:required,config:?str,repo_id:int:required,created_at:datetime:auto}
+  Build{id:int:primary:auto,commit_hash:str:required,status:enum(queued,running,passed,failed):default(queued),duration:?int,pipeline_id:int:required,triggered_by:?int,created_at:datetime:auto}
+  Deployment{id:int:primary:auto,environment:enum(development,staging,production):required,version:str:required,status:enum(pending,deploying,live,rolled_back):default(pending),build_id:int:required,deployed_by:?int,created_at:datetime:auto}
+  @relation(User.repositories<>Repository.owner)
+  @relation(Repository.pipelines<>Pipeline.repo)
+  @relation(Pipeline.builds<>Build.pipeline)
+  @relation(Build.deployments<>Deployment.build)
+  @relation(User.builds<>Build.triggeredBy)
+  @relation(User.deployments<>Deployment.deployedBy)
+  @index(User.email:unique)
+  @index(Build.status+Build.pipeline_id)
+  @index(Deployment.environment+Deployment.status)
+  @index(Repository.name:unique)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  GITHUB_TOKEN:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/repositories>~db.Repository.findMany
+  POST:/repositories(name:str,url:str,branch:str)>~db.Repository.create
+  DELETE:/repositories/:id>~db.Repository.delete
+  GET:/pipelines>~db.Pipeline.findMany
+  POST:/pipelines(name:str,repo_id:int)>~db.Pipeline.create
+  PUT:/pipelines/:id(config:str)>~db.Pipeline.update
+  DELETE:/pipelines/:id>~db.Pipeline.delete
+  GET:/builds>~db.Build.findMany
+  POST:/builds(commit_hash:str,pipeline_id:int)>~db.Build.create
+  PUT:/builds/:id(status:str)>~db.Build.update
+  GET:/deployments>~db.Deployment.findMany
+  POST:/deployments(environment:str,version:str,build_id:int)>~db.Deployment.create
+  PUT:/deployments/:id(status:str)>~db.Deployment.update
+  GET:/stats>~db.Build.aggregate
+)
+
+@auth(required,role:enum(admin,engineer,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /pipelines>?user>pipelines:login
+  /builds>?user>builds:login
+  /deployments>?user>deployments:login
+  /repositories>?user>repositories:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.builds+~api.pipelines+~api.stats
+  onChange:statusFilter>~api.builds
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"CIDashboard"
+        p:"muted">"Monitor your build pipelines"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"CI"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Pipelines",btn:ghost>"Builds",btn:ghost>"Deployments",btn:ghost>"Repos")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Queued">#stats.queued
+        stat:"Running">#stats.running
+        stat:"Passed">#stats.passed
+        stat:"Failed">#stats.failed
+      )
+      @section:recent(
+        h2>"Recent Builds"
+        table>builds>*build(text>#build.commitHash+badge:#build.status+text:"muted">#build.pipelineName+text:"muted">#build.duration+text:"muted">#build.createdAt)
+      )
+    )
+  )
+  @page:pipelines(
+    sidebar(
+      logo>"CI"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Pipelines",btn:ghost>"Builds",btn:ghost>"Deployments",btn:ghost>"Repos")
+    )+main(
+      header>h1>"Pipelines"+tabs>statusFilter.set(all,queued,running,passed,failed)+btn:primary>"New Pipeline"
+      table>pipelines|statusFilter>*pipeline(
+        text>#pipeline.name+badge:#pipeline.status+text:"muted">#pipeline.repoName+text:"muted">#pipeline.lastRun
+        row(btn:primary>"Trigger">!trigger(#pipeline.id),btn:ghost>"Edit",btn:icon:!del(#pipeline.id))
+      )
+    )
+  )
+  @page:builds(
+    sidebar(
+      logo>"CI"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Pipelines",btn:ghost>"Builds",btn:ghost>"Deployments",btn:ghost>"Repos")
+    )+main(
+      header>h1>"Builds"+search:input>#search+tabs>statusFilter.set(all,queued,running,passed,failed)
+      table>builds|statusFilter|search>*build(
+        text>#build.commitHash+badge:#build.status+text:"muted">#build.pipelineName+text:"muted">#build.duration+text:"muted">#build.createdAt
+        row(btn:ghost>"Retry">!retry(#build.id),btn:ghost>"Deploy">!deploy(#build.id))
+      )
+    )
+  )
+  @page:deployments(
+    sidebar(
+      logo>"CI"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Pipelines",btn:ghost>"Builds",btn:ghost>"Deployments",btn:ghost>"Repos")
+    )+main(
+      header>h1>"Deployments"+tabs>envFilter.set(all,staging,production,development)
+      table>deployments|envFilter>*dep(
+        text>#dep.version+badge:#dep.environment+badge:#dep.status+text:"muted">#dep.deployedAt
+        row(btn:ghost>"Rollback">!rollback(#dep.id))
+      )
+    )
+  )
+  @page:repositories(
+    sidebar(
+      logo>"CI"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Pipelines",btn:ghost>"Builds",btn:ghost>"Deployments",btn:ghost>"Repos")
+    )+main(
+      header>h1>"Repositories"+btn:primary>"Add Repo"
+      grid:3>repositories>*repo(
+        card(
+          h2>#repo.name
+          text:"muted">#repo.url
+          badge:#repo.branch
+          stat:"Pipelines">#repo.pipelineCount
+          row(btn:ghost>"Open",btn:icon:!del(#repo.id))
+        )
+      )
+    )
+  )
+)

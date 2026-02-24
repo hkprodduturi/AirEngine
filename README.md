@@ -51,9 +51,9 @@ cd my-fullstack-app/server && npm install && npx prisma generate && npx prisma d
 
 | Input | Output |
 |-------|--------|
-| `todo.air` (12 lines) | 9 files, ~270 lines — Vite + React + Tailwind |
-| `fullstack-todo.air` (18 lines) | ~20 files, ~600 lines — React client + Express/Prisma server |
-| `projectflow.air` (302 lines) | 50 files, ~2500 lines — 5 DB models, 18 API routes, 5 pages |
+| `todo.air` (12 lines) | 9 files, ~372 lines — Vite + React + Tailwind |
+| `fullstack-todo.air` (18 lines) | 24 files, ~1112 lines — React client + Express/Prisma server |
+| `projectflow.air` (302 lines) | 44 files, ~3104 lines — 5 DB models, 18 API routes, 5 pages |
 
 Every generated app builds and runs. Frontend apps use Vite + React + Tailwind. Full-stack apps add Express + Prisma with SQLite. Generated servers include JWT auth, request validation, rate limiting, and helmet security headers.
 

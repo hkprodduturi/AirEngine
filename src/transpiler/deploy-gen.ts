@@ -47,32 +47,51 @@ export function generateDockerfile(ctx: TranspileContext): string {
   const hasDb = Boolean(ctx.db);
 
   const lines: string[] = [];
-  lines.push('# ---- Build ----');
+  lines.push('# ---- Build stage ----');
   lines.push(`FROM node:${nodeVersion}-alpine AS builder`);
   lines.push('WORKDIR /app');
-  lines.push('COPY package.json ./');
-  lines.push('RUN npm install');
+  lines.push('');
+  lines.push('# Install dependencies first (layer caching)');
+  lines.push('COPY package.json package-lock.json* ./');
+  lines.push('RUN npm ci');
+  lines.push('');
+  lines.push('# Copy source and build');
   lines.push('COPY . .');
   if (hasDb) {
     lines.push('RUN npx prisma generate');
   }
   lines.push('RUN npm run build');
   lines.push('');
-  lines.push('# ---- Production ----');
+  lines.push('# ---- Production stage ----');
   lines.push(`FROM node:${nodeVersion}-alpine`);
+  lines.push('');
+  lines.push('# Security: run as non-root user');
+  lines.push('RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup');
   lines.push('WORKDIR /app');
+  lines.push('');
   lines.push('ENV NODE_ENV=production');
-  lines.push('COPY --from=builder /app/dist ./dist');
+  lines.push('');
+  lines.push('# Copy production deps and built output');
   lines.push('COPY --from=builder /app/package.json ./');
-  lines.push('RUN npm install --omit=dev');
+  lines.push('COPY --from=builder /app/package-lock.json* ./');
+  lines.push('RUN npm ci --omit=dev && npm cache clean --force');
+  lines.push('');
+  lines.push('COPY --from=builder /app/dist ./dist');
   if (hasDb) {
     lines.push('COPY --from=builder /app/prisma ./prisma');
     lines.push('COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma');
     lines.push('COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma');
+    lines.push('');
+    lines.push('# Create data directory for SQLite');
+    lines.push('RUN mkdir -p /app/data && chown appuser:appgroup /app/data');
   }
+  lines.push('');
+  lines.push('USER appuser');
+  lines.push('');
   lines.push(`EXPOSE ${port}`);
-  const healthPath = ctx.apiRoutes.length > 0 ? '/api' : '/';
-  lines.push(`HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:${port}${healthPath} || exit 1`);
+  lines.push(`HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\`);
+  lines.push(`  CMD wget -qO- http://localhost:${port}/api/health || exit 1`);
+  lines.push('');
   lines.push('CMD ["node", "dist/server.js"]');
   lines.push('');
 
@@ -102,9 +121,20 @@ export function generateDockerCompose(ctx: TranspileContext): string {
   if (hasDb) {
     lines.push('      - DATABASE_URL=file:/app/data/app.db');
     lines.push('    volumes:');
-    lines.push('      - ./server/data:/app/data');
+    lines.push('      - app-data:/app/data');
   }
   lines.push('    restart: unless-stopped');
+  lines.push('    healthcheck:');
+  lines.push(`      test: ["CMD", "wget", "-qO-", "http://localhost:${port}/api/health"]`);
+  lines.push('      interval: 30s');
+  lines.push('      timeout: 5s');
+  lines.push('      retries: 3');
+  lines.push('      start_period: 10s');
+  if (hasDb) {
+    lines.push('');
+    lines.push('volumes:');
+    lines.push('  app-data:');
+  }
   lines.push('');
 
   return lines.join('\n');
@@ -118,12 +148,16 @@ export function generateDockerignore(_ctx: TranspileContext): string {
   return `node_modules
 dist
 .env
+.env.local
 *.log
 .git
 .gitignore
 *.db
 .DS_Store
 coverage
+data
+.air-cache
+*.md
 `;
 }
 
@@ -138,22 +172,39 @@ export function generateEnvExample(ctx: TranspileContext): string {
   lines.push(`# Environment variables for ${capitalize(ctx.appName)} server`);
   lines.push('# Copy to .env and fill in production values');
   lines.push('');
+  lines.push('# --- Core ---');
 
   if (ctx.db) {
-    lines.push('DATABASE_URL=file:/app/data/app.db   # str — Database connection URL (absolute for Docker)');
+    lines.push('DATABASE_URL=file:/app/data/app.db   # Database connection URL (absolute for Docker)');
   }
-  lines.push(`PORT=${port}   # int — Server port`);
+  lines.push(`PORT=${port}   # Server port`);
+  lines.push('NODE_ENV=production');
+  lines.push('');
 
-  // Add @env vars (excluding PORT and DATABASE_URL which are already handled)
+  if (ctx.auth) {
+    lines.push('# --- Authentication ---');
+    lines.push('JWT_SECRET=   # REQUIRED: set a strong secret for production (e.g., openssl rand -hex 32)');
+    lines.push('');
+  }
+
+  lines.push('# --- CORS ---');
+  lines.push('CORS_ORIGIN=   # Frontend URL (e.g., https://myapp.com), leave empty to reflect origin');
+  lines.push('');
+
+  // Add @env vars (excluding already-handled vars)
+  const handled = new Set(['PORT', 'DATABASE_URL', 'NODE_ENV', 'JWT_SECRET', 'CORS_ORIGIN']);
   if (ctx.env) {
-    for (const v of ctx.env.vars) {
-      if (v.name === 'PORT' || v.name === 'DATABASE_URL') continue;
-      const reqLabel = v.required ? 'required' : 'optional';
-      const defaultVal = v.default !== undefined ? String(v.default) : '';
-      lines.push(`${v.name}=${defaultVal}   # ${v.type}, ${reqLabel}`);
+    const extraVars = ctx.env.vars.filter(v => !handled.has(v.name));
+    if (extraVars.length > 0) {
+      lines.push('# --- Application ---');
+      for (const v of extraVars) {
+        const reqLabel = v.required ? 'REQUIRED' : 'optional';
+        const defaultVal = v.default !== undefined ? String(v.default) : '';
+        lines.push(`${v.name}=${defaultVal}   # ${reqLabel}`);
+      }
+      lines.push('');
     }
   }
-  lines.push('');
 
   return lines.join('\n');
 }

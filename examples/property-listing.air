@@ -1,0 +1,168 @@
+# ================================================================
+# PropertyHub — Real Estate Listing Platform
+# ================================================================
+# Agents, properties, inquiries, and categories.
+# Demonstrates property type/status enums, grid layouts, search.
+# ================================================================
+
+@app:propertyHub
+
+@style(theme:dark,accent:#f59e0b,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  agents:[{id:int,name:str,email:str,phone:?str,licenseNumber:str,listingCount:int}],
+  properties:[{id:int,title:str,address:str,price:float,type:str,status:str,bedrooms:int,bathrooms:int,sqft:int,agentName:?str}],
+  inquiries:[{id:int,message:str,status:str,propertyTitle:?str,contactName:str,contactEmail:str,created:str}],
+  categories:[{id:int,name:str,description:?str}],
+  stats:{totalListings:int,available:int,sold:int,pendingInquiries:int},
+  typeFilter:enum(all,house,apartment,condo,land),
+  statusFilter:enum(all,available,sold,pending),
+  search:str
+}
+
+@db{
+  Agent{id:int:primary:auto,name:str:required,email:str:required,phone:?str,license_number:str:required,bio:?str,created_at:datetime:auto}
+  Category{id:int:primary:auto,name:str:required,description:?str}
+  Property{id:int:primary:auto,title:str:required,address:str:required,description:?str,price:float:required,property_type:enum(house,apartment,condo,land):required,status:enum(available,sold,pending):default(available),bedrooms:int:default(0),bathrooms:int:default(0),sqft:int:default(0),agent_id:?int,category_id:?int,created_at:datetime:auto}
+  Inquiry{id:int:primary:auto,message:str:required,status:enum(new,contacted,closed):default(new),contact_name:str:required,contact_email:str:required,contact_phone:?str,property_id:int:required,created_at:datetime:auto}
+  @relation(Agent.properties<>Property.agent)
+  @relation(Category.properties<>Property.category)
+  @relation(Property.inquiries<>Inquiry.property)
+  @index(Agent.email:unique)
+  @index(Agent.license_number:unique)
+  @index(Property.status+Property.property_type)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/agents>~db.Agent.findMany
+  POST:/agents(name:str,email:str,license_number:str)>~db.Agent.create
+  PUT:/agents/:id(name:str,phone:?str)>~db.Agent.update
+  DELETE:/agents/:id>~db.Agent.delete
+  GET:/categories>~db.Category.findMany
+  POST:/categories(name:str)>~db.Category.create
+  GET:/properties>~db.Property.findMany
+  POST:/properties(title:str,address:str,price:float,property_type:str)>~db.Property.create
+  PUT:/properties/:id(status:str,price:float)>~db.Property.update
+  DELETE:/properties/:id>~db.Property.delete
+  GET:/inquiries>~db.Inquiry.findMany
+  POST:/inquiries(message:str,contact_name:str,contact_email:str,property_id:int)>~db.Inquiry.create
+  PUT:/inquiries/:id(status:str)>~db.Inquiry.update
+  GET:/stats>~db.Property.aggregate
+)
+
+@auth(required,role:enum(agent,manager,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /properties>?user>properties:login
+  /inquiries>?user>inquiries:login
+  /agents>?user>agents:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.properties+~api.stats+~api.agents
+  onChange:typeFilter>~api.properties
+  onChange:statusFilter>~api.properties
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"PropertyHub"
+        p:"muted">"Real estate listing management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"PH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Properties",btn:ghost>"Inquiries",btn:ghost>"Agents")
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Listings">#stats.totalListings
+        stat:"Available">#stats.available
+        stat:"Sold">#stats.sold
+        stat:"Pending Inquiries">#stats.pendingInquiries
+      )
+      @section:recent(
+        h2>"Recent Properties"
+        table>properties>*prop(text>#prop.title+text>#prop.address+text>#prop.price+badge:#prop.property_type+badge:#prop.status)
+      )
+      @section:latestInquiries(
+        h2>"Latest Inquiries"
+        list>inquiries>*inq(card(text>#inq.contactName+text>"re: "+#inq.propertyTitle+badge:#inq.status+text:"muted">#inq.created))
+      )
+    )
+  )
+  @page:properties(
+    sidebar(
+      logo>"PH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Properties",btn:ghost>"Inquiries",btn:ghost>"Agents")
+    )+main(
+      header>h1>"Properties"+search:input>#search+tabs>typeFilter.set(all,house,apartment,condo,land)+btn:primary>"Add Property"
+      grid:3>properties|typeFilter|search>*prop(
+        card(
+          h2>#prop.title
+          text:"muted">#prop.address
+          row(badge:#prop.property_type+badge:#prop.status)
+          row(stat:"Beds">#prop.bedrooms+stat:"Baths">#prop.bathrooms+stat:"Sqft">#prop.sqft)
+          text:amount:$#prop.price
+          row(btn:ghost>"Edit",btn:ghost>"Delete">!del(#prop.id))
+        )
+      )
+    )
+  )
+  @page:inquiries(
+    sidebar(
+      logo>"PH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Properties",btn:ghost>"Inquiries",btn:ghost>"Agents")
+    )+main(
+      header>h1>"Inquiries"+tabs>statusFilter.set(all,new,contacted,closed)
+      table>inquiries|statusFilter>*inq(
+        text>#inq.contactName
+        text>#inq.contactEmail
+        text>#inq.propertyTitle
+        badge:#inq.status
+        text:"muted">#inq.message
+        text:"muted">#inq.created
+        row(btn:ghost>"Contact">!contact(#inq.id),btn:ghost>"Close">!close(#inq.id))
+      )
+    )
+  )
+  @page:agents(
+    sidebar(
+      logo>"PH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Properties",btn:ghost>"Inquiries",btn:ghost>"Agents")
+    )+main(
+      header>h1>"Agents"+btn:primary>"Add Agent"
+      grid:3>agents>*agent(
+        card(
+          h2>#agent.name
+          text>#agent.email
+          text:"muted">#agent.phone
+          text:"muted">"License: "+#agent.licenseNumber
+          stat:"Listings">#agent.listingCount
+          row(btn:ghost>"Edit",btn:ghost>"Remove">!del(#agent.id))
+        )
+      )
+    )
+  )
+)

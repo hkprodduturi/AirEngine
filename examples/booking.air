@@ -1,0 +1,138 @@
+# ================================================================
+# Booking — Appointment Scheduling System
+# ================================================================
+# Services, providers, clients, and appointments.
+# Demonstrates date/time fields, email, cron, status workflows.
+# ================================================================
+
+@app:booking
+
+@style(theme:dark,accent:#10b981,radius:10,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  services:[{id:int,name:str,description:str,duration:int,price:float}],
+  providers:[{id:int,name:str,email:str,specialty:str}],
+  appointments:[{id:int,date:str,startTime:str,status:str,service:str,provider:str}],
+  selectedDate:?str,
+  selectedProvider:?int,
+  statusFilter:enum(all,pending,confirmed,completed,cancelled)
+}
+
+@db{
+  Client{id:int:primary:auto,name:str:required,email:str:required,phone:?str,created_at:datetime:auto}
+  Provider{id:int:primary:auto,name:str:required,email:str:required,specialty:str:required,created_at:datetime:auto}
+  Service{id:int:primary:auto,name:str:required,description:?str,duration:int:required,price:float:required}
+  Appointment{id:int:primary:auto,date:date:required,start_time:str:required,end_time:str:required,status:enum(pending,confirmed,completed,cancelled):default(pending),notes:?str,service_id:int:required,provider_id:int:required,client_id:int:required,created_at:datetime:auto}
+  @relation(Service.appointments<>Appointment.service)
+  @relation(Provider.appointments<>Appointment.provider)
+  @relation(Client.appointments<>Appointment.client)
+  @index(Client.email:unique)
+  @index(Provider.email:unique)
+  @index(Appointment.date+Appointment.provider_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/services>~db.Service.findMany
+  GET:/providers>~db.Provider.findMany
+  GET:/appointments>~db.Appointment.findMany
+  POST:/appointments(date:str,start_time:str,service_id:int,provider_id:int)>~db.Appointment.create
+  PUT:/appointments/:id(status:str)>~db.Appointment.update
+  DELETE:/appointments/:id>~db.Appointment.delete
+)
+
+@auth(required,role:enum(client,provider,admin),redirect:/login)
+
+@email(
+  bookingConfirmation(name:str,date:str)>"Your appointment is confirmed"
+  appointmentReminder(name:str,date:str)>"Reminder: upcoming appointment"
+  cancellationNotice(name:str,date:str)>"Your appointment has been cancelled"
+)
+
+@cron(
+  sendReminders>"0 8 * * *">!email.sendReminders
+)
+
+@nav(
+  />?user>booking:login
+  /appointments>?user>appointments:login
+  /admin>?user>admin:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.services+~api.providers+~api.appointments
+  onChange:statusFilter>~api.appointments
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"BookAir"
+        p:"muted">"Schedule appointments with ease"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:booking(
+    header>h1>"Book an Appointment"
+    grid:3>services>*service(
+      card(
+        h2>#service.name
+        p>#service.description
+        stat:"Duration">#service.duration
+        text:amount:$#service.price
+        btn:primary>"Select">!selectService(#service.id)
+      )
+    )
+    card(
+      form(
+        select:#selectedProvider
+        input:date>#selectedDate
+        btn:primary>"Book Now">!book
+      )
+    )
+  )
+  @page:appointments(
+    header>h1>"My Appointments"+tabs>statusFilter.set(all,pending,confirmed,completed,cancelled)
+    table>appointments|statusFilter>*appt(
+      text>#appt.date
+      text>#appt.startTime
+      text>#appt.service
+      text>#appt.provider
+      badge:#appt.status
+      btn:ghost>"Cancel">!cancel(#appt.id)
+    )
+  )
+  @page:admin(
+    header>h1>"Manage Appointments"
+    grid:3(
+      stat:"Total">#appointments.length
+      stat:"Pending">#appointments|pending.length
+      stat:"Confirmed">#appointments|confirmed.length
+    )
+    table>appointments>*appt(
+      text>#appt.date
+      text>#appt.startTime
+      text>#appt.service
+      text>#appt.provider
+      badge:#appt.status
+      row(btn:ghost>"Confirm">!confirm(#appt.id),btn:ghost>"Cancel">!cancel(#appt.id))
+    )
+  )
+)

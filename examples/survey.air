@@ -1,0 +1,128 @@
+# ================================================================
+# Survey Builder — Form/Survey Application
+# ================================================================
+# Surveys, questions, responses, and results analytics.
+# Demonstrates deep nested relations, queue, progress bars.
+# ================================================================
+
+@app:survey
+
+@style(theme:dark,accent:#8b5cf6,radius:10,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  surveys:[{id:int,title:str,status:str,responseCount:int,createdAt:str}],
+  questions:[{id:int,text:str,type:str,order:int,required:bool}],
+  responses:[{id:int,respondentEmail:str,completedAt:str}],
+  results:[{questionId:int,questionText:str,count:int}],
+  selectedSurvey:?int,
+  currentStep:int,
+  search:str
+}
+
+@db{
+  Survey{id:int:primary:auto,title:str:required,description:?str,status:enum(draft,active,closed):default(draft),created_at:datetime:auto}
+  Question{id:int:primary:auto,text:str:required,type:enum(text,choice,rating,boolean):required,order_num:int:required,required:bool:default(true),survey_id:int:required}
+  Response{id:int:primary:auto,respondent_email:str:required,completed_at:datetime:auto,survey_id:int:required}
+  Answer{id:int:primary:auto,value:str:required,question_id:int:required,response_id:int:required}
+  @relation(Survey.questions<>Question.survey)
+  @relation(Survey.responses<>Response.survey)
+  @relation(Question.answers<>Answer.question)
+  @relation(Response.answers<>Answer.response)
+  @index(Survey.status)
+  @index(Question.survey_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/surveys>~db.Survey.findMany
+  POST:/surveys(title:str,description:str)>~db.Survey.create
+  PUT:/surveys/:id(status:str)>~db.Survey.update
+  DELETE:/surveys/:id>~db.Survey.delete
+  GET:/surveys/:id/questions>~db.Question.findMany
+  POST:/surveys/:id/questions(text:str,type:str,order_num:int)>~db.Question.create
+  PUT:/questions/:id(order_num:int)>~db.Question.update
+  POST:/surveys/:id/respond(respondent_email:str)>~db.Response.create
+  GET:/surveys/:id/results>~db.Answer.aggregate
+)
+
+@auth(required,role:enum(creator,respondent),redirect:/login)
+
+@queue(
+  exportResults(survey_id:int)>!reports.exportCsv
+)
+
+@nav(
+  />?user>surveys:login
+  /editor>?user>editor:login
+  /results>?user>results:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.surveys
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Survey Builder"
+        p:"muted">"Create and manage surveys with ease"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:surveys(
+    header>h1>"My Surveys"+search:input>#search+btn:primary>"New Survey">!createSurvey
+    table>surveys|search>*survey(
+      text>#survey.title
+      badge:#survey.status
+      stat:"Responses">#survey.responseCount
+      text:"muted">#survey.createdAt
+      row(btn:ghost>"Edit">!selectSurvey(#survey.id),btn:ghost>"Results">!viewResults(#survey.id),btn:icon:!del(#survey.id))
+    )
+  )
+  @page:editor(
+    header>h1>"Edit Survey"+btn:primary>"Publish">!publish(#selectedSurvey)
+    card(
+      form(
+        input:text>#survey.title
+        input:text>#survey.description
+      )
+    )
+    @section:questions(
+      h2>"Questions"+btn:primary>"Add Question">!addQuestion
+      list>questions>*question(
+        card(
+          row(badge:#question.order+text>#question.text+badge:#question.type+btn:icon:!del(#question.id))
+        )
+      )
+    )
+  )
+  @page:results(
+    header>h1>"Survey Results"+btn:ghost>"Export CSV">!exportResults(#selectedSurvey)
+    grid:3(
+      stat:"Total Responses">#responses.length
+      stat:"Questions">#questions.length
+      stat:"Surveys">#surveys.length
+    )
+    list>results>*result(
+      card(
+        h2>#result.questionText
+        stat:"Responses">#result.count
+      )
+    )
+  )
+)

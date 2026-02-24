@@ -230,8 +230,13 @@ export function resolveRelations(db: AirDbBlock): { resolved: ResolvedRelation[]
 
 function findFkField(model: AirDbModel, relName: string, otherModel: string): AirDbField | undefined {
   const lcOther = otherModel.charAt(0).toLowerCase() + otherModel.slice(1);
+  // Convert camelCase to snake_case: "homeTeam" → "home_team", "purchaseOrder" → "purchase_order"
+  const snakeRelName = relName.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
+  const snakeOther = otherModel.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
   return model.fields.find(f => f.name === `${relName}_id`) ??
-    model.fields.find(f => f.name === `${lcOther}_id`);
+    model.fields.find(f => f.name === `${lcOther}_id`) ??
+    model.fields.find(f => f.name === `${snakeRelName}_id`) ??
+    model.fields.find(f => f.name === `${snakeOther}_id`);
 }
 
 function isOptionalField(field: AirDbField): boolean {
@@ -422,7 +427,7 @@ function generateFieldLine(
 
 // ---- Main generator ----
 
-export function generatePrismaSchema(db: AirDbBlock): string {
+export function generatePrismaSchema(db: AirDbBlock, options?: { hasAuth?: boolean }): string {
   const lines: string[] = [];
 
   // Header
@@ -453,6 +458,20 @@ export function generatePrismaSchema(db: AirDbBlock): string {
     const modelFieldAttrs = fieldAttrs.get(model.name);
     for (const field of model.fields) {
       lines.push(generateFieldLine(field, model, enums, modelFieldAttrs));
+    }
+
+    // Inject password field for auth models if not already declared
+    if (options?.hasAuth && model.name === 'User' && !model.fields.some(f => f.name === 'password')) {
+      lines.push('  password  String');
+    }
+
+    // Inject updated_at if model has created_at but no updated_at
+    const hasCreatedAt = model.fields.some(f => f.name === 'created_at' || f.name === 'createdAt');
+    const hasUpdatedAt = model.fields.some(f => f.name === 'updated_at' || f.name === 'updatedAt');
+    if (hasCreatedAt && !hasUpdatedAt) {
+      const usesSnakeCase = model.fields.some(f => f.name === 'created_at');
+      const fieldName = usesSnakeCase ? 'updated_at' : 'updatedAt';
+      lines.push(`  ${fieldName}  DateTime  @updatedAt`);
     }
 
     // Relation fields

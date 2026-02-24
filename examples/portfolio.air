@@ -1,0 +1,59 @@
+# ================================================================
+# Portfolio — Developer Portfolio Site
+# ================================================================
+# Frontend-only portfolio with projects, skills, and contact.
+# Demonstrates section-based layout, icons, responsive grids.
+# ================================================================
+
+@app:portfolio
+
+@style(theme:dark,accent:#6366f1,radius:16,font:sans+mono,maxWidth:1100)
+
+@nav(/#hero,/#projects,/#skills,/#contact)
+
+@state{
+  projects:[{id:int,title:str,description:str,tech:str,link:str}],
+  skills:[{id:int,name:str,level:int}],
+  contact:{name:str,email:str,message:str}
+}
+
+@ui(
+  @section:hero(
+    h1>"John Developer"
+    p>"Full-stack developer building modern web applications"
+    row(btn:primary>"View Projects"+btn:ghost>"Contact Me")
+  )
+  @section:projects(
+    h2>"Projects"
+    grid:3>projects>*project(
+      card(
+        h2>#project.title
+        p:"muted">#project.description
+        badge:#project.tech
+        btn:ghost>"View Project"
+      )
+    )
+  )
+  @section:skills(
+    h2>"Skills"
+    grid:4>skills>*skill(
+      card(
+        text>#skill.name
+        progress:bar(value:#skill.level,max:100)
+      )
+    )
+  )
+  @section:contact(
+    h2>"Get in Touch"
+    card(
+      form(
+        input:text>#contact.name
+        input:email>#contact.email
+        input:text>#contact.message
+        btn:primary>"Send Message">!send(#contact)
+      )
+    )
+  )
+)
+
+@persist:localStorage(projects,skills)

@@ -1,0 +1,196 @@
+# ================================================================
+# Tutoring — Tutor Matching Platform
+# ================================================================
+# A platform for matching tutors with students,
+# managing sessions, and tracking subject expertise.
+# ================================================================
+
+@app:tutoring
+
+# ---- Design System ----
+
+@style(theme:dark,accent:#8b5cf6,radius:12,font:sans,density:comfortable,maxWidth:1280)
+
+# ---- Client State ----
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  tutors:[{id:int,name:str,email:str,subject:str,rating:float,hourlyRate:float,available:bool}],
+  students:[{id:int,name:str,email:str,grade:str,enrolledDate:str}],
+  sessions:[{id:int,tutor:str,student:str,subject:str,status:str,scheduledAt:str,duration:int}],
+  subjects:[{id:int,name:str,category:str,tutorCount:int}],
+  stats:{totalTutors:int,totalStudents:int,activeSessions:int,completedSessions:int},
+  search:str,
+  sessionFilter:enum(all,scheduled,in_progress,completed,cancelled),
+  subjectFilter:enum(all,math,science,english,history,programming)
+}
+
+# ---- Database Models ----
+
+@db{
+  Subject{id:int:primary:auto,name:str:required,category:enum(math,science,english,history,programming):required,created_at:datetime:auto}
+  Tutor{id:int:primary:auto,name:str:required,email:str:required,bio:?str,hourly_rate:float:required,rating:float:default(0.0),available:bool:default(true),created_at:datetime:auto}
+  Student{id:int:primary:auto,name:str:required,email:str:required,grade:?str,enrolled_at:datetime:auto}
+  Session{id:int:primary:auto,status:enum(scheduled,in_progress,completed,cancelled):default(scheduled),scheduled_at:datetime:required,duration_minutes:int:required,notes:?str,tutor_id:int:required,student_id:int:required,subject_id:int:required,created_at:datetime:auto}
+  @relation(Tutor.sessions<>Session.tutor)
+  @relation(Student.sessions<>Session.student)
+  @relation(Subject.sessions<>Session.subject)
+  @relation(Tutor.subjects<>Subject.tutors)
+  @index(Tutor.email:unique)
+  @index(Student.email:unique)
+  @index(Session.status+Session.scheduled_at)
+}
+
+# ---- Environment Variables ----
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+# ---- API Routes ----
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/tutors>~db.Tutor.findMany
+  POST:/tutors(name:str,email:str,hourly_rate:float)>~db.Tutor.create
+  PUT:/tutors/:id(name:str,available:bool)>~db.Tutor.update
+  DELETE:/tutors/:id>~db.Tutor.delete
+  GET:/students>~db.Student.findMany
+  POST:/students(name:str,email:str,grade:str)>~db.Student.create
+  PUT:/students/:id(name:str,email:str)>~db.Student.update
+  DELETE:/students/:id>~db.Student.delete
+  GET:/subjects>~db.Subject.findMany
+  POST:/subjects(name:str,category:str)>~db.Subject.create
+  GET:/sessions>~db.Session.findMany
+  POST:/sessions(tutor_id:int,student_id:int,subject_id:int,scheduled_at:str,duration_minutes:int)>~db.Session.create
+  PUT:/sessions/:id(status:str,notes:str)>~db.Session.update
+  DELETE:/sessions/:id>~db.Session.delete
+  GET:/stats>~db.Session.aggregate
+)
+
+# ---- Authentication ----
+
+@auth(required,role:enum(admin,tutor,student),redirect:/login)
+
+# ---- Navigation ----
+
+@nav(
+  />?user>dashboard:login
+  /tutors>?user>tutors:login
+  /students>?user>students:login
+  /sessions>?user>sessions:login
+  /login>login
+)
+
+# ---- Session Persistence ----
+
+@persist:cookie(user,httpOnly,7d)
+
+# ---- Lifecycle Hooks ----
+
+@hook(
+  onMount>~api.stats+~api.tutors+~api.students
+  onChange:sessionFilter>~api.sessions
+  onChange:subjectFilter>~api.tutors
+)
+
+# ---- User Interface ----
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"TutorMatch"
+        p:"muted">"Connect with the right tutor"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"TM"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Tutors"
+        btn:ghost>"Students"
+        btn:ghost>"Sessions"
+      )
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Tutors">#stats.totalTutors
+        stat:"Total Students">#stats.totalStudents
+        stat:"Active Sessions">#stats.activeSessions
+        stat:"Completed">#stats.completedSessions
+      )
+      @section:upcoming(
+        h2>"Upcoming Sessions"
+        table>sessions>*session(
+          text>#session.tutor
+          text>#session.student
+          badge:#session.subject
+          badge:#session.status
+          text:"muted">#session.scheduledAt
+        )
+      )
+    )
+  )
+  @page:tutors(
+    sidebar(
+      logo>"TM"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Tutors"
+        btn:ghost>"Students"
+        btn:ghost>"Sessions"
+      )
+    )+main(
+      header>h1>"Tutors"+search:input>#search+btn:primary>"Add Tutor"
+      grid:3>tutors|search>*tutor(
+        card(
+          h2>#tutor.name
+          text:"muted">#tutor.email
+          badge:#tutor.subject
+          row(stat:"Rating">#tutor.rating+stat:"Rate">$#tutor.hourlyRate)
+          row(btn:ghost>"View",btn:ghost>"Delete">!del(#tutor.id))
+        )
+      )
+    )
+  )
+  @page:students(
+    sidebar(
+      logo>"TM"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Tutors"
+        btn:ghost>"Students"
+        btn:ghost>"Sessions"
+      )
+    )+main(
+      header>h1>"Students"+btn:primary>"Add Student"
+      table(data:#students,cols:[name,email,grade,enrolledDate],actions:[edit,!del])
+    )
+  )
+  @page:sessions(
+    sidebar(
+      logo>"TM"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Tutors"
+        btn:ghost>"Students"
+        btn:ghost>"Sessions"
+      )
+    )+main(
+      header>h1>"Sessions"+tabs>sessionFilter.set(all,scheduled,in_progress,completed,cancelled)+btn:primary>"New Session"
+      table(data:#sessions|sessionFilter,cols:[tutor,student,subject:badge,status:badge,scheduledAt,duration],actions:[edit,!del])
+    )
+  )
+)

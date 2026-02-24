@@ -1,0 +1,126 @@
+# ================================================================
+# SocialFeed — Social Network Feed App
+# ================================================================
+# Posts, comments, likes, and follows.
+# Demonstrates m:n relations, self-referential follows.
+# ================================================================
+
+@app:social-feed
+
+@style(theme:dark,accent:#6366f1,radius:12,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,avatar:?str,bio:?str},
+  feed:[{id:int,content:str,imageUrl:?str,likesCount:int,commentCount:int,author:str,authorAvatar:?str,createdAt:str}],
+  comments:[{id:int,body:str,author:str,createdAt:str}],
+  profile:?{id:int,name:str,avatar:?str,bio:?str,postCount:int,followers:int,following:int},
+  newPost:str,
+  commentText:str,
+  showComments:bool
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,avatar:?str,bio:?str,created_at:datetime:auto}
+  Post{id:int:primary:auto,content:str:required,image_url:?str,likes_count:int:default(0),author_id:int:required,created_at:datetime:auto}
+  Comment{id:int:primary:auto,body:str:required,post_id:int:required,author_id:int:required,created_at:datetime:auto}
+  Follow{id:int:primary:auto,follower_id:int:required,following_id:int:required,created_at:datetime:auto}
+  @relation(User.posts<>Post.author)
+  @relation(Post.comments<>Comment.post)
+  @relation(Comment.author<>User.comments)
+  @relation(User.liked<>Post.likedBy)
+  @index(User.email:unique)
+  @index(Follow.follower_id+Follow.following_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/feed>~db.Post.findMany
+  POST:/posts(content:str)>~db.Post.create
+  POST:/posts/:id/like>~db.Post.update
+  DELETE:/posts/:id/like>~db.Post.update
+  GET:/posts/:id/comments>~db.Comment.findMany
+  POST:/posts/:id/comments(body:str)>~db.Comment.create
+  GET:/users/:id>~db.User.findFirst
+  POST:/users/:id/follow>~db.Follow.create
+  DELETE:/users/:id/follow>~db.Follow.delete
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>feed:login
+  /profile>?user>profile:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.feed
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"SocialFeed"
+        p:"muted">"Connect with friends and share your world"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:feed(
+    header>h1>"Feed"+btn:ghost>"Profile"
+    main(
+      card(
+        form(
+          input:text>#newPost
+          btn:primary>"Post">!save({content:#newPost})
+        )
+      )
+      list>feed>*post(
+        card(
+          row(text>#post.author+text:"muted">#post.createdAt)
+          p>#post.content
+          row(
+            btn:ghost>"Like">!like(#post.id)+text>#post.likesCount
+            btn:ghost>"Comment">!showComments(#post.id)+text>#post.commentCount
+          )
+        )
+      )
+    )
+  )
+  @page:profile(
+    header>h1>"Profile"+btn:ghost>"Feed"
+    main(
+      card(
+        h2>#profile.name
+        p:"muted">#profile.bio
+        grid:3(
+          stat:"Posts">#profile.postCount
+          stat:"Followers">#profile.followers
+          stat:"Following">#profile.following
+        )
+        btn:primary>"Follow">!follow(#profile.id)
+      )
+      h2>"Posts"
+      grid:2>feed>*post(
+        card(
+          p>#post.content
+          row(text>#post.likesCount+" likes"+text>#post.commentCount+" comments")
+        )
+      )
+    )
+  )
+)

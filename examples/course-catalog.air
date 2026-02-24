@@ -1,0 +1,201 @@
+# ================================================================
+# Course Catalog — Course Registration System
+# ================================================================
+# A catalog system for managing departments, courses,
+# instructors, and student enrollments with prerequisites.
+# ================================================================
+
+@app:course-catalog
+
+# ---- Design System ----
+
+@style(theme:dark,accent:#ec4899,radius:10,font:sans,density:comfortable,maxWidth:1280)
+
+# ---- Client State ----
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  departments:[{id:int,name:str,code:str,courseCount:int}],
+  courses:[{id:int,name:str,code:str,level:str,credits:int,department:str,instructor:str,capacity:int,enrolled:int}],
+  instructors:[{id:int,name:str,email:str,title:str,department:str,courseCount:int}],
+  enrollments:[{id:int,student:str,course:str,status:str,enrolledAt:str,grade:str}],
+  stats:{totalCourses:int,totalInstructors:int,totalEnrollments:int,avgClassSize:float},
+  search:str,
+  levelFilter:enum(all,beginner,intermediate,advanced),
+  enrollmentStatus:enum(all,active,completed,dropped,waitlisted)
+}
+
+# ---- Database Models ----
+
+@db{
+  Department{id:int:primary:auto,name:str:required,code:str:required,description:?str,created_at:datetime:auto}
+  Instructor{id:int:primary:auto,name:str:required,email:str:required,title:enum(professor,associate,assistant,lecturer):required,bio:?str,department_id:int:required,created_at:datetime:auto}
+  Course{id:int:primary:auto,name:str:required,code:str:required,level:enum(beginner,intermediate,advanced):required,credits:int:default(3),capacity:int:default(40),description:?str,prerequisite_id:?int,department_id:int:required,instructor_id:int:required,created_at:datetime:auto}
+  Enrollment{id:int:primary:auto,status:enum(active,completed,dropped,waitlisted):default(active),grade:?str,student_name:str:required,student_email:str:required,course_id:int:required,enrolled_at:datetime:auto}
+  @relation(Department.instructors<>Instructor.department)
+  @relation(Department.courses<>Course.department)
+  @relation(Instructor.courses<>Course.instructor)
+  @relation(Course.enrollments<>Enrollment.course)
+  @relation(Course.prerequisite<>Course.dependents)
+  @index(Department.code:unique)
+  @index(Instructor.email:unique)
+  @index(Course.code:unique)
+  @index(Enrollment.course_id+Enrollment.student_email)
+}
+
+# ---- Environment Variables ----
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+# ---- API Routes ----
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/departments>~db.Department.findMany
+  POST:/departments(name:str,code:str,description:str)>~db.Department.create
+  PUT:/departments/:id(name:str)>~db.Department.update
+  DELETE:/departments/:id>~db.Department.delete
+  GET:/instructors>~db.Instructor.findMany
+  POST:/instructors(name:str,email:str,title:str,department_id:int)>~db.Instructor.create
+  PUT:/instructors/:id(name:str,title:str)>~db.Instructor.update
+  DELETE:/instructors/:id>~db.Instructor.delete
+  GET:/courses>~db.Course.findMany
+  POST:/courses(name:str,code:str,level:str,credits:int,capacity:int,department_id:int,instructor_id:int)>~db.Course.create
+  PUT:/courses/:id(name:str,level:str,capacity:int)>~db.Course.update
+  DELETE:/courses/:id>~db.Course.delete
+  GET:/enrollments>~db.Enrollment.findMany
+  POST:/enrollments(student_name:str,student_email:str,course_id:int)>~db.Enrollment.create
+  PUT:/enrollments/:id(status:str,grade:str)>~db.Enrollment.update
+  DELETE:/enrollments/:id>~db.Enrollment.delete
+  GET:/stats>~db.Enrollment.aggregate
+)
+
+# ---- Authentication ----
+
+@auth(required,role:enum(admin,registrar,instructor),redirect:/login)
+
+# ---- Navigation ----
+
+@nav(
+  />?user>dashboard:login
+  /courses>?user>courses:login
+  /instructors>?user>instructors:login
+  /enrollments>?user>enrollments:login
+  /login>login
+)
+
+# ---- Session Persistence ----
+
+@persist:cookie(user,httpOnly,7d)
+
+# ---- Lifecycle Hooks ----
+
+@hook(
+  onMount>~api.stats+~api.courses+~api.instructors
+  onChange:levelFilter>~api.courses
+  onChange:enrollmentStatus>~api.enrollments
+)
+
+# ---- User Interface ----
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Course Catalog"
+        p:"muted">"Browse courses and manage enrollments"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"CC"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Instructors"
+        btn:ghost>"Enrollments"
+      )
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Courses">#stats.totalCourses
+        stat:"Instructors">#stats.totalInstructors
+        stat:"Enrollments">#stats.totalEnrollments
+        stat:"Avg Class Size">#stats.avgClassSize
+      )
+      @section:departments(
+        h2>"Departments"
+        grid:3>departments>*dept(
+          card(
+            h2>#dept.name
+            text:"muted">#dept.code
+            stat:"Courses">#dept.courseCount
+          )
+        )
+      )
+    )
+  )
+  @page:courses(
+    sidebar(
+      logo>"CC"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Instructors"
+        btn:ghost>"Enrollments"
+      )
+    )+main(
+      header>h1>"Courses"+search:input>#search+tabs>levelFilter.set(all,beginner,intermediate,advanced)+btn:primary>"Add Course"
+      table(data:#courses|search|levelFilter,cols:[name,code,level:badge,credits,department,instructor,capacity,enrolled],actions:[edit,!del])
+    )
+  )
+  @page:instructors(
+    sidebar(
+      logo>"CC"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Instructors"
+        btn:ghost>"Enrollments"
+      )
+    )+main(
+      header>h1>"Instructors"+search:input>#search+btn:primary>"Add Instructor"
+      grid:3>instructors|search>*instructor(
+        card(
+          h2>#instructor.name
+          text:"muted">#instructor.email
+          badge:#instructor.title
+          text>#instructor.department
+          stat:"Courses">#instructor.courseCount
+          row(btn:ghost>"View",btn:ghost>"Delete">!del(#instructor.id))
+        )
+      )
+    )
+  )
+  @page:enrollments(
+    sidebar(
+      logo>"CC"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Instructors"
+        btn:ghost>"Enrollments"
+      )
+    )+main(
+      header>h1>"Enrollments"+tabs>enrollmentStatus.set(all,active,completed,dropped,waitlisted)+btn:primary>"New Enrollment"
+      table(data:#enrollments|enrollmentStatus,cols:[student,course,status:badge,enrolledAt,grade],actions:[edit,!del])
+    )
+  )
+)

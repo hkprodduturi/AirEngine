@@ -1,0 +1,145 @@
+# ParkingMgmt — Manage parking lots, spots, vehicles, and tickets
+
+@app:parkingMgmt
+@style(theme:dark,accent:#3b82f6,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  lots:[{id:int,name:str,address:str,totalSpots:int,availableSpots:int,hourlyRate:float}],
+  spots:[{id:int,number:str,level:str,status:str,type:str,lot_id:int}],
+  vehicles:[{id:int,plate:str,make:str,model:str,color:str,owner:str}],
+  tickets:[{id:int,entryTime:datetime,exitTime:?datetime,amount:float,paid:bool,vehicle_id:int,spot_id:int}],
+  stats:{totalLots:int,totalSpots:int,available:int,occupied:int,dailyRevenue:float},
+  spotFilter:enum(all,available,occupied,reserved,disabled),
+  search:str
+}
+
+@db{
+  ParkingLot{id:int:primary:auto,name:str:required,address:str:required,totalSpots:int:default(0),hourlyRate:float:required,operatingHours:?str,contactPhone:?str,created_at:datetime:auto}
+  ParkingSpot{id:int:primary:auto,number:str:required,level:str:required,status:enum(available,occupied,reserved,disabled):default(available),type:str:default("standard"),lot_id:int:required,created_at:datetime:auto}
+  Vehicle{id:int:primary:auto,plate:str:required,make:?str,model:?str,color:?str,owner:str:required,phone:?str,created_at:datetime:auto}
+  Ticket{id:int:primary:auto,entryTime:datetime:required,exitTime:?datetime,amount:float:default(0),paid:bool:default(false),notes:?str,vehicle_id:int:required,spot_id:int:required,created_at:datetime:auto}
+  @relation(ParkingLot.spots<>ParkingSpot.lot)
+  @relation(ParkingSpot.tickets<>Ticket.spot)
+  @relation(Vehicle.tickets<>Ticket.vehicle)
+  @index(Vehicle.plate:unique)
+  @index(ParkingSpot.status+ParkingSpot.lot_id)
+  @index(Ticket.entryTime+Ticket.spot_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/lots>~db.ParkingLot.findMany
+  POST:/lots(name:str,address:str,totalSpots:int,hourlyRate:float)>~db.ParkingLot.create
+  PUT:/lots/:id(hourlyRate:float)>~db.ParkingLot.update
+  DELETE:/lots/:id>~db.ParkingLot.delete
+  GET:/spots>~db.ParkingSpot.findMany
+  POST:/spots(number:str,level:str,lot_id:int)>~db.ParkingSpot.create
+  PUT:/spots/:id(status:str)>~db.ParkingSpot.update
+  DELETE:/spots/:id>~db.ParkingSpot.delete
+  GET:/vehicles>~db.Vehicle.findMany
+  POST:/vehicles(plate:str,owner:str,make:str,model:str,color:str)>~db.Vehicle.create
+  PUT:/vehicles/:id(owner:str)>~db.Vehicle.update
+  DELETE:/vehicles/:id>~db.Vehicle.delete
+  GET:/tickets>~db.Ticket.findMany
+  POST:/tickets(entryTime:datetime,vehicle_id:int,spot_id:int)>~db.Ticket.create
+  PUT:/tickets/:id(exitTime:datetime,amount:float,paid:bool)>~db.Ticket.update
+  DELETE:/tickets/:id>~db.Ticket.delete
+  GET:/stats>~db.ParkingSpot.aggregate
+)
+
+@auth(required,role:enum(admin,attendant,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /lots>?user>lots:login
+  /spots>?user>spots:login
+  /tickets>?user>tickets:login
+  /vehicles>?user>vehicles:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.lots
+  onChange:spotFilter>~api.spots
+  onChange:search>~api.tickets
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Parking Management"
+        p:"muted">"Efficient lot management"
+        form(input:email>#user.email+input:password>#user.password+btn:primary>"Sign In">!login)
+        p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"PM"
+      nav:vertical(dashboard,lots,spots,tickets,vehicles)
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Lots">#stats.totalLots
+        stat:"Total Spots">#stats.totalSpots
+        stat:"Available">#stats.available
+        stat:"Occupied">#stats.occupied
+      )
+      grid:2(
+        card(h2>"Revenue"+stat:"Daily Revenue">#stats.dailyRevenue)
+        card(h2>"Lot Overview"+list>lots>*lot(text>#lot.name+text:"muted">#lot.address+stat:"Open">#lot.availableSpots))
+      )
+    )
+  )
+  @page:lots(
+    sidebar(
+      logo>"PM"
+      nav:vertical(dashboard,lots,spots,tickets,vehicles)
+    )+main(
+      header>h1>"Parking Lots"+btn:primary>"Add Lot"
+      grid:3>lots>*lot(
+        card(h2>#lot.name+text>#lot.address+stat:"Total Spots">#lot.totalSpots+stat:"Available">#lot.availableSpots+stat:"Rate">#lot.hourlyRate+row(btn:ghost>"Edit",btn:ghost>"View Spots",btn:ghost>"Remove">!del(#lot.id)))
+      )
+    )
+  )
+  @page:spots(
+    sidebar(
+      logo>"PM"
+      nav:vertical(dashboard,lots,spots,tickets,vehicles)
+    )+main(
+      header>h1>"Parking Spots"+tabs>spotFilter.set(all,available,occupied,reserved,disabled)+btn:primary>"Add Spot"
+      table(data:#spots|spotFilter,cols:[number,level,status:badge,type,lot_id],actions:[edit,!del])
+    )
+  )
+  @page:tickets(
+    sidebar(
+      logo>"PM"
+      nav:vertical(dashboard,lots,spots,tickets,vehicles)
+    )+main(
+      header>h1>"Tickets"+btn:primary>"Issue Ticket"
+      search:input>#search
+      table(data:#tickets|search,cols:[entryTime,exitTime,amount,paid:toggle,vehicle_id,spot_id],actions:[edit,!del])
+    )
+  )
+  @page:vehicles(
+    sidebar(
+      logo>"PM"
+      nav:vertical(dashboard,lots,spots,tickets,vehicles)
+    )+main(
+      header>h1>"Vehicles"+btn:primary>"Register Vehicle"
+      table(data:#vehicles,cols:[plate,make,model,color,owner],actions:[edit,!del])
+    )
+  )
+)

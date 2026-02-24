@@ -1,0 +1,168 @@
+# ================================================================
+# Monitoring — Server Monitoring Dashboard
+# ================================================================
+# Servers, metrics, alerts, and incidents with severity tracking.
+# Demonstrates real-time status, alert filtering, incident mgmt.
+# ================================================================
+
+@app:monitoring
+
+@style(theme:dark,accent:#f59e0b,radius:8,font:mono,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  servers:[{id:int,hostname:str,ipAddress:str,status:str,cpuUsage:float,memoryUsage:float,region:str}],
+  alerts:[{id:int,message:str,severity:str,serverName:str,acknowledged:bool,createdAt:str}],
+  incidents:[{id:int,title:str,status:str,severity:str,assignee:?str,createdAt:str}],
+  metrics:[{id:int,name:str,value:float,unit:str,serverName:str,timestamp:str}],
+  stats:{totalServers:int,healthyServers:int,activeAlerts:int,openIncidents:int},
+  severityFilter:enum(all,info,warning,error,critical),
+  incidentStatusFilter:enum(all,open,investigating,resolved),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(admin,engineer,viewer),created_at:datetime:auto}
+  Server{id:int:primary:auto,hostname:str:required,ip_address:str:required,status:enum(healthy,degraded,down):default(healthy),cpu_usage:float:default(0),memory_usage:float:default(0),region:str:required,owner_id:?int,created_at:datetime:auto}
+  Alert{id:int:primary:auto,message:str:required,severity:enum(info,warning,error,critical):default(info),acknowledged:bool:default(false),server_id:int:required,created_at:datetime:auto}
+  Incident{id:int:primary:auto,title:str:required,description:?str,status:enum(open,investigating,resolved):default(open),severity:enum(info,warning,error,critical):default(warning),assignee_id:?int,created_at:datetime:auto}
+  Metric{id:int:primary:auto,name:str:required,value:float:required,unit:str:required,server_id:int:required,created_at:datetime:auto}
+  @relation(User.servers<>Server.owner)
+  @relation(Server.alerts<>Alert.server)
+  @relation(Server.metrics<>Metric.server)
+  @relation(User.incidents<>Incident.assignee)
+  @index(User.email:unique)
+  @index(Server.hostname:unique)
+  @index(Alert.severity+Alert.server_id)
+  @index(Incident.status+Incident.severity)
+  @index(Metric.server_id+Metric.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SLACK_WEBHOOK_URL:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/servers>~db.Server.findMany
+  POST:/servers(hostname:str,ip_address:str,region:str)>~db.Server.create
+  PUT:/servers/:id(status:str)>~db.Server.update
+  DELETE:/servers/:id>~db.Server.delete
+  GET:/alerts>~db.Alert.findMany
+  POST:/alerts(message:str,severity:str,server_id:int)>~db.Alert.create
+  PUT:/alerts/:id(acknowledged:bool)>~db.Alert.update
+  GET:/incidents>~db.Incident.findMany
+  POST:/incidents(title:str,severity:str)>~db.Incident.create
+  PUT:/incidents/:id(status:str,assignee_id:?int)>~db.Incident.update
+  DELETE:/incidents/:id>~db.Incident.delete
+  GET:/metrics>~db.Metric.findMany
+  GET:/stats>~db.Server.aggregate
+)
+
+@auth(required,role:enum(admin,engineer,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /servers>?user>servers:login
+  /alerts>?user>alerts:login
+  /incidents>?user>incidents:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.servers+~api.alerts+~api.stats
+  onChange:severityFilter>~api.alerts
+  onChange:incidentStatusFilter>~api.incidents
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Monitoring"
+        p:"muted">"Server health and incident tracking"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"MN"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Servers",btn:ghost>"Alerts",btn:ghost>"Incidents")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Servers">#stats.totalServers
+        stat:"Healthy">#stats.healthyServers
+        stat:"Active Alerts">#stats.activeAlerts
+        stat:"Open Incidents">#stats.openIncidents
+      )
+      @section:recentAlerts(
+        h2>"Recent Alerts"
+        table>alerts>*alert(text>#alert.message+badge:#alert.severity+text:"muted">#alert.serverName+text:"muted">#alert.createdAt)
+      )
+    )
+  )
+  @page:servers(
+    sidebar(
+      logo>"MN"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Servers",btn:ghost>"Alerts",btn:ghost>"Incidents")
+    )+main(
+      header>h1>"Servers"+btn:primary>"Add Server"
+      grid:3>servers>*server(
+        card(
+          h2>#server.hostname
+          badge:#server.status
+          text:"muted">#server.ipAddress
+          badge:#server.region
+          row(
+            stat:"CPU">#server.cpuUsage
+            stat:"Memory">#server.memoryUsage
+          )
+          row(btn:ghost>"Details",btn:icon:!del(#server.id))
+        )
+      )
+    )
+  )
+  @page:alerts(
+    sidebar(
+      logo>"MN"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Servers",btn:ghost>"Alerts",btn:ghost>"Incidents")
+    )+main(
+      header>h1>"Alerts"+tabs>severityFilter.set(all,info,warning,error,critical)
+      table>alerts|severityFilter>*alert(
+        text>#alert.message
+        badge:#alert.severity
+        text:"muted">#alert.serverName
+        badge:#alert.acknowledged
+        text:"muted">#alert.createdAt
+        row(btn:ghost>"Acknowledge">!ack(#alert.id))
+      )
+    )
+  )
+  @page:incidents(
+    sidebar(
+      logo>"MN"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Servers",btn:ghost>"Alerts",btn:ghost>"Incidents")
+    )+main(
+      header>h1>"Incidents"+tabs>incidentStatusFilter.set(all,open,investigating,resolved)+btn:primary>"New Incident"
+      table>incidents|incidentStatusFilter>*incident(
+        text>#incident.title
+        badge:#incident.status
+        badge:#incident.severity
+        text:"muted">#incident.assignee
+        text:"muted">#incident.createdAt
+        row(btn:ghost>"Assign">!assign(#incident.id),btn:ghost>"Resolve">!resolve(#incident.id),btn:icon:!del(#incident.id))
+      )
+    )
+  )
+)

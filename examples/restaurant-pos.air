@@ -1,0 +1,165 @@
+# ================================================================
+# RestaurantPOS — Point of Sale System
+# ================================================================
+# Tables, menu items, orders, and order items.
+# Demonstrates order status workflows, sales stats, table management.
+# ================================================================
+
+@app:restaurantPos
+
+@style(theme:dark,accent:#f97316,radius:10,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  tables:[{id:int,number:int,seats:int,status:str}],
+  menuItems:[{id:int,name:str,category:str,price:float,available:bool}],
+  orders:[{id:int,tableNumber:int,status:str,total:float,itemCount:int,createdAt:str}],
+  orderItems:[{id:int,menuItem:str,quantity:int,price:float}],
+  stats:{todaySales:float,activeOrders:int,tablesOccupied:int,avgOrderValue:float},
+  statusFilter:enum(all,pending,preparing,served,paid),
+  categoryFilter:enum(all,appetizer,main,dessert,beverage),
+  search:str,
+  selectedTable:?int
+}
+
+@db{
+  DiningTable{id:int:primary:auto,number:int:required,seats:int:required,status:enum(available,occupied,reserved):default(available)}
+  MenuItem{id:int:primary:auto,name:str:required,description:?str,price:float:required,category:enum(appetizer,main,dessert,beverage):required,available:bool:default(true),created_at:datetime:auto}
+  Order{id:int:primary:auto,status:enum(pending,preparing,served,paid):default(pending),total:float:default(0),notes:?str,table_id:int:required,server_id:int:required,created_at:datetime:auto}
+  OrderItem{id:int:primary:auto,quantity:int:required,price:float:required,menu_item_id:int:required,order_id:int:required}
+  @relation(DiningTable.orders<>Order.table)
+  @relation(Order.items<>OrderItem.order)
+  @relation(MenuItem.orderItems<>OrderItem.menu_item)
+  @index(DiningTable.number:unique)
+  @index(MenuItem.name:unique)
+  @index(Order.status+Order.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/tables>~db.DiningTable.findMany
+  PUT:/tables/:id(status:str)>~db.DiningTable.update
+  GET:/menu>~db.MenuItem.findMany
+  POST:/menu(name:str,price:float,category:str)>~db.MenuItem.create
+  PUT:/menu/:id(available:bool)>~db.MenuItem.update
+  DELETE:/menu/:id>~db.MenuItem.delete
+  GET:/orders>~db.Order.findMany
+  POST:/orders(table_id:int,server_id:int)>~db.Order.create
+  PUT:/orders/:id(status:str)>~db.Order.update
+  POST:/orders/:id/items(menu_item_id:int,quantity:int,price:float)>~db.OrderItem.create
+  DELETE:/orders/:id/items/:itemId>~db.OrderItem.delete
+  GET:/stats>~db.Order.aggregate
+)
+
+@auth(required,role:enum(server,kitchen,manager),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /orders>?user>orders:login
+  /menu>?user>menu:login
+  /tables>?user>tables:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.orders+~api.tables+~api.stats
+  onChange:statusFilter>~api.orders
+  onChange:categoryFilter>~api.menu
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"RestaurantPOS"
+        p:"muted">"Point of sale management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"POS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Menu",btn:ghost>"Tables")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Today Sales">#stats.todaySales
+        stat:"Active Orders">#stats.activeOrders
+        stat:"Tables Occupied">#stats.tablesOccupied
+        stat:"Avg Order">#stats.avgOrderValue
+      )
+      @section:recent(
+        h2>"Recent Orders"
+        table>orders>*order(
+          text>"Table "+#order.tableNumber
+          badge:#order.status
+          text:amount:$#order.total
+          stat:"Items">#order.itemCount
+          text:"muted">#order.createdAt
+        )
+      )
+    )
+  )
+  @page:orders(
+    sidebar(
+      logo>"POS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Menu",btn:ghost>"Tables")
+    )+main(
+      header>h1>"Orders"+tabs>statusFilter.set(all,pending,preparing,served,paid)+btn:primary>"New Order"
+      table>orders|statusFilter>*order(
+        text>"Table "+#order.tableNumber
+        badge:#order.status
+        text:amount:$#order.total
+        stat:"Items">#order.itemCount
+        text:"muted">#order.createdAt
+        row(btn:ghost>"Prepare">!prepare(#order.id),btn:ghost>"Serve">!serve(#order.id),btn:ghost>"Pay">!pay(#order.id))
+      )
+    )
+  )
+  @page:menu(
+    sidebar(
+      logo>"POS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Menu",btn:ghost>"Tables")
+    )+main(
+      header>h1>"Menu"+search:input>#search+tabs>categoryFilter.set(all,appetizer,main,dessert,beverage)+btn:primary>"Add Item"
+      grid:3>menuItems|categoryFilter|search>*item(
+        card(
+          h2>#item.name
+          badge:#item.category
+          text:amount:$#item.price
+          badge:#item.available
+          row(btn:ghost>"Edit">!edit(#item.id),btn:ghost>"Delete">!del(#item.id))
+        )
+      )
+    )
+  )
+  @page:tables(
+    sidebar(
+      logo>"POS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Menu",btn:ghost>"Tables")
+    )+main(
+      header>h1>"Tables"
+      grid:4>tables>*tbl(
+        card(
+          h2>"Table "+#tbl.number
+          stat:"Seats">#tbl.seats
+          badge:#tbl.status
+          row(btn:ghost>"Available">!setAvailable(#tbl.id),btn:ghost>"Occupied">!setOccupied(#tbl.id),btn:ghost>"Reserved">!setReserved(#tbl.id))
+        )
+      )
+    )
+  )
+)

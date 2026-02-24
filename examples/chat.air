@@ -1,0 +1,103 @@
+# ================================================================
+# Chat — Full-Stack Messaging Application
+# ================================================================
+# Conversations, messages, and multi-user support.
+# Demonstrates m:n relations, optional fields, two-pane layout.
+# ================================================================
+
+@app:chat
+
+@style(theme:dark,accent:#6366f1,radius:12,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,avatar:?str},
+  conversations:[{id:int,name:str,isGroup:bool,lastMessageAt:str}],
+  messages:[{id:int,content:str,sender:str,avatar:?str,created:str,read:bool}],
+  activeConversation:?int,
+  newMessage:str,
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,avatar:?str,online:bool:default(false),created_at:datetime:auto}
+  Conversation{id:int:primary:auto,name:str:required,isGroup:bool:default(false),lastMessageAt:datetime:auto,created_at:datetime:auto}
+  Message{id:int:primary:auto,content:str:required,readAt:?datetime,sender_id:int:required,conversation_id:int:required,created_at:datetime:auto}
+  @relation(User.conversations<>Conversation.participants)
+  @relation(Message.conversation<>Conversation.messages)
+  @relation(Message.sender<>User.sentMessages)
+  @index(User.email:unique)
+  @index(Message.conversation_id+Message.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/conversations>~db.Conversation.findMany
+  POST:/conversations(name:str,isGroup:bool)>~db.Conversation.create
+  GET:/conversations/:id/messages>~db.Message.findMany
+  POST:/conversations/:id/messages(content:str)>~db.Message.create
+  PUT:/messages/:id/read>~db.Message.update
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>chat:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.conversations
+  onChange:activeConversation>~api.messages
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Chat"
+        p:"muted">"Sign in to start messaging"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:chat(
+    sidebar(
+      header>h2>"Chats"+btn:icon>"+"
+      search:input>#search
+      list>conversations|search>*conv(
+        card(
+          text>#conv.name
+          badge:#conv.isGroup
+          text:"muted">#conv.lastMessageAt
+        )>!selectConversation(#conv.id)
+      )
+    )+main(
+      ?activeConversation>header>h2>"Conversation"
+      list>messages>*msg(
+        row(
+          text:"muted">#msg.sender
+          text>#msg.content
+          text:"muted">#msg.created
+        )
+      )
+      footer>row(
+        input:text>#newMessage
+        btn:primary>"Send">!sendMessage
+      )
+    )
+  )
+)
