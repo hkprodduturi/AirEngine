@@ -33,9 +33,18 @@ export function generateApiClient(ctx: TranspileContext): string {
     lines.push('');
   }
 
+  const usedFnNames = new Set<string>();
+
   for (const route of routes) {
     const method = route.method;
-    const fnName = routeToFunctionName(method, route.path);
+    let fnName = routeToFunctionName(method, route.path);
+    // Deduplicate function names (e.g., two routes mapping to same name)
+    if (usedFnNames.has(fnName)) {
+      let suffix = 2;
+      while (usedFnNames.has(`${fnName}${suffix}`)) suffix++;
+      fnName = `${fnName}${suffix}`;
+    }
+    usedFnNames.add(fnName);
     const pathParams = extractPathParams(route.path);
     const hasBody = (method === 'POST' || method === 'PUT') && route.params && route.params.length > 0;
     const isList = method === 'GET' && pathParams.length === 0 && isListHandler(route.handler);

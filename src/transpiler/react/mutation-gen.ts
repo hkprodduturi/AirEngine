@@ -181,6 +181,20 @@ function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]): string
 
 // ---- Mutation Functions ----
 
+/** Determine the best post-login redirect page from analysis */
+function getPostLoginPage(analysis: UIAnalysis): string {
+  if (analysis.pages.length === 0) return 'home';
+  // Prefer: dashboard > home > first non-login/signup/register page > first page
+  const preferred = ['dashboard', 'home', 'overview', 'main'];
+  for (const name of preferred) {
+    if (analysis.pages.some(p => p.name === name)) return name;
+  }
+  const nonAuth = analysis.pages.find(p =>
+    !['login', 'signup', 'register', 'auth'].includes(p.name)
+  );
+  return nonAuth?.name ?? analysis.pages[0].name;
+}
+
 export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): string[] {
   const lines: string[] = [];
   const arrayField = ctx.state.find(f => f.type.kind === 'array');
@@ -191,6 +205,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
   const hasLoading = ctx.state.some(f => f.name === 'loading');
   const hasError = ctx.state.some(f => f.name === 'error');
   const hasAuth = ctx.auth !== null || expandedRoutes.some(r => r.path.includes('/auth/') || r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register'));
+  const postLoginPage = getPostLoginPage(analysis);
 
   for (const mut of analysis.mutations) {
     const name = mut.name;
@@ -215,7 +230,43 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push('};');
       }
     } else if (name === 'del' || name === 'delItem' || name === 'remove') {
-      if (match) {
+      // Check if there are multiple DELETE routes → dispatch by checking arrays
+      const deleteRoutes = canWireApi
+        ? expandedRoutes.filter(r => r.method === 'DELETE' && /~db\.\w+\.delete/.test(r.handler))
+        : [];
+      if (deleteRoutes.length > 1) {
+        // Multi-resource dispatch: check each state array to find which resource owns the id
+        lines.push(`const ${name} = async (id) => {`);
+        lines.push(`  try {`);
+        let first = true;
+        for (const dr of deleteRoutes) {
+          const modelMatch = dr.handler.match(/^~db\.(\w+)\.delete$/);
+          if (!modelMatch) continue;
+          const modelName = modelMatch[1];
+          const fnName = routeToFunctionName(dr.method, dr.path);
+          // Find matching state array for this model
+          const plural = modelName.charAt(0).toLowerCase() + modelName.slice(1) + 's';
+          const stateArr = ctx.state.find(f => f.name === plural && f.type.kind === 'array');
+          if (stateArr) {
+            const cond = first ? 'if' : '} else if';
+            lines.push(`    ${cond} (${plural}.find(i => i.id === id)) {`);
+            lines.push(`      await api.${fnName}(id);`);
+            // Refetch
+            const basePath = dr.path.replace(/\/:[^/]+$/, '');
+            const getRoute = expandedRoutes.find(r => r.method === 'GET' && r.path === basePath);
+            if (getRoute) {
+              const getFn = routeToFunctionName('GET', getRoute.path);
+              lines.push(`      ${setter(plural)}(await api.${getFn}());`);
+            }
+            first = false;
+          }
+        }
+        if (!first) lines.push('    }');
+        lines.push(`  } catch (err) {`);
+        lines.push(`    console.error('${name} failed:', err);`);
+        lines.push(`  }`);
+        lines.push('};');
+      } else if (match) {
         lines.push(`const ${name} = async (id) => {`);
         lines.push(`  try {`);
         lines.push(`    await api.${match.fnName}(id);`);
@@ -284,7 +335,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         } else {
           lines.push(`    setUser(result);`);
         }
-        lines.push(`    setCurrentPage('dashboard');`);
+        lines.push(`    setCurrentPage('${postLoginPage}');`);
         lines.push(`  } catch (err) {`);
         if (hasAuth) {
           lines.push(`    const msg = err.message?.includes('401') ? 'Invalid email or password' : (err.message || 'Login failed');`);
@@ -312,7 +363,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`    }`);
         lines.push(`    console.log('Login attempted');`);
         lines.push(`    setUser({ name: 'User', email: formData.email });`);
-        lines.push(`    setCurrentPage('dashboard');`);
+        lines.push(`    setCurrentPage('${postLoginPage}');`);
         lines.push(`  } catch (err) {`);
         if (hasAuth) lines.push(`    setAuthError(err.message || 'Login failed');`);
         else if (hasError) lines.push(`    setError(err.message || 'Login failed');`);

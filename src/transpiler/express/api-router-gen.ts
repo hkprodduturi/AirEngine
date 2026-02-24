@@ -116,9 +116,21 @@ export function generateApiRouter(ctx: TranspileContext): string {
       }
     }
 
+    // Detect nested resource routes (e.g., /tasks/:id/comments)
+    const nestedMatch = path.match(/^\/(\w+)\/:id\/(\w+)$/);
     // Check if this is a findMany route — use enriched handler
     const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
-    if (isFindMany) {
+    if (isFindMany && nestedMatch && ctx.db) {
+      // Nested findMany: filter by parent FK
+      const parentResource = nestedMatch[1];
+      const parentSingular = parentResource.endsWith('s') ? parentResource.slice(0, -1) : parentResource;
+      const modelMatch = handler.match(/^~db\.(\w+)\.findMany$/);
+      const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+      const fkField = `${parentSingular}_id`;
+      lines.push(`    const parentId = parseInt(req.params.id);`);
+      lines.push(`    const result = await prisma.${modelVar}.findMany({ where: { ${fkField}: parentId }, orderBy: { id: 'desc' } });`);
+      lines.push('    res.json(result);');
+    } else if (isFindMany) {
       const findManyLines = generateFindManyHandler(handler, ctx.db!);
       for (const l of findManyLines) lines.push(l);
     } else {
@@ -155,8 +167,20 @@ export function generateApiRouter(ctx: TranspileContext): string {
           lines.push("    if (_errors.length > 0) return res.status(400).json({ error: 'Validation error', details: _errors });");
         }
       }
-      lines.push(`    const result = ${prismaCall};`);
-      lines.push('    res.json(result);');
+      // For nested POST: inject parent FK from URL param
+      if (nestedMatch && method === 'post' && ctx.db) {
+        const parentSingular = nestedMatch[1].endsWith('s') ? nestedMatch[1].slice(0, -1) : nestedMatch[1];
+        const modelMatch = handler.match(/^~db\.(\w+)\.\w+$/);
+        const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+        const fkField = `${parentSingular}_id`;
+        const bodyParams = route.params?.map(p => p.name).join(', ') || '';
+        lines.push(`    const parentId = parseInt(req.params.id);`);
+        lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: parentId } });`);
+        lines.push('    res.status(201).json(result);');
+      } else {
+        lines.push(`    const result = ${prismaCall};`);
+        lines.push('    res.json(result);');
+      }
     } else {
       // Check for auth handler before falling through to 501
       const authType = ctx.auth ? isAuthHandler(handler, path) : null;
@@ -417,8 +441,14 @@ export function generateAuthHandlerLines(
 ): string[] {
   const lines: string[] = [];
 
-  // Determine the user model name — prefer "User", fallback to first model with email field
+  // Determine the user model name — ordered priority:
+  // 1. Model named "User"
+  // 2. Model with both email AND password fields (most likely auth model)
+  // 3. First model with email field
   const userModel = ctx.db?.models.find(m => m.name === 'User')
+    || ctx.db?.models.find(m =>
+      m.fields.some(f => f.name === 'email') && m.fields.some(f => f.name === 'password')
+    )
     || ctx.db?.models.find(m => m.fields.some(f => f.name === 'email'));
   const modelVar = userModel
     ? userModel.name.charAt(0).toLowerCase() + userModel.name.slice(1)
@@ -588,9 +618,20 @@ export function generateResourceRouter(
       }
     }
 
+    // Detect nested resource routes (e.g., /:id/comments → parent/:id/child)
+    const nestedMatch = relativePath.match(/^\/:id\/(\w+)$/);
     const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
     const isAggregate = handler.match(/^~db\.(\w+)\.aggregate$/) && ctx.db;
-    if (isFindMany) {
+    if (isFindMany && nestedMatch && ctx.db) {
+      // Nested findMany: filter by parent FK
+      const parentResource = resourceKey.endsWith('s') ? resourceKey.slice(0, -1) : resourceKey;
+      const modelMatch = handler.match(/^~db\.(\w+)\.findMany$/);
+      const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+      const fkField = `${parentResource}_id`;
+      lines.push(`    const parentId = parseInt(req.params.id);`);
+      lines.push(`    const result = await prisma.${modelVar}.findMany({ where: { ${fkField}: parentId }, orderBy: { id: 'desc' } });`);
+      lines.push('    res.json(result);');
+    } else if (isFindMany) {
       const findManyLines = generateFindManyHandler(handler, ctx.db!);
       for (const l of findManyLines) lines.push(l);
     } else if (isAggregate) {
@@ -612,8 +653,20 @@ export function generateResourceRouter(
             lines.push(`    assertRequired(${bodyVar} as Record<string, unknown>, [${names}]);`);
           }
         }
-        lines.push(`    const result = ${prismaCall};`);
-        lines.push('    res.json(result);');
+        // For nested POST: inject parent FK from URL param
+        if (nestedMatch && route.method.toLowerCase() === 'post' && ctx.db) {
+          const parentResource = resourceKey.endsWith('s') ? resourceKey.slice(0, -1) : resourceKey;
+          const modelMatch = handler.match(/^~db\.(\w+)\.\w+$/);
+          const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+          const fkField = `${parentResource}_id`;
+          const bodyParams = route.params?.map(p => p.name).join(', ') || '';
+          lines.push(`    const parentId = parseInt(req.params.id);`);
+          lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: parentId } });`);
+          lines.push('    res.status(201).json(result);');
+        } else {
+          lines.push(`    const result = ${prismaCall};`);
+          lines.push('    res.json(result);');
+        }
       } else {
         // Check for auth handler before falling through to 501
         const authType = ctx.auth ? isAuthHandler(handler, route.path) : null;
