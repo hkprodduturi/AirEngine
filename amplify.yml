@@ -7,12 +7,15 @@ frontend:
         - npm run build
     build:
       commands:
-        # Build the main site
+        # 1. Transpile the marketing site from .air
         - node dist/cli/index.js transpile examples/airengine-site.air -o ./site
-        - cd site && npm install && npx vite build
-        # Build the template gallery (108 live previews)
+        # 2. Build the template gallery (108 live previews + catalog.json)
         - npx tsx scripts/build-gallery.ts
-        # Copy gallery into site output so ./gallery/ links work
+        # 3. Inject embedded template showcase cards into the site
+        - npx tsx scripts/inject-showcase.ts ./site gallery/catalog.json
+        # 4. Vite build the site
+        - cd site && npm install && npx vite build
+        # 5. Copy gallery into site output so ./gallery/ links work
         - cp -r gallery/dist site/dist/gallery
   artifacts:
     baseDirectory: site/dist
