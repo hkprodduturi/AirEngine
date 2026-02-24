@@ -665,7 +665,7 @@ export function generateFlowJSX(
         const bindInfo = resolveBindChain(node.left);
         if (bindInfo?.label) {
           const mapping = mapElement('stat', []);
-          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{'$' + (${ref}).toFixed(2)}</div>\n${pad}</div>`;
+          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{'$' + (${ref}).toFixed(2)}</div>\n${pad}</div>`;
         }
       }
       return `${pad}<span>{'$' + ${ref}}</span>`;
@@ -682,7 +682,7 @@ export function generateFlowJSX(
         const bindInfo = resolveBindChain(node.left);
         if (bindInfo?.label) {
           const mapping = mapElement('stat', []);
-          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
+          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
         }
       }
       return generateFlowBoundElement(leftResolved, ref, ctx, scope, ind);
@@ -704,7 +704,7 @@ export function generateFlowJSX(
       if (leftResolved.element === 'stat') {
         const resolved = node.left.kind === 'binary' && node.left.operator === ':' ? resolveBindChain(node.left) : null;
         const label = resolved?.label || '';
-        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(label)}</div>\n${pad}  <div className="text-2xl font-bold">{${expr}}</div>\n${pad}</div>`;
+        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(label)}</div>\n${pad}  <div className="text-2xl font-bold">{${expr}}</div>\n${pad}</div>`;
       }
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{${expr}}</${mapping.tag}>`;
     }
@@ -769,7 +769,7 @@ export function generatePipeJSX(
       const valueNode = resolved.binding || resolved.action || node.left;
       const pipeExpr = resolvePipeExpr({ kind: 'binary', operator: '|', left: valueNode, right: node.right }, ctx, scope);
       if (resolved.element === 'stat') {
-        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(resolved.label || '')}</div>\n${pad}  <div className="text-2xl font-bold">{${pipeExpr}}</div>\n${pad}</div>`;
+        return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(resolved.label || '')}</div>\n${pad}  <div className="text-2xl font-bold">{${pipeExpr}}</div>\n${pad}</div>`;
       }
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{${pipeExpr}}</${mapping.tag}>`;
     }
@@ -837,7 +837,7 @@ export function generateBindJSX(
   // Element with label (stat:"Total")
   if (resolved.label !== undefined) {
     if (resolved.element === 'stat') {
-      return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">--</div>\n${pad}</div>`;
+      return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">--</div>\n${pad}</div>`;
     }
     return `${pad}<${mapping.tag} className="${mapping.className}">${escapeText(resolved.label)}</${mapping.tag}>`;
   }
@@ -876,9 +876,17 @@ export function generateBindJSX(
     return `${pad}<span className="${mapping.className}">${emoji}</span>`;
   }
 
-  // Chart — render placeholder
+  // Chart — render polished placeholder with icon
   if (resolved.element === 'chart') {
-    return `${pad}<div className="${mapping.className}">${capitalize(resolved.modifiers[0] || 'chart')} chart placeholder</div>`;
+    const chartType = capitalize(resolved.modifiers[0] || 'chart');
+    return `${pad}<div className="${mapping.className}">\n`
+      + `${pad}  <div className="flex flex-col items-center gap-2 text-[var(--muted)]">\n`
+      + `${pad}    <svg className="w-8 h-8 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>\n`
+      + `${pad}      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />\n`
+      + `${pad}    </svg>\n`
+      + `${pad}    <span className="text-sm">${chartType} chart</span>\n`
+      + `${pad}  </div>\n`
+      + `${pad}</div>`;
   }
 
   // Pre/code:block — join text children as multi-line code block
@@ -905,11 +913,14 @@ export function generateBindJSX(
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
     const resolvedName = resolved.modifiers[0] || mapping.inputType || resolved.element;
     const nameAttr = scope.insideForm ? ` name="${resolvedName}"` : '';
-    const placeholder = resolved.element === 'search'
-      ? ' placeholder="Search..."'
-      : (mapping.inputType && resolved.element === 'input'
-        ? ` placeholder="${escapeAttr(capitalize(resolvedName))}..."`
-        : '');
+    // Smart placeholder based on element type/name
+    let placeholder = '';
+    if (resolved.element === 'search') {
+      placeholder = ' placeholder="Search..."';
+    } else if (resolved.element === 'input' && mapping.inputType) {
+      const label = resolved.modifiers[0] ? capitalize(resolved.modifiers[0]) : capitalize(mapping.inputType);
+      placeholder = ` placeholder="${escapeAttr(label === 'Text' ? 'Enter value' : label)}..."`;
+    }
     return `${pad}<${mapping.tag}${typeAttr}${nameAttr}${classAttr(mapping.className)}${placeholder} />`;
   }
 
@@ -1025,7 +1036,14 @@ export function generateBoundElement(
     const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
     const nameAttr = scope.insideForm ? ` name="${resolvedFieldName}"` : '';
     const valueExpr = ref !== plainRef ? `${ref} ?? ''` : ref;
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${capitalize(resolvedFieldName)}..." />`;
+    // Smart placeholder: "Search..." for search-related inputs, contextual for others
+    const isSearchLike = resolved.element === 'search' || resolvedFieldName === 'search' || resolvedFieldName === 'input' || mapping.inputType === 'search';
+    const placeholderText = isSearchLike
+      ? 'Search...'
+      : (resolvedFieldName === 'password' ? 'Enter password...'
+        : resolvedFieldName === 'email' ? 'Enter email...'
+        : `${capitalize(resolvedFieldName)}...`);
+    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${placeholderText}" />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
@@ -1081,7 +1099,7 @@ export function generateBoundElement(
   // Stat element with label and value
   if (resolved.element === 'stat' && resolved.label !== undefined) {
     const ref = resolveRefNode(binding, scope);
-    return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
+    return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
   }
 
   // Image with src
@@ -1287,11 +1305,13 @@ export function generateFlowBoundElement(
   // Input: value + onChange
   if (mapping.tag === 'input' || resolved.element === 'search') {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    const placeholder = resolved.modifiers[0] || resolved.element;
     const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
     const nameAttr = scope.insideForm ? ` name="${resolvedFieldName}"` : '';
     const valueExpr = stateRef !== plainRef ? `${stateRef} ?? ''` : stateRef;
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${capitalize(resolvedFieldName)}..." />`;
+    // Smart placeholder based on context
+    const isSearchLike = resolved.element === 'search' || resolvedFieldName === 'search' || resolvedFieldName === 'input' || mapping.inputType === 'search';
+    const placeholderText = isSearchLike ? 'Search...' : `${capitalize(resolvedFieldName)}...`;
+    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${placeholderText}" />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);

@@ -39,11 +39,36 @@ function generateValidationSchema(route: AirRoute): string | null {
   return `{ ${entries.join(', ')} }`;
 }
 
+// ---- Shared catch-block generator ----
+
+/** Generate a catch block that delegates to the error-classification middleware */
+function pushCatchBlock(lines: string[]): void {
+  lines.push('  } catch (error) {');
+  lines.push('    next(error);');
+  lines.push('  }');
+}
+
+/** Generate a response for a prisma result based on PrismaCallInfo */
+function pushPrismaResponse(lines: string[], info: PrismaCallInfo, method: string, handler: string): void {
+  lines.push(`    const result = ${info.call};`);
+  if (info.needs404) {
+    lines.push("    if (!result) return res.status(404).json({ error: 'Not found' });");
+  }
+  if (info.isDelete) {
+    lines.push('    res.status(204).end();');
+  } else if (method === 'post' && handler.includes('.create')) {
+    lines.push('    res.status(201).json(result);');
+  } else {
+    lines.push('    res.json(result);');
+  }
+}
+
 // ---- api.ts ----
 
 export function generateApiRouter(ctx: TranspileContext): string {
   const lines: string[] = [];
   lines.push("import { Router } from 'express';");
+  lines.push("import type { NextFunction, Request, Response } from 'express';");
   if (ctx.db) {
     lines.push("import { prisma } from './prisma.js';");
   }
@@ -88,7 +113,7 @@ export function generateApiRouter(ctx: TranspileContext): string {
     const path = route.path;
     const handler = route.handler;
 
-    lines.push(`apiRouter.${method}('${path}', async (req, res) => {`);
+    lines.push(`apiRouter.${method}('${path}', async (req: Request, res: Response, next: NextFunction) => {`);
     lines.push('  try {');
 
     // Validate :id param for integer primary keys
@@ -139,8 +164,8 @@ export function generateApiRouter(ctx: TranspileContext): string {
     if (aggregateLines) {
       for (const l of aggregateLines) lines.push(l);
     } else {
-    const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
-    if (prismaCall) {
+    const prismaInfo = mapHandlerToPrismaInfo(handler, route, ctx.db, bodyTypeName);
+    if (prismaInfo) {
       // Add typed destructuring with validation if we have params and a body type
       if (bodyTypeName && route.params && route.params.length > 0) {
         // Use _body to avoid collision when a param is named 'body'
@@ -178,13 +203,7 @@ export function generateApiRouter(ctx: TranspileContext): string {
         lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: parentId } });`);
         lines.push('    res.status(201).json(result);');
       } else {
-        lines.push(`    const result = ${prismaCall};`);
-        // POST/create → 201 Created, others → 200 OK
-        if (method === 'post' && handler.includes('.create')) {
-          lines.push('    res.status(201).json(result);');
-        } else {
-          lines.push('    res.json(result);');
-        }
+        pushPrismaResponse(lines, prismaInfo, method, handler);
       }
     } else {
       // Check for auth handler before falling through to 501
@@ -200,10 +219,7 @@ export function generateApiRouter(ctx: TranspileContext): string {
     } // end aggregate else
     } // end else (non-findMany)
 
-    lines.push('  } catch (error) {');
-    lines.push("    const details = process.env.NODE_ENV !== 'production' && error instanceof Error ? error.message : undefined;");
-    lines.push("    res.status(500).json({ error: 'Internal server error', ...(details && { details }) });");
-    lines.push('  }');
+    pushCatchBlock(lines);
     lines.push('});');
     lines.push('');
   }
@@ -223,19 +239,32 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
   const lines: string[] = [];
 
   // Pagination
-  lines.push("    const page = parseInt(req.query.page as string) || 1;");
-  lines.push("    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);");
+  lines.push("    const page = Math.max(1, parseInt(req.query.page as string) || 1);");
+  lines.push("    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);");
   lines.push("    const skip = (page - 1) * limit;");
 
-  // orderBy: prefer created_at > createdAt > id > omit
-  let orderByExpr = '';
+  // Determine sortable fields for the sort query parameter
+  const sortableFields = model
+    ? model.fields.filter(f => !f.primary || f.name === 'id').map(f => f.name)
+    : [];
+
+  // orderBy: support ?sort=field:asc, fall back to created_at > createdAt > id
+  let defaultOrderBy = "{ id: 'desc' }";
   if (model) {
     const hasCreatedAt = model.fields.some(f => f.name === 'created_at');
     const hasCreatedAtCamel = model.fields.some(f => f.name === 'createdAt');
-    const hasId = model.fields.some(f => f.name === 'id');
-    if (hasCreatedAt) orderByExpr = "{ created_at: 'desc' }";
-    else if (hasCreatedAtCamel) orderByExpr = "{ createdAt: 'desc' }";
-    else if (hasId) orderByExpr = "{ id: 'desc' }";
+    if (hasCreatedAt) defaultOrderBy = "{ created_at: 'desc' }";
+    else if (hasCreatedAtCamel) defaultOrderBy = "{ createdAt: 'desc' }";
+  }
+
+  if (sortableFields.length > 0) {
+    lines.push(`    const sortParam = (req.query.sort as string) || '';`);
+    lines.push(`    const allowedSort = new Set(${JSON.stringify(sortableFields)});`);
+    lines.push("    let orderBy: Record<string, string> = " + defaultOrderBy + ";");
+    lines.push("    if (sortParam) {");
+    lines.push("      const [field, dir] = sortParam.split(':');");
+    lines.push("      if (allowedSort.has(field)) orderBy = { [field]: dir === 'asc' ? 'asc' : 'desc' };");
+    lines.push("    }");
   }
 
   // Text search: find string fields (non-PK)
@@ -263,7 +292,11 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
   // Build prisma query args
   const queryParts: string[] = [];
   if (stringFields.length > 0) queryParts.push('where');
-  if (orderByExpr) queryParts.push(`orderBy: ${orderByExpr}`);
+  if (sortableFields.length > 0) {
+    queryParts.push('orderBy');
+  } else if (defaultOrderBy) {
+    queryParts.push(`orderBy: ${defaultOrderBy}`);
+  }
   queryParts.push('skip');
   queryParts.push('take: limit');
 
@@ -279,12 +312,21 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
   }
   lines.push("    ]);");
   lines.push("    res.setHeader('X-Total-Count', String(total));");
-  lines.push("    res.json(result);");
+  lines.push(`    res.json({ data: result, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } });`);
 
   return lines;
 }
 
 // ---- Handler → Prisma mapping ----
+
+/** Metadata about a Prisma call to inform response generation */
+export interface PrismaCallInfo {
+  call: string;
+  /** Whether the caller needs a 404 check after the call */
+  needs404: boolean;
+  /** Whether this is a delete operation (→ 204 No Content) */
+  isDelete: boolean;
+}
 
 export function mapHandlerToPrisma(
   handler: string,
@@ -292,6 +334,16 @@ export function mapHandlerToPrisma(
   db: AirDbBlock | null,
   bodyTypeName?: string,
 ): string | null {
+  const info = mapHandlerToPrismaInfo(handler, route, db, bodyTypeName);
+  return info ? info.call : null;
+}
+
+export function mapHandlerToPrismaInfo(
+  handler: string,
+  route: AirRoute,
+  db: AirDbBlock | null,
+  bodyTypeName?: string,
+): PrismaCallInfo | null {
   // Pattern: ~db.Model.operation
   const match = handler.match(/^~db\.(\w+)\.(\w+)$/);
   if (!match || !db) return null;
@@ -311,25 +363,41 @@ export function mapHandlerToPrisma(
 
   switch (operation) {
     case 'findMany':
-      return `await prisma.${modelVar}.findMany()`;
+      return { call: `await prisma.${modelVar}.findMany()`, needs404: false, isDelete: false };
     case 'findFirst':
-      return hasIdParam
-        ? `await prisma.${modelVar}.findFirst({ where: { id: ${idExpr} } })`
-        : `await prisma.${modelVar}.findFirst({ where: req.query })`;
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.findFirst({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.findFirst({ where: req.query })`,
+        needs404: true,
+        isDelete: false,
+      };
     case 'findUnique':
-      return hasIdParam
-        ? `await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } })`
-        : `await prisma.${modelVar}.findUnique({ where: req.body })`;
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.findUnique({ where: req.body })`,
+        needs404: true,
+        isDelete: false,
+      };
     case 'create':
-      return `await prisma.${modelVar}.create({ data: ${dataExpr} })`;
+      return { call: `await prisma.${modelVar}.create({ data: ${dataExpr} })`, needs404: false, isDelete: false };
     case 'update':
-      return hasIdParam
-        ? `await prisma.${modelVar}.update({ where: { id: ${idExpr} }, data: ${dataExpr} })`
-        : `await prisma.${modelVar}.update({ where: req.body.where, data: req.body.data })`;
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.update({ where: { id: ${idExpr} }, data: ${dataExpr} })`
+          : `await prisma.${modelVar}.update({ where: req.body.where, data: req.body.data })`,
+        needs404: false,
+        isDelete: false,
+      };
     case 'delete':
-      return hasIdParam
-        ? `await prisma.${modelVar}.delete({ where: { id: ${idExpr} } })`
-        : `await prisma.${modelVar}.delete({ where: req.body })`;
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.delete({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.delete({ where: req.body })`,
+        needs404: false,
+        isDelete: true,
+      };
     case 'aggregate':
       return null; // Handled specially by generateAggregateHandler
     default:
@@ -383,6 +451,76 @@ export function generateAggregateHandler(handler: string, db: AirDbBlock): strin
   }
 
   return lines;
+}
+
+/**
+ * Like mapHandlerToPrismaInfo, but uses the `id` local variable when assertIntParam was used.
+ * This avoids redundant parseInt(req.params.id) calls.
+ */
+export function mapHandlerToPrismaInfoWithId(
+  handler: string,
+  route: AirRoute,
+  db: AirDbBlock | null,
+  bodyTypeName?: string,
+  hasAssertedId?: boolean,
+): PrismaCallInfo | null {
+  const match = handler.match(/^~db\.(\w+)\.(\w+)$/);
+  if (!match || !db) return null;
+
+  const [, modelName, operation] = match;
+  const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+
+  const hasIdParam = route.path.includes(':id');
+  // Use the `id` variable if it was asserted, otherwise fall back to the expression
+  const idExpr = hasAssertedId ? 'id' : getIdExpression(modelName, db);
+
+  const hasTypedBody = bodyTypeName && route.params && route.params.length > 0;
+  const dataExpr = hasTypedBody
+    ? `{ ${route.params!.map(p => p.name).join(', ')} }`
+    : 'req.body';
+
+  switch (operation) {
+    case 'findMany':
+      return { call: `await prisma.${modelVar}.findMany()`, needs404: false, isDelete: false };
+    case 'findFirst':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.findFirst({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.findFirst({ where: req.query })`,
+        needs404: true,
+        isDelete: false,
+      };
+    case 'findUnique':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.findUnique({ where: req.body })`,
+        needs404: true,
+        isDelete: false,
+      };
+    case 'create':
+      return { call: `await prisma.${modelVar}.create({ data: ${dataExpr} })`, needs404: false, isDelete: false };
+    case 'update':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.update({ where: { id: ${idExpr} }, data: ${dataExpr} })`
+          : `await prisma.${modelVar}.update({ where: req.body.where, data: req.body.data })`,
+        needs404: false,
+        isDelete: false,
+      };
+    case 'delete':
+      return {
+        call: hasIdParam
+          ? `await prisma.${modelVar}.delete({ where: { id: ${idExpr} } })`
+          : `await prisma.${modelVar}.delete({ where: req.body })`,
+        needs404: false,
+        isDelete: true,
+      };
+    case 'aggregate':
+      return null;
+    default:
+      return null;
+  }
 }
 
 /** Check if a model has an integer primary key */
@@ -554,6 +692,7 @@ export function generateResourceRouter(
   const lines: string[] = [];
 
   lines.push("import { Router } from 'express';");
+  lines.push("import type { NextFunction, Request, Response } from 'express';");
   if (ctx.db) {
     lines.push("import { prisma } from '../prisma.js';");
   }
@@ -606,15 +745,17 @@ export function generateResourceRouter(
     const relativePath = basePath ? route.path.replace(basePath, '') || '/' : route.path;
     const handler = route.handler;
 
-    lines.push(`${resourceKey}Router.${method}('${relativePath}', async (req, res) => {`);
+    lines.push(`${resourceKey}Router.${method}('${relativePath}', async (req: Request, res: Response, next: NextFunction) => {`);
     lines.push('  try {');
 
-    // Validate :id param
+    // Validate :id param — use the parsed `id` variable throughout
     const hasIdParam = relativePath.includes(':id');
+    let hasAssertedId = false;
     if (hasIdParam && ctx.db) {
       const modelMatch = handler.match(/^~db\.(\w+)\./);
       if (modelMatch && hasIntPrimaryKey(modelMatch[1], ctx.db)) {
         lines.push("    const id = assertIntParam(req.params.id);");
+        hasAssertedId = true;
       }
     }
 
@@ -639,8 +780,11 @@ export function generateResourceRouter(
       const modelMatch = handler.match(/^~db\.(\w+)\.findMany$/);
       const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
       const fkField = `${parentResource}_id`;
-      lines.push(`    const parentId = parseInt(req.params.id);`);
-      lines.push(`    const result = await prisma.${modelVar}.findMany({ where: { ${fkField}: parentId }, orderBy: { id: 'desc' } });`);
+      if (!hasAssertedId) {
+        lines.push(`    const parentId = parseInt(req.params.id);`);
+      }
+      const parentIdVar = hasAssertedId ? 'id' : 'parentId';
+      lines.push(`    const result = await prisma.${modelVar}.findMany({ where: { ${fkField}: ${parentIdVar} }, orderBy: { id: 'desc' } });`);
       lines.push('    res.json(result);');
     } else if (isFindMany) {
       const findManyLines = generateFindManyHandler(handler, ctx.db!);
@@ -649,8 +793,9 @@ export function generateResourceRouter(
       const aggLines = generateAggregateHandler(handler, ctx.db!);
       if (aggLines) for (const l of aggLines) lines.push(l);
     } else {
-      const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
-      if (prismaCall) {
+      // Use PrismaCallInfo for richer response handling
+      const prismaInfo = mapHandlerToPrismaInfoWithId(handler, route, ctx.db, bodyTypeName, hasAssertedId);
+      if (prismaInfo) {
         if (bodyTypeName && route.params && route.params.length > 0) {
           const hasBodyParam = route.params.some(p => p.name === 'body');
           const bodyVar = hasBodyParam ? '_body' : 'body';
@@ -671,17 +816,14 @@ export function generateResourceRouter(
           const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
           const fkField = `${parentResource}_id`;
           const bodyParams = route.params?.map(p => p.name).join(', ') || '';
-          lines.push(`    const parentId = parseInt(req.params.id);`);
-          lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: parentId } });`);
+          if (!hasAssertedId) {
+            lines.push(`    const parentId = parseInt(req.params.id);`);
+          }
+          const parentIdVar = hasAssertedId ? 'id' : 'parentId';
+          lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: ${parentIdVar} } });`);
           lines.push('    res.status(201).json(result);');
         } else {
-          lines.push(`    const result = ${prismaCall};`);
-          // POST/create → 201 Created
-          if (method === 'post' && handler.includes('.create')) {
-            lines.push('    res.status(201).json(result);');
-          } else {
-            lines.push('    res.json(result);');
-          }
+          pushPrismaResponse(lines, prismaInfo, method, handler);
         }
       } else {
         // Check for auth handler before falling through to 501
@@ -696,11 +838,7 @@ export function generateResourceRouter(
       }
     }
 
-    lines.push('  } catch (error) {');
-    lines.push("    const details = process.env.NODE_ENV !== 'production' && error instanceof Error ? error.message : undefined;");
-    lines.push("    const status = (error as any)?.status ?? 500;");
-    lines.push("    res.status(status).json({ error: status === 400 ? 'Validation error' : 'Internal server error', ...(details && { details }) });");
-    lines.push('  }');
+    pushCatchBlock(lines);
     lines.push('});');
     lines.push('');
   }
@@ -740,6 +878,7 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
   const lines: string[] = [];
 
   lines.push("import { Router } from 'express';");
+  lines.push("import type { NextFunction, Request, Response } from 'express';");
 
   // Import resource routers
   const modelKeys = Array.from(groups.keys()).filter(k => k !== '__misc__');
@@ -799,7 +938,7 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
       // Validate :id param for integer primary keys
       const hasIdParam = route.path.includes(':id');
 
-      lines.push(`apiRouter.${method}('${route.path}', async (req, res) => {`);
+      lines.push(`apiRouter.${method}('${route.path}', async (req: Request, res: Response, next: NextFunction) => {`);
       lines.push('  try {');
 
       if (hasIdParam && ctx.db) {
@@ -845,8 +984,8 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
         const aggLines = generateAggregateHandler(handler, ctx.db);
         if (aggLines) for (const l of aggLines) lines.push(l);
       } else {
-        const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
-        if (prismaCall) {
+        const prismaInfo = mapHandlerToPrismaInfo(handler, route, ctx.db, bodyTypeName);
+        if (prismaInfo) {
           if (bodyTypeName && route.params && route.params.length > 0) {
             const hasBodyParam = route.params.some(p => p.name === 'body');
             const bodyVar = hasBodyParam ? '_body' : 'body';
@@ -866,13 +1005,7 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
             lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: parentId } });`);
             lines.push('    res.status(201).json(result);');
           } else {
-            lines.push(`    const result = ${prismaCall};`);
-            // POST/create → 201 Created
-            if (method === 'post' && handler.includes('.create')) {
-              lines.push('    res.status(201).json(result);');
-            } else {
-              lines.push('    res.json(result);');
-            }
+            pushPrismaResponse(lines, prismaInfo, method, handler);
           }
         } else {
           // Check for auth handler before falling through to 501
@@ -887,10 +1020,7 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
         }
       }
 
-      lines.push('  } catch (error) {');
-      lines.push("    const details = process.env.NODE_ENV !== 'production' && error instanceof Error ? error.message : undefined;");
-      lines.push("    res.status(500).json({ error: 'Internal server error', ...(details && { details }) });");
-      lines.push('  }');
+      pushCatchBlock(lines);
       lines.push('});');
       lines.push('');
     }

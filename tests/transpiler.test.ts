@@ -469,7 +469,7 @@ describe('transpile: dashboard.air', () => {
   });
 
   it('generates chart placeholder', () => {
-    expect(allJsx).toContain('chart placeholder');
+    expect(allJsx).toContain('chart');
   });
 
   it('generates pagination', () => {
@@ -692,7 +692,7 @@ describe('golden: dashboard.air codegen shape', () => {
       'Total Users',     // stat card
       'Revenue',         // revenue stat
       'toFixed(2)',      // currency formatting
-      'chart placeholder', // chart stub
+      'chart',             // chart stub (SVG icon + label)
       '<table',          // data table
       '<thead',          // table header
       'Name',            // column header

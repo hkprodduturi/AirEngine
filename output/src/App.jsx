@@ -32,11 +32,11 @@ export default function App() {
         <header className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold">Todo App</h1>
-            <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[var(--accent)]/20 text-[var(--accent)]">{items.length}</span>
+            <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] text-[var(--accent)]">{items.length}</span>
           </div>
         </header>
         <div className="flex gap-2">
-          <input type="text" className="rounded-[var(--radius)] px-3.5 py-2.5 flex-1" placeholder="Add..." onKeyDown={(e) => { if (e.key === 'Enter' && e.target.value) { add({text:e.target.value,done:false}); e.target.value = ''; } }} />
+          <input type="text" className="border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent flex-1" placeholder="Add..." onKeyDown={(e) => { if (e.key === 'Enter' && e.target.value) { add({text:e.target.value,done:false}); e.target.value = ''; } }} />
           <button className="bg-[var(--accent)] text-white px-4 py-2.5 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" onClick={(e) => { const _inp = e.currentTarget.previousElementSibling; if (_inp?.value) { add({text:_inp.value,done:false}); _inp.value = ''; } }}>Add</button>
         </div>
         <ul className="space-y-3">

@@ -3,7 +3,8 @@
  *
  * Generates client/src/api.js — a fetch wrapper per expanded API route
  * with a configurable base URL via VITE_API_BASE_URL.
- * Includes JSDoc type annotations and pagination support for list routes.
+ * Includes JSDoc type annotations, pagination support, search params,
+ * proper error handling, and 204 (No Content) awareness.
  */
 
 import type { TranspileContext } from './context.js';
@@ -15,6 +16,31 @@ export function generateApiClient(ctx: TranspileContext): string {
   const hasAuth = routes.some(r => r.path.includes('/auth/'));
 
   lines.push("const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001/api';");
+  lines.push('');
+
+  // Custom error class for API errors
+  lines.push('/** API error with status code and parsed body */');
+  lines.push('export class ApiError extends Error {');
+  lines.push('  constructor(status, body) {');
+  lines.push("    super(body?.error || body?.message || `Request failed with status ${status}`);");
+  lines.push('    this.status = status;');
+  lines.push('    this.body = body;');
+  lines.push('  }');
+  lines.push('}');
+  lines.push('');
+
+  // Shared response handler
+  lines.push('/** Parse response — handles JSON, 204 No Content, and errors */');
+  lines.push('async function handleResponse(res) {');
+  lines.push('  if (!res.ok) {');
+  lines.push("    let body = {};");
+  lines.push('    try { body = await res.json(); } catch { /* empty body */ }');
+  lines.push('    throw new ApiError(res.status, body);');
+  lines.push('  }');
+  lines.push('  if (res.status === 204) return null;');
+  lines.push("  const text = await res.text();");
+  lines.push("  return text ? JSON.parse(text) : null;");
+  lines.push('}');
   lines.push('');
 
   // Token management for authenticated apps
@@ -48,15 +74,16 @@ export function generateApiClient(ctx: TranspileContext): string {
     const pathParams = extractPathParams(route.path);
     const hasBody = (method === 'POST' || method === 'PUT') && route.params && route.params.length > 0;
     const isList = method === 'GET' && pathParams.length === 0 && isListHandler(route.handler);
+    const isDelete = method === 'DELETE';
     const isAuthEndpoint = route.path.includes('/auth/');
 
     // JSDoc
     const modelName = extractModelFromHandler(route.handler);
     if (modelName) {
       if (method === 'GET' && pathParams.length === 0) {
-        lines.push(`/** @returns {Promise<import('./types').${modelName}[]>} */`);
-      } else if (method === 'DELETE') {
-        lines.push(`/** @returns {Promise<import('./types').${modelName}>} */`);
+        lines.push(`/** @returns {Promise<{ data: import('./types').${modelName}[], meta: { page: number, limit: number, total: number, totalPages: number } }>} */`);
+      } else if (isDelete) {
+        lines.push(`/** @returns {Promise<null>} */`);
       } else {
         lines.push(`/** @returns {Promise<import('./types').${modelName}>} */`);
       }
@@ -66,7 +93,7 @@ export function generateApiClient(ctx: TranspileContext): string {
     const args: string[] = [];
     for (const p of pathParams) args.push(p);
     if (hasBody) args.push('data');
-    if (isList) args.push('{ page, limit } = {}');
+    if (isList) args.push('{ page, limit, search, sort } = {}');
     const sig = args.join(', ');
 
     // Build URL expression
@@ -77,11 +104,13 @@ export function generateApiClient(ctx: TranspileContext): string {
 
     lines.push(`export async function ${fnName}(${sig}) {`);
 
-    // For list routes, build query string with pagination params
+    // For list routes, build query string with pagination and search params
     if (isList) {
       lines.push('  const params = new URLSearchParams();');
-      lines.push('  if (page !== undefined) params.set(\'page\', String(page));');
-      lines.push('  if (limit !== undefined) params.set(\'limit\', String(limit));');
+      lines.push("  if (page !== undefined) params.set('page', String(page));");
+      lines.push("  if (limit !== undefined) params.set('limit', String(limit));");
+      lines.push("  if (search) params.set('search', search);");
+      lines.push("  if (sort) params.set('sort', sort);");
       lines.push(`  const qs = params.toString();`);
       lines.push(`  const url = qs ? ${urlExpr} + '?' + qs : ${urlExpr};`);
     }
@@ -110,8 +139,7 @@ export function generateApiClient(ctx: TranspileContext): string {
       lines.push('  });');
     }
 
-    lines.push(`  if (!res.ok) throw new Error(\`${method} ${route.path} failed: \${res.status}\`);`);
-    lines.push('  return res.json();');
+    lines.push('  return handleResponse(res);');
     lines.push('}');
     lines.push('');
   }

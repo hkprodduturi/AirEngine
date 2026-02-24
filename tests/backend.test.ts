@@ -173,7 +173,7 @@ describe('Express server generation', () => {
   it('prisma.ts exports PrismaClient', () => {
     const prismaFile = getServerFile('fullstack-todo', 'server/prisma.ts')!;
     expect(prismaFile).toContain("import { PrismaClient } from '@prisma/client'");
-    expect(prismaFile).toContain('export const prisma = new PrismaClient()');
+    expect(prismaFile).toContain('export const prisma = new PrismaClient(');
   });
 
   it('api.ts imports prisma from prisma.ts (no circular import)', () => {
@@ -773,11 +773,15 @@ describe('D2: backend hardening', () => {
   });
 
   it('500 handler includes conditional details', () => {
+    // Error details logic is in middleware.ts (errorHandler), routes use next(error)
+    const middleware = getServerFile('fullstack-todo', 'server/middleware.ts');
+    expect(middleware).toBeDefined();
+    expect(middleware).toContain("process.env.NODE_ENV !== 'production'");
+    expect(middleware).toContain('details');
+    // Routes delegate to error handler via next(error)
     const api = getServerFile('fullstack-todo', 'server/api.ts');
     expect(api).toBeDefined();
-    expect(api).toContain("process.env.NODE_ENV !== 'production'");
-    expect(api).toContain('error instanceof Error');
-    expect(api).toContain('details');
+    expect(api).toContain('next(error)');
   });
 
   it('400 validation errors include details field', () => {
@@ -1634,8 +1638,8 @@ describe('E2: deploy wiring', () => {
     expect(dockerfile).toContain('AS builder');
     expect(dockerfile).toContain('EXPOSE 3001');
     expect(dockerfile).toContain('CMD ["node", "dist/server.js"]');
-    expect(dockerfile).toContain('npm install');
-    expect(dockerfile).not.toContain('npm ci');
+    // Uses npm ci for reproducible builds
+    expect(dockerfile).toContain('npm ci');
   });
 
   it('Dockerfile includes Prisma when @db exists', () => {
@@ -1646,8 +1650,8 @@ describe('E2: deploy wiring', () => {
     expect(dockerfile).toContain('COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma');
     expect(dockerfile).toContain('COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma');
     expect(dockerfile).toContain('COPY --from=builder /app/prisma ./prisma');
-    // No prisma generate after --omit=dev
-    const prodSection = dockerfile.split('# ---- Production ----')[1];
+    // No prisma generate after production stage header
+    const prodSection = dockerfile.split('# ---- Production stage ----')[1];
     expect(prodSection).not.toContain('prisma generate');
   });
 
@@ -1661,14 +1665,12 @@ describe('E2: deploy wiring', () => {
     expect(compose!.content).toContain('env_file: ./server/.env');
   });
 
-  it('docker-compose has bind mount when @db exists', () => {
+  it('docker-compose has volume when @db exists', () => {
     const result = transpileFile('projectflow');
     const compose = result.files.find(f => f.path === 'docker-compose.yml')!;
-    expect(compose.content).toContain('./server/data:/app/data');
+    expect(compose.content).toContain('app-data:/app/data');
     expect(compose.content).toContain('volumes:');
     expect(compose.content).toContain('DATABASE_URL=file:/app/data/app.db');
-    // No named volume (bind mount instead)
-    expect(compose.content).not.toContain('server-data:');
   });
 
   it('.dockerignore generated', () => {
@@ -1738,12 +1740,12 @@ describe('E2: deploy wiring', () => {
     expect(dockerfile).toContain('wget -qO- http://localhost:3001/api');
   });
 
-  it('healthcheck uses / when no @api routes', () => {
+  it('healthcheck always uses /api/health (dedicated health endpoint)', () => {
     const ast = parse('@app:t\n@webhook(\nPOST:/hook>!process\n)\n@deploy(target:docker,port:3001)\n@ui(\ntext>"hi"\n)');
     const result = transpile(ast);
     const dockerfile = result.files.find(f => f.path === 'server/Dockerfile')!;
-    expect(dockerfile.content).toContain('wget -qO- http://localhost:3001/');
-    expect(dockerfile.content).not.toContain('wget -qO- http://localhost:3001/api');
+    // All servers now have a /api/health endpoint regardless of @api routes
+    expect(dockerfile.content).toContain('wget -qO- http://localhost:3001/api/health');
   });
 
   it('non-docker target: TODO in README, no files', () => {
@@ -1820,13 +1822,17 @@ describe('Batch 2: AbortController in resource hooks', () => {
 });
 
 describe('Batch 2: reusable components wired into output', () => {
-  it('non-auth-gated fullstack app generates and imports components', () => {
+  it('non-auth-gated fullstack app generates and imports pattern-detected components', () => {
     const result = transpileFile('fullstack-todo');
     const componentFiles = result.files.filter(f => f.path.includes('/components/'));
-    if (componentFiles.length > 0) {
-      const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
-      for (const cf of componentFiles) {
-        const name = cf.path.split('/').pop()!.replace('.jsx', '');
+    expect(componentFiles.length).toBeGreaterThan(0);
+    const app = result.files.find(f => f.path === 'client/src/App.jsx')!;
+    // Pattern-detected components (DataTable, EmptyState, StatCard) are imported by App.jsx;
+    // utility components like ConfirmModal are page-level tools, not imported by App
+    const patternComponents = ['DataTable', 'EmptyState', 'StatCard'];
+    for (const cf of componentFiles) {
+      const name = cf.path.split('/').pop()!.replace('.jsx', '');
+      if (patternComponents.includes(name)) {
         expect(app.content).toContain(`import ${name} from`);
       }
     }

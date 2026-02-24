@@ -57,7 +57,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   card: {
     tag: 'div',
-    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-6 space-y-3 shadow-[var(--card-shadow)]',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-6 space-y-3 shadow-[var(--card-shadow)] hover:border-[color-mix(in_srgb,var(--border)_60%,var(--accent))] transition-all',
   },
   btn: {
     tag: 'button',
@@ -126,7 +126,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   table: {
     tag: 'div',
-    className: 'w-full space-y-2',
+    className: 'w-full border border-[var(--border)] rounded-[var(--radius)] overflow-hidden',
   },
   tabs: {
     tag: 'div',
@@ -146,16 +146,17 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   alert: {
     tag: 'div',
-    className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded',
+    className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded-[var(--radius)] text-sm',
     modifiers: {
-      error: { className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded' },
-      success: { className: 'border-l-4 border-green-500 bg-green-500/10 p-4 rounded' },
-      warning: { className: 'border-l-4 border-yellow-500 bg-yellow-500/10 p-4 rounded' },
+      error: { className: 'border-l-4 border-red-500 bg-red-500/10 p-4 rounded-[var(--radius)] text-sm' },
+      success: { className: 'border-l-4 border-green-500 bg-green-500/10 p-4 rounded-[var(--radius)] text-sm' },
+      warning: { className: 'border-l-4 border-yellow-500 bg-yellow-500/10 p-4 rounded-[var(--radius)] text-sm' },
+      info: { className: 'border-l-4 border-blue-500 bg-blue-500/10 p-4 rounded-[var(--radius)] text-sm' },
     },
   },
   spinner: {
     tag: 'div',
-    className: 'animate-spin h-6 w-6 border-2 border-current border-t-transparent rounded-full mx-auto',
+    className: 'animate-spin h-6 w-6 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto',
   },
   link: {
     tag: 'a',
@@ -172,7 +173,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   stat: {
     tag: 'div',
-    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-5',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-5 hover:border-[color-mix(in_srgb,var(--border)_60%,var(--accent))] transition-colors',
   },
   progress: {
     tag: 'div',

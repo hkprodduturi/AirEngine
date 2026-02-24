@@ -93,7 +93,9 @@ function computeDeadLines(files: OutputFile[]): number {
     /Layout\.jsx$/, /api\.js$/, /types\.ts$/, /index\.css$/,
     /vite\.config/, /tailwind\.config/, /postcss\.config/,
     // Server block stubs — standalone config files consumed by runtime
-    /env\.ts$/, /cron\.ts$/, /queue\.ts$/, /templates\.ts$/, /auth\.ts$/,
+    /env\.ts$/, /cron\.ts$/, /queue\.ts$/, /templates\.ts$/, /auth\.ts$/, /webhooks\.ts$/,
+    // Client utility components — generated for pages/devs to use on demand
+    /\/components\/\w+\.jsx$/,
   ];
 
   let dead = 0;

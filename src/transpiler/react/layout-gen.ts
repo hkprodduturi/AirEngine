@@ -1,10 +1,52 @@
 /**
  * Layout component generator — sidebar + nav for apps with 3+ pages.
+ *
+ * Generates a polished sidebar with:
+ * - SVG icons per nav item (auto-mapped from page name)
+ * - Active/hover states with accent color
+ * - Responsive collapse on mobile
+ * - User profile section with avatar
+ * - Smooth transitions
  */
 
 import type { TranspileContext } from '../context.js';
 import type { UIAnalysis } from '../normalize-ui.js';
 import { capitalize, camelToLabel, hasAuthRoutes, isAuthPageName } from './helpers.js';
+
+// ---- Icon SVG Mapping ----
+// Maps page names to Heroicons-style SVG path data (24x24 viewBox)
+const NAV_ICONS: Record<string, string> = {
+  dashboard:  'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4',
+  overview:   'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4',
+  home:       'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4',
+  projects:   'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z',
+  tasks:      'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+  settings:   'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+  users:      'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m3 5.197v-1',
+  contacts:   'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z',
+  analytics:  'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+  reports:    'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  orders:     'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+  products:   'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+  messages:   'M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+  calendar:   'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  billing:    'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
+  payments:   'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
+  team:       'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
+  profile:    'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+  inventory:  'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4',
+  customers:  'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z',
+  courses:    'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253',
+  notifications: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
+};
+
+// Fallback icon for pages without a specific mapping
+const DEFAULT_ICON = 'M4 6h16M4 12h16M4 18h16';
+
+function getNavIcon(pageName: string): string {
+  const key = pageName.toLowerCase();
+  return NAV_ICONS[key] || DEFAULT_ICON;
+}
 
 // ---- Layout Component ----
 
@@ -15,6 +57,7 @@ export function generateLayout(ctx: TranspileContext, analysis: UIAnalysis): str
   if (!analysis.hasPages || (!hasSidebar && analysis.pages.length < 3)) return null;
 
   const withAuth = hasAuthRoutes(ctx);
+  const appTitle = capitalize(ctx.appName).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
   const lines: string[] = [];
   lines.push("import { useState } from 'react';");
@@ -26,56 +69,129 @@ export function generateLayout(ctx: TranspileContext, analysis: UIAnalysis): str
     lines.push('export default function Layout({ children, currentPage, setCurrentPage }) {');
   }
 
-  // Filter out auth pages from nav items
+  lines.push('  const [sidebarOpen, setSidebarOpen] = useState(false);');
+  lines.push('');
+
+  // Nav items with icons
   lines.push('  const navItems = [');
   for (const page of analysis.pages) {
     if (isAuthPageName(page.name)) continue;
     const label = camelToLabel(page.name);
-    lines.push(`    { key: '${page.name}', label: '${label}' },`);
+    const icon = getNavIcon(page.name);
+    lines.push(`    { key: '${page.name}', label: '${label}', icon: '${icon}' },`);
   }
   lines.push('  ];');
   lines.push('');
-  lines.push('  return (');
-  lines.push('    <div className="flex min-h-screen">');
-  lines.push('      <aside className="w-64 bg-[var(--surface)] border-r border-[var(--border)] p-4 flex flex-col">');
-  lines.push(`        <div className="text-xl font-bold mb-6">${capitalize(ctx.appName)}</div>`);
-  lines.push('        <nav className="space-y-1 flex-1">');
-  lines.push('          {navItems.map((item) => (');
-  lines.push('            <button');
-  lines.push('              key={item.key}');
-  lines.push('              onClick={() => setCurrentPage(item.key)}');
-  lines.push("              className={`w-full text-left px-3 py-2 rounded-[var(--radius)] transition-colors ${");
-  lines.push("                currentPage === item.key");
-  lines.push("                  ? 'bg-[var(--accent)] text-white'");
-  lines.push("                  : 'hover:bg-[var(--border)]'");
-  lines.push("              }`}");
-  lines.push('            >');
-  lines.push('              {item.label}');
-  lines.push('            </button>');
-  lines.push('          ))}');
-  lines.push('        </nav>');
 
+  lines.push('  return (');
+  lines.push('    <div className="flex min-h-screen bg-[var(--bg)]">');
+
+  // ---- Mobile overlay ----
+  lines.push('      {/* Mobile overlay */}');
+  lines.push('      {sidebarOpen && (');
+  lines.push('        <div');
+  lines.push('          className="fixed inset-0 bg-black/50 z-40 lg:hidden"');
+  lines.push('          onClick={() => setSidebarOpen(false)}');
+  lines.push('        />');
+  lines.push('      )}');
+  lines.push('');
+
+  // ---- Sidebar ----
+  lines.push('      {/* Sidebar */}');
+  lines.push('      <aside className={`');
+  lines.push('        fixed lg:sticky top-0 left-0 z-50 h-screen w-64');
+  lines.push('        bg-[var(--surface)] border-r border-[var(--border)]');
+  lines.push('        flex flex-col transition-transform duration-200 ease-in-out');
+  lines.push("        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}");
+  lines.push('      `}>');
+
+  // Brand
+  lines.push('        <div className="flex items-center gap-3 px-5 h-16 border-b border-[var(--border)] shrink-0">');
+  lines.push(`          <div className="w-8 h-8 rounded-lg bg-[var(--accent)] flex items-center justify-center text-white font-bold text-sm">${appTitle.charAt(0)}</div>`);
+  lines.push(`          <span className="font-semibold text-lg tracking-tight">${appTitle}</span>`);
+  lines.push('        </div>');
+  lines.push('');
+
+  // Nav
+  lines.push('        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">');
+  lines.push('          {navItems.map((item) => {');
+  lines.push('            const isActive = currentPage === item.key;');
+  lines.push('            return (');
+  lines.push('              <button');
+  lines.push('                key={item.key}');
+  lines.push('                onClick={() => { setCurrentPage(item.key); setSidebarOpen(false); }}');
+  lines.push('                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${');
+  lines.push('                  isActive');
+  lines.push("                    ? 'bg-[var(--accent)] text-white shadow-sm shadow-[var(--accent)]/20'");
+  lines.push("                    : 'text-[var(--muted)] hover:text-[var(--fg)] hover:bg-[var(--hover)]'");
+  lines.push('                }`}');
+  lines.push('              >');
+  lines.push('                <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={isActive ? 2 : 1.5}>');
+  lines.push('                  <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />');
+  lines.push('                </svg>');
+  lines.push('                {item.label}');
+  lines.push('              </button>');
+  lines.push('            );');
+  lines.push('          })}');
+  lines.push('        </nav>');
+  lines.push('');
+
+  // User section
   if (withAuth) {
-    lines.push('        <div className="border-t border-[var(--border)] pt-4 mt-4">');
+    lines.push('        {/* User section */}');
+    lines.push('        <div className="border-t border-[var(--border)] p-4 shrink-0">');
     lines.push('          {user && (');
-    lines.push('            <div className="mb-2 text-sm">');
-    lines.push('              <div className="font-medium">{user.name || user.email}</div>');
-    lines.push("              {user.role && <div className=\"text-[var(--muted)]\">{user.role}</div>}");
+    lines.push('            <div className="flex items-center gap-3 mb-3">');
+    lines.push('              <div className="w-9 h-9 rounded-full bg-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] font-semibold text-sm">');
+    lines.push("                {(user.name || user.email || '?').charAt(0).toUpperCase()}");
+    lines.push('              </div>');
+    lines.push('              <div className="flex-1 min-w-0">');
+    lines.push('                <div className="text-sm font-medium truncate">{user.name || user.email}</div>');
+    lines.push('                {user.role && <div className="text-xs text-[var(--muted)] truncate">{user.role}</div>}');
+    lines.push('              </div>');
     lines.push('            </div>');
     lines.push('          )}');
     lines.push('          <button');
     lines.push('            onClick={logout}');
-    lines.push("            className=\"w-full text-left px-3 py-2 rounded-[var(--radius)] text-red-400 hover:bg-red-400/10 transition-colors\"");
+    lines.push('            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--muted)] hover:text-red-400 hover:bg-red-400/10 transition-colors"');
     lines.push('          >');
-    lines.push('            Logout');
+    lines.push("            <svg className=\"w-5 h-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" strokeWidth={1.5}>");
+    lines.push('              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />');
+    lines.push('            </svg>');
+    lines.push('            Sign out');
     lines.push('          </button>');
     lines.push('        </div>');
   }
 
   lines.push('      </aside>');
-  lines.push('      <main className="flex-1 p-8">');
-  lines.push('        {children}');
-  lines.push('      </main>');
+  lines.push('');
+
+  // ---- Main content ----
+  lines.push('      {/* Main content */}');
+  lines.push('      <div className="flex-1 flex flex-col min-h-screen">');
+
+  // Mobile header
+  lines.push('        {/* Mobile header */}');
+  lines.push('        <header className="lg:hidden flex items-center gap-3 px-4 h-14 border-b border-[var(--border)] bg-[var(--surface)] sticky top-0 z-30">');
+  lines.push('          <button');
+  lines.push('            onClick={() => setSidebarOpen(true)}');
+  lines.push('            className="p-2 -ml-2 rounded-lg hover:bg-[var(--hover)] transition-colors"');
+  lines.push("            aria-label=\"Open sidebar\"");
+  lines.push('          >');
+  lines.push("            <svg className=\"w-5 h-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" strokeWidth={1.5}>");
+  lines.push('              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />');
+  lines.push('            </svg>');
+  lines.push('          </button>');
+  lines.push(`          <span className="font-semibold">${appTitle}</span>`);
+  lines.push('        </header>');
+  lines.push('');
+
+  // Content area
+  lines.push('        <main className="flex-1 p-6 lg:p-8 animate-fade-in">');
+  lines.push('          {children}');
+  lines.push('        </main>');
+  lines.push('      </div>');
+
   lines.push('    </div>');
   lines.push('  );');
   lines.push('}');

@@ -60,7 +60,37 @@ function generateTailwindConfig(): string {
   return `/** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./index.html', './src/**/*.{js,jsx}'],
-  theme: { extend: {} },
+  theme: {
+    extend: {
+      colors: {
+        accent: 'var(--accent)',
+        surface: 'var(--surface)',
+        border: 'var(--border)',
+      },
+      borderRadius: {
+        DEFAULT: 'var(--radius)',
+      },
+      animation: {
+        'fade-in': 'fadeIn 0.2s ease-out',
+        'slide-in': 'slideIn 0.2s ease-out',
+        'slide-up': 'slideUp 0.25s ease-out',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        slideIn: {
+          '0%': { opacity: '0', transform: 'translateX(-8px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        slideUp: {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+    },
+  },
   plugins: [],
 };
 `;
@@ -169,77 +199,148 @@ function generateIndexCss(ctx: TranspileContext): string {
 
 :root {
 ${vars}
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, ${isDark ? 'white' : 'black'});
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
 }
 
+/* ---- Base ---- */
 body {
   margin: 0;
   font-family: ${getFontFamily(ctx)};
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   background: var(--bg);
   color: var(--fg);
+  line-height: 1.6;
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
-/* Tables */
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ---- Typography ---- */
+h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2; }
+h2 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.3; }
+h3 { font-size: 1.125rem; font-weight: 600; line-height: 1.4; }
+
+/* ---- Tables ---- */
 table { width: 100%; border-collapse: collapse; }
-th { text-align: left; font-weight: 600; padding: 12px 16px; border-bottom: 2px solid var(--border); font-size: 0.875rem; }
+th {
+  text-align: left; font-weight: 600; padding: 12px 16px;
+  border-bottom: 2px solid var(--border); font-size: 0.75rem;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+}
 td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+tbody tr { transition: background 0.1s; }
 tbody tr:hover { background: var(--hover); }
 
-/* Forms */
-.form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-group label { font-size: 0.875rem; font-weight: 500; color: var(--muted); }
+/* ---- Forms ---- */
+.form-group {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.form-group label {
+  font-size: 0.8125rem; font-weight: 500; color: var(--muted);
+}
 
-/* Global input/select/textarea */
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
-  width: 100%; border: 1px solid var(--border-input) !important; border-radius: var(--radius);
-  padding: 10px 14px; background: transparent; color: var(--fg);
-  font-size: 0.875rem; outline: none; transition: border-color 0.2s;
+  width: 100%;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
 }
-input::placeholder, textarea::placeholder { color: var(--muted); }
+input::placeholder, textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
 input:focus-visible, select:focus-visible, button:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 2px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
-/* Checkbox/radio */
 input[type="checkbox"], input[type="radio"] {
-  width: auto; cursor: pointer; accent-color: var(--accent);
+  width: auto;
+  cursor: pointer;
+  accent-color: var(--accent);
 }
 
-/* Buttons */
+/* ---- Buttons ---- */
 button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 10px 20px; border-radius: var(--radius); font-size: 0.875rem;
-  font-weight: 500; cursor: pointer; transition: all 0.15s; border: none;
+  font-weight: 500; cursor: pointer; transition: all 0.15s ease; border: none;
+  color: inherit; background: transparent;
 }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
+button:hover { opacity: 0.9; }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
-/* Cards */
+/* ---- Cards ---- */
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 24px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.card:hover { border-color: color-mix(in srgb, var(--border) 80%, var(--accent)); }
+
+/* ---- Empty state ---- */
+.empty-state {
+  text-align: center; padding: 48px 24px; color: var(--muted);
+  font-size: 0.875rem;
 }
 
-/* Empty state */
-.empty-state { text-align: center; padding: 48px 24px; color: var(--muted); font-size: 0.875rem; }
-
-/* Typography */
-h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; }
-h2 { font-size: 1.25rem; font-weight: 600; }
-
-/* Code blocks */
+/* ---- Code blocks ---- */
 code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
 pre { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; margin: 0; }
 pre code { background: none; padding: 0; font-size: inherit; }
 hr { border: none; }
 
-/* Sidebar base */
+/* ---- Sidebar base ---- */
 aside { background: var(--surface); }
+
+/* ---- Utility animations ---- */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+.animate-slide-up { animation: slideUp 0.25s ease-out; }
+.animate-slide-in { animation: slideIn 0.2s ease-out; }
+
+/* ---- Delete/Confirm Modal ---- */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50; animation: fadeIn 0.15s ease-out;
+}
+.modal-panel {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+  max-width: 400px; width: 90%; animation: slideUp 0.2s ease-out;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+/* ---- Selection ---- */
+::selection {
+  background: rgba(var(--accent-rgb), 0.3);
+  color: inherit;
+}
 `;
 }
 
