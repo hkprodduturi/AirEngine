@@ -6,4 +6,7 @@ package-lock.json
 *.tgz
 .DS_Store
 output/.air-cache/
-output/server/prisma/dev.db
+output/client/
+output/server/
+output/docker-compose.yml
+output/README.md
