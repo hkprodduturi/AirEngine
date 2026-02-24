@@ -1,0 +1,167 @@
+# ================================================================
+# WineCellar — Wine Collection Manager
+# ================================================================
+# Wines, regions, vintages, and tasting notes.
+# Demonstrates wine type filtering, collection stats, tasting log.
+# ================================================================
+
+@app:wineCellar
+
+@style(theme:dark,accent:#dc2626,radius:10,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  wines:[{id:int,name:str,winery:str,type:str,year:int,rating:float,price:float,quantity:int,region:str}],
+  regions:[{id:int,name:str,country:str,wineCount:int}],
+  vintages:[{id:int,year:int,quality:str,notes:?str,wine:str}],
+  tastings:[{id:int,wine:str,date:str,rating:float,aroma:str,palate:str,notes:?str}],
+  stats:{totalBottles:int,totalValue:float,avgRating:float,regionCount:int},
+  typeFilter:enum(all,red,white,rose,sparkling),
+  search:str
+}
+
+@db{
+  Region{id:int:primary:auto,name:str:required,country:str:required,description:?str,created_at:datetime:auto}
+  Wine{id:int:primary:auto,name:str:required,winery:str:required,type:enum(red,white,rose,sparkling):required,year:int:required,rating:float:default(0),price:float:required,quantity:int:default(1),region_id:int:required,created_at:datetime:auto}
+  Vintage{id:int:primary:auto,year:int:required,quality:enum(poor,average,good,excellent,outstanding):required,notes:?str,wine_id:int:required}
+  TastingNote{id:int:primary:auto,date:date:required,rating:float:required,aroma:str:required,palate:str:required,finish:?str,notes:?str,wine_id:int:required,user_id:int:required,created_at:datetime:auto}
+  @relation(Region.wines<>Wine.region)
+  @relation(Wine.vintages<>Vintage.wine)
+  @relation(Wine.tastings<>TastingNote.wine)
+  @index(Wine.name+Wine.year)
+  @index(Region.name:unique)
+  @index(TastingNote.date)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/wines>~db.Wine.findMany
+  POST:/wines(name:str,winery:str,type:str,year:int,price:float,region_id:int)>~db.Wine.create
+  PUT:/wines/:id(rating:float,quantity:int)>~db.Wine.update
+  DELETE:/wines/:id>~db.Wine.delete
+  GET:/regions>~db.Region.findMany
+  POST:/regions(name:str,country:str)>~db.Region.create
+  GET:/vintages>~db.Vintage.findMany
+  POST:/vintages(year:int,quality:str,wine_id:int)>~db.Vintage.create
+  GET:/tastings>~db.TastingNote.findMany
+  POST:/tastings(date:str,rating:float,aroma:str,palate:str,wine_id:int)>~db.TastingNote.create
+  DELETE:/tastings/:id>~db.TastingNote.delete
+  GET:/stats>~db.Wine.aggregate
+)
+
+@auth(required,role:enum(collector,sommelier,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /wines>?user>wines:login
+  /regions>?user>regions:login
+  /tastings>?user>tastings:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.wines+~api.regions+~api.stats
+  onChange:typeFilter>~api.wines
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"WineCellar"
+        p:"muted">"Manage your wine collection"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"WC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Wines",btn:ghost>"Regions",btn:ghost>"Tastings")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Bottles">#stats.totalBottles
+        stat:"Collection Value">#stats.totalValue
+        stat:"Avg Rating">#stats.avgRating
+        stat:"Regions">#stats.regionCount
+      )
+      @section:recent(
+        h2>"Recently Added"
+        list>wines>*wine(
+          card(row(text>#wine.name+badge:#wine.type+text>#wine.year+stat:"Rating">#wine.rating))
+        )
+      )
+      @section:top(
+        h2>"Top Rated"
+        list>wines|sort>*wine(
+          card(row(text>#wine.name+text>#wine.winery+stat:"Rating">#wine.rating+text:amount:$#wine.price))
+        )
+      )
+    )
+  )
+  @page:wines(
+    sidebar(
+      logo>"WC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Wines",btn:ghost>"Regions",btn:ghost>"Tastings")
+    )+main(
+      header>h1>"Wine Collection"+search:input>#search+tabs>typeFilter.set(all,red,white,rose,sparkling)+btn:primary>"Add Wine"
+      grid:3>wines|typeFilter|search>*wine(
+        card(
+          h2>#wine.name
+          text>"by "+#wine.winery
+          badge:#wine.type
+          text>#wine.year
+          stat:"Rating">#wine.rating
+          text:amount:$#wine.price
+          stat:"Qty">#wine.quantity
+          text:"muted">#wine.region
+          row(btn:ghost>"Taste">!taste(#wine.id),btn:ghost>"Delete">!del(#wine.id))
+        )
+      )
+    )
+  )
+  @page:regions(
+    sidebar(
+      logo>"WC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Wines",btn:ghost>"Regions",btn:ghost>"Tastings")
+    )+main(
+      header>h1>"Wine Regions"+btn:primary>"Add Region"
+      grid:3>regions>*region(
+        card(
+          h2>#region.name
+          text>"Country: "+#region.country
+          stat:"Wines">#region.wineCount
+        )
+      )
+    )
+  )
+  @page:tastings(
+    sidebar(
+      logo>"WC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Wines",btn:ghost>"Regions",btn:ghost>"Tastings")
+    )+main(
+      header>h1>"Tasting Notes"+btn:primary>"New Tasting"
+      table>tastings>*tasting(
+        text>#tasting.wine
+        text>#tasting.date
+        stat:"Rating">#tasting.rating
+        text>#tasting.aroma
+        text>#tasting.palate
+        text:"muted">#tasting.notes
+      )
+    )
+  )
+)

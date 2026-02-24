@@ -1,0 +1,170 @@
+# ================================================================
+# SpaceDesk — Coworking Space Management
+# ================================================================
+# Members, spaces, bookings, and amenities.
+# Demonstrates space type filtering, booking workflow, stats.
+# ================================================================
+
+@app:spaceDesk
+
+@style(theme:dark,accent:#0ea5e9,radius:12,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  members:[{id:int,name:str,email:str,phone:?str,plan:str,joinedAt:str,bookingCount:int}],
+  spaces:[{id:int,name:str,type:str,capacity:int,pricePerHour:float,floor:int,available:bool}],
+  bookings:[{id:int,spaceName:str,memberName:str,date:str,startTime:str,endTime:str,status:str,totalCost:float}],
+  amenities:[{id:int,name:str,description:str,available:bool,spaceName:str}],
+  stats:{totalMembers:int,totalBookings:int,availableSpaces:int,revenue:float},
+  spaceTypeFilter:enum(all,desk,office,meeting_room,event_space),
+  bookingStatusFilter:enum(all,pending,confirmed,cancelled),
+  search:str
+}
+
+@db{
+  Member{id:int:primary:auto,name:str:required,email:str:required,phone:?str,plan:enum(basic,standard,premium,enterprise):default(basic),company:?str,created_at:datetime:auto}
+  Space{id:int:primary:auto,name:str:required,type:enum(desk,office,meeting_room,event_space):required,capacity:int:required,price_per_hour:float:required,floor:int:required,available:bool:default(true),description:?str,created_at:datetime:auto}
+  Booking{id:int:primary:auto,date:date:required,start_time:str:required,end_time:str:required,status:enum(pending,confirmed,cancelled):default(pending),total_cost:float:required,notes:?str,space_id:int:required,member_id:int:required,created_at:datetime:auto}
+  Amenity{id:int:primary:auto,name:str:required,description:?str,available:bool:default(true),space_id:int:required}
+  @relation(Space.bookings<>Booking.space)
+  @relation(Member.bookings<>Booking.member)
+  @relation(Space.amenities<>Amenity.space)
+  @index(Member.email:unique)
+  @index(Booking.date+Booking.space_id)
+  @index(Booking.status+Booking.member_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/members>~db.Member.findMany
+  POST:/members(name:str,email:str,plan:str)>~db.Member.create
+  PUT:/members/:id(name:str,plan:str)>~db.Member.update
+  DELETE:/members/:id>~db.Member.delete
+  GET:/spaces>~db.Space.findMany
+  POST:/spaces(name:str,type:str,capacity:int,price_per_hour:float,floor:int)>~db.Space.create
+  PUT:/spaces/:id(available:bool)>~db.Space.update
+  DELETE:/spaces/:id>~db.Space.delete
+  GET:/bookings>~db.Booking.findMany
+  POST:/bookings(date:str,start_time:str,end_time:str,total_cost:float,space_id:int,member_id:int)>~db.Booking.create
+  PUT:/bookings/:id(status:str)>~db.Booking.update
+  DELETE:/bookings/:id>~db.Booking.delete
+  GET:/amenities>~db.Amenity.findMany
+  POST:/amenities(name:str,description:str,space_id:int)>~db.Amenity.create
+  GET:/stats>~db.Booking.aggregate
+)
+
+@auth(required,role:enum(member,staff,admin),redirect:/login)
+
+@email(
+  bookingConfirmation(name:str,space:str,date:str)>"Your booking has been confirmed"
+  bookingCancellation(name:str,space:str,date:str)>"Your booking has been cancelled"
+)
+
+@nav(
+  />?user>dashboard:login
+  /spaces>?user>spaces:login
+  /bookings>?user>bookings:login
+  /members>?user>members:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.spaces+~api.stats+~api.bookings
+  onChange:spaceTypeFilter>~api.spaces
+  onChange:bookingStatusFilter>~api.bookings
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"SpaceDesk"
+        p:"muted">"Book your ideal workspace"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"SD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Spaces",btn:ghost>"Bookings",btn:ghost>"Members")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Members">#stats.totalMembers
+        stat:"Bookings">#stats.totalBookings
+        stat:"Available">#stats.availableSpaces
+        stat:"Revenue">#stats.revenue
+      )
+      @section:todayBookings(
+        h2>"Today's Bookings"
+        table>bookings>*booking(text>#booking.spaceName+text>#booking.memberName+text>#booking.startTime+text>#booking.endTime+badge:#booking.status)
+      )
+      @section:availableSpaces(
+        h2>"Available Spaces"
+        grid:3>spaces>*space(card(h2>#space.name+badge:#space.type+row(stat:"Capacity">#space.capacity+text:amount:$#space.pricePerHour+text:"muted">"/hr")))
+      )
+    )
+  )
+  @page:spaces(
+    sidebar(
+      logo>"SD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Spaces",btn:ghost>"Bookings",btn:ghost>"Members")
+    )+main(
+      header>h1>"Spaces"+tabs>spaceTypeFilter.set(all,desk,office,meeting_room,event_space)+btn:primary>"Add Space"
+      grid:3>spaces|spaceTypeFilter>*space(
+        card(
+          h2>#space.name
+          badge:#space.type
+          row(stat:"Capacity">#space.capacity+stat:"Floor">#space.floor)
+          row(text:amount:$#space.pricePerHour+text:"muted">"/hr")
+          ?space.available>badge:"Available"
+          row(btn:primary>"Book">!book(#space.id),btn:ghost>"Edit">!edit(#space.id),btn:ghost>"Delete">!del(#space.id))
+        )
+      )
+    )
+  )
+  @page:bookings(
+    sidebar(
+      logo>"SD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Spaces",btn:ghost>"Bookings",btn:ghost>"Members")
+    )+main(
+      header>h1>"Bookings"+search:input>#search+tabs>bookingStatusFilter.set(all,pending,confirmed,cancelled)+btn:primary>"New Booking"
+      table>bookings|bookingStatusFilter|search>*booking(
+        text>#booking.spaceName
+        text>#booking.memberName
+        text>#booking.date
+        badge:#booking.status
+        text:amount:$#booking.totalCost
+        row(btn:ghost>"Confirm">!confirm(#booking.id),btn:ghost>"Cancel">!cancel(#booking.id))
+      )
+    )
+  )
+  @page:members(
+    sidebar(
+      logo>"SD"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Spaces",btn:ghost>"Bookings",btn:ghost>"Members")
+    )+main(
+      header>h1>"Members"+search:input>#search+btn:primary>"Add Member"
+      table>members|search>*member(
+        text>#member.name
+        text>#member.email
+        badge:#member.plan
+        stat:"Bookings">#member.bookingCount
+        row(btn:ghost>"Edit">!edit(#member.id),btn:ghost>"Delete">!del(#member.id))
+      )
+    )
+  )
+)

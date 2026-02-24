@@ -1,0 +1,120 @@
+# ================================================================
+# JobBoard — Job Listing Platform
+# ================================================================
+# Jobs, companies, applications, and search.
+# Demonstrates multi-model search, application workflow.
+# ================================================================
+
+@app:jobboard
+
+@style(theme:light,accent:#3b82f6,radius:10,font:sans,maxWidth:1200)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  jobs:[{id:int,title:str,company:str,location:str,type:str,salary:?str,postedAt:str}],
+  applications:[{id:int,jobTitle:str,company:str,status:str,appliedAt:str}],
+  companies:[{id:int,name:str,industry:str,size:str,jobCount:int}],
+  search:str,
+  typeFilter:enum(all,full_time,part_time,contract,remote),
+  applicationStatus:enum(all,pending,reviewed,interview,offered,rejected)
+}
+
+@db{
+  Company{id:int:primary:auto,name:str:required,industry:str:required,size:enum(startup,small,medium,large,enterprise):required,website:?str,description:?str,created_at:datetime:auto}
+  Job{id:int:primary:auto,title:str:required,description:str:required,location:str:required,type:enum(full_time,part_time,contract,remote):required,salary_range:?str,company_id:int:required,posted_by:int:required,active:bool:default(true),created_at:datetime:auto}
+  Application{id:int:primary:auto,cover_letter:?str,status:enum(pending,reviewed,interview,offered,rejected):default(pending),job_id:int:required,applicant_id:int:required,created_at:datetime:auto}
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(seeker,employer,admin),resume_url:?str,created_at:datetime:auto}
+  @relation(Company.jobs<>Job.company)
+  @relation(User.postedJobs<>Job.poster)
+  @relation(Job.applications<>Application.job)
+  @relation(User.applications<>Application.applicant)
+  @index(User.email:unique)
+  @index(Job.type+Job.active)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/jobs>~db.Job.findMany
+  GET:/jobs/:id>~db.Job.findFirst
+  POST:/jobs(title:str,description:str,location:str,type:str,company_id:int)>~db.Job.create
+  DELETE:/jobs/:id>~db.Job.delete
+  POST:/jobs/:id/apply(cover_letter:str)>~db.Application.create
+  GET:/applications>~db.Application.findMany
+  PUT:/applications/:id(status:str)>~db.Application.update
+  GET:/companies>~db.Company.findMany
+  POST:/companies(name:str,industry:str,size:str)>~db.Company.create
+)
+
+@auth(required,role:enum(seeker,employer,admin),redirect:/login)
+
+@email(
+  applicationReceived(name:str,job:str)>"New application received"
+  statusUpdate(name:str,job:str,status:str)>"Application status update"
+)
+
+@nav(
+  />?user>jobs:login
+  /applications>?user>applications:login
+  /companies>?user>companies:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.jobs+~api.companies
+  onChange:typeFilter>~api.jobs
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"JobBoard"
+        p:"muted">"Find your next opportunity"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"New here? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:jobs(
+    header>h1>"Job Listings"+search:input>#search+tabs>typeFilter.set(all,full_time,part_time,contract,remote)
+    list>jobs|typeFilter|search>*job(
+      card(
+        row(h2>#job.title+badge:#job.type)
+        row(text>#job.company+text:"muted">#job.location+text:"muted">#job.salary)
+        row(text:"muted">#job.postedAt+btn:primary>"Apply">!apply(#job.id))
+      )
+    )
+  )
+  @page:applications(
+    header>h1>"My Applications"+tabs>applicationStatus.set(all,pending,reviewed,interview,offered)
+    table>applications|applicationStatus>*app(
+      text>#app.jobTitle
+      text>#app.company
+      badge:#app.status
+      text:"muted">#app.appliedAt
+    )
+  )
+  @page:companies(
+    header>h1>"Companies"
+    grid:3>companies>*company(
+      card(
+        h2>#company.name
+        badge:#company.industry
+        badge:#company.size
+        stat:"Open Jobs">#company.jobCount
+      )
+    )
+  )
+)

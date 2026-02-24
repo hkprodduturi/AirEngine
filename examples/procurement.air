@@ -1,0 +1,155 @@
+# ================================================================
+# ProcureFlow — Procurement & Purchase Order System
+# ================================================================
+# Vendors, purchase orders, order items, and categories.
+# Demonstrates status workflow, spend tracking, vendor management.
+# ================================================================
+
+@app:procureflow
+
+@style(theme:dark,accent:#d97706,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  vendors:[{id:int,name:str,email:str,phone:?str,category:str,rating:int}],
+  orders:[{id:int,number:str,vendorName:str,total:float,status:str,expectedDate:str,createdAt:str}],
+  orderItems:[{id:int,productName:str,quantity:int,unitPrice:float,total:float}],
+  categories:[{id:int,name:str,description:?str}],
+  spendStats:{totalSpend:float,pendingOrders:int,approvedOrders:int,vendorCount:int},
+  orderStatusFilter:enum(all,draft,pending,approved,ordered,received,cancelled),
+  categoryFilter:enum(all,office_supplies,it_equipment,raw_materials,services),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(requester,approver,admin),created_at:datetime:auto}
+  Category{id:int:primary:auto,name:str:required,description:?str,created_at:datetime:auto}
+  Vendor{id:int:primary:auto,name:str:required,email:str:required,phone:?str,address:?str,category_id:int:required,rating:int:default(3),active:bool:default(true),created_at:datetime:auto}
+  PurchaseOrder{id:int:primary:auto,number:str:required,status:enum(draft,pending,approved,ordered,received,cancelled):default(draft),subtotal:float:required,tax:float:default(0),total:float:required,expected_date:date:required,notes:?str,vendor_id:int:required,requester_id:int:required,approver_id:?int,created_at:datetime:auto}
+  OrderItem{id:int:primary:auto,product_name:str:required,description:?str,quantity:int:required,unit_price:float:required,total:float:required,purchase_order_id:int:required}
+  @relation(Category.vendors<>Vendor.category)
+  @relation(Vendor.orders<>PurchaseOrder.vendor)
+  @relation(User.requested<>PurchaseOrder.requester)
+  @relation(User.approved<>PurchaseOrder.approver)
+  @relation(PurchaseOrder.items<>OrderItem.purchaseOrder)
+  @index(User.email:unique)
+  @index(Vendor.email:unique)
+  @index(PurchaseOrder.number:unique)
+  @index(PurchaseOrder.status+PurchaseOrder.vendor_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/vendors>~db.Vendor.findMany
+  POST:/vendors(name:str,email:str,category_id:int)>~db.Vendor.create
+  PUT:/vendors/:id(name:str,email:str,rating:int)>~db.Vendor.update
+  DELETE:/vendors/:id>~db.Vendor.delete
+  GET:/categories>~db.Category.findMany
+  POST:/categories(name:str)>~db.Category.create
+  GET:/orders>~db.PurchaseOrder.findMany
+  POST:/orders(number:str,subtotal:float,tax:float,total:float,expected_date:str,vendor_id:int)>~db.PurchaseOrder.create
+  PUT:/orders/:id(status:str)>~db.PurchaseOrder.update
+  DELETE:/orders/:id>~db.PurchaseOrder.delete
+  POST:/order-items(product_name:str,quantity:int,unit_price:float,total:float,purchase_order_id:int)>~db.OrderItem.create
+  GET:/spend/stats>~db.PurchaseOrder.aggregate
+)
+
+@auth(required,role:enum(requester,approver,admin),redirect:/login)
+
+@email(
+  orderSubmitted(name:str,number:str)>"Purchase order submitted for approval"
+  orderApproved(name:str,number:str)>"Your purchase order has been approved"
+)
+
+@nav(
+  />?user>dashboard:login
+  /orders>?user>orders:login
+  /vendors>?user>vendors:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.orders+~api.vendors+~api.stats
+  onChange:orderStatusFilter>~api.orders
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"ProcureFlow"
+        p:"muted">"Procurement and purchase management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"PF"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Vendors")
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Spend">#spendStats.totalSpend
+        stat:"Pending Orders">#spendStats.pendingOrders
+        stat:"Approved">#spendStats.approvedOrders
+        stat:"Vendors">#spendStats.vendorCount
+      )
+      @section:recentOrders(
+        h2>"Recent Orders"
+        table>orders>*order(text>#order.number+text>#order.vendorName+text:amount:$#order.total+badge:#order.status+text:"muted">#order.expectedDate)
+      )
+      @section:topVendors(
+        h2>"Top Vendors"
+        list>vendors>*vendor(card(text>#vendor.name+badge:#vendor.category+text:"muted">#vendor.email+stat:"Rating">#vendor.rating))
+      )
+    )
+  )
+  @page:orders(
+    sidebar(
+      logo>"PF"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Vendors")
+    )+main(
+      header>h1>"Purchase Orders"+search:input>#search+tabs>orderStatusFilter.set(all,draft,pending,approved,ordered,received)+btn:primary>"New Order"
+      table>orders|orderStatusFilter|search>*order(
+        text>#order.number
+        text>#order.vendorName
+        text:amount:$#order.total
+        badge:#order.status
+        text:"muted">#order.expectedDate
+        text:"muted">#order.createdAt
+        row(btn:ghost>"Submit">!submit(#order.id),btn:ghost>"Approve">!approve(#order.id),btn:ghost>"Delete">!del(#order.id))
+      )
+    )
+  )
+  @page:vendors(
+    sidebar(
+      logo>"PF"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Vendors")
+    )+main(
+      header>h1>"Vendors"+search:input>#search+btn:primary>"Add Vendor"
+      grid:3>vendors|search>*vendor(
+        card(
+          h2>#vendor.name
+          badge:#vendor.category
+          text>#vendor.email
+          text:"muted">#vendor.phone
+          stat:"Rating">#vendor.rating
+          row(btn:ghost>"Edit">!update(#vendor.id),btn:ghost>"Delete">!del(#vendor.id))
+        )
+      )
+    )
+  )
+)

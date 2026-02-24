@@ -1,0 +1,170 @@
+# LicenseMgmt — Software License Tracking System
+
+@app:licenseMgmt
+
+@style(theme:dark,accent:#14b8a6,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  software:[{id:int,name:str,version:str,vendorName:str,licenseCount:int,category:str}],
+  licenses:[{id:int,key:str,type:str,status:str,softwareName:str,cost:float,expiresAt:?str,createdAt:str}],
+  assignments:[{id:int,userName:str,licenseName:str,softwareName:str,assignedAt:str}],
+  vendors:[{id:int,name:str,contactEmail:str,website:?str,softwareCount:int}],
+  stats:{totalLicenses:int,active:int,expired:int,totalCost:float},
+  licenseStatusFilter:enum(all,active,expired,suspended),
+  typeFilter:enum(all,perpetual,subscription,trial,open_source),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(admin,manager,viewer),created_at:datetime:auto}
+  Vendor{id:int:primary:auto,name:str:required,contact_email:str:required,website:?str,created_at:datetime:auto}
+  Software{id:int:primary:auto,name:str:required,version:str:required,category:str:required,vendor_id:int:required,created_at:datetime:auto}
+  License{id:int:primary:auto,license_key:str:required,license_type:enum(perpetual,subscription,trial,open_source):default(subscription),status:enum(active,expired,suspended):default(active),seat_count:int:default(1),cost:float:required,purchased_at:date:required,expires_at:?date,software_id:int:required,created_at:datetime:auto}
+  Assignment{id:int:primary:auto,user_id:int:required,license_id:int:required,assigned_at:datetime:auto}
+  @relation(Vendor.software<>Software.vendor)
+  @relation(Software.licenses<>License.software)
+  @relation(License.assignments<>Assignment.license)
+  @relation(User.assignments<>Assignment.user)
+  @index(User.email:unique)
+  @index(Vendor.contact_email:unique)
+  @index(License.license_key:unique)
+  @index(License.status+License.software_id)
+  @index(Assignment.user_id+Assignment.license_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/software>~db.Software.findMany
+  POST:/software(name:str,version:str,category:str,vendor_id:int)>~db.Software.create
+  DELETE:/software/:id>~db.Software.delete
+  GET:/licenses>~db.License.findMany
+  POST:/licenses(license_key:str,license_type:str,cost:float,software_id:int)>~db.License.create
+  PUT:/licenses/:id(status:str)>~db.License.update
+  DELETE:/licenses/:id>~db.License.delete
+  GET:/assignments>~db.Assignment.findMany
+  POST:/assignments(user_id:int,license_id:int)>~db.Assignment.create
+  DELETE:/assignments/:id>~db.Assignment.delete
+  GET:/vendors>~db.Vendor.findMany
+  POST:/vendors(name:str,contact_email:str,website:?str)>~db.Vendor.create
+  DELETE:/vendors/:id>~db.Vendor.delete
+  GET:/stats>~db.License.aggregate
+)
+
+@auth(required,role:enum(admin,manager,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /licenses>?user>licenses:login
+  /software>?user>software:login
+  /assignments>?user>assignments:login
+  /vendors>?user>vendors:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.licenses+~api.software+~api.stats
+  onChange:licenseStatusFilter>~api.licenses
+  onChange:typeFilter>~api.licenses
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"LicenseMgmt"
+        p:"muted">"Track and manage software licenses"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"LM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Licenses",btn:ghost>"Software",btn:ghost>"Assignments",btn:ghost>"Vendors")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Licenses">#stats.totalLicenses
+        stat:"Active">#stats.active
+        stat:"Expired">#stats.expired
+        stat:"Total Cost">#stats.totalCost
+      )
+      @section:recentLicenses(
+        h2>"Recent Licenses"
+        table>licenses>*lic(text>#lic.key+badge:#lic.type+badge:#lic.status+text:"muted">#lic.softwareName+text>#lic.cost+text:"muted">#lic.expiresAt)
+      )
+    )
+  )
+  @page:licenses(
+    sidebar(
+      logo>"LM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Licenses",btn:ghost>"Software",btn:ghost>"Assignments",btn:ghost>"Vendors")
+    )+main(
+      header>h1>"Licenses"+search:input>#search+tabs>licenseStatusFilter.set(all,active,expired,suspended)+btn:primary>"New License"
+      table>licenses|licenseStatusFilter|search>*lic(
+        text>#lic.key+badge:#lic.type+badge:#lic.status+text:"muted">#lic.softwareName+text>#lic.cost+text:"muted">#lic.expiresAt
+        row(btn:ghost>"Assign">!assignLicense(#lic.id),btn:ghost>"Suspend">!suspend(#lic.id),btn:icon:!del(#lic.id))
+      )
+    )
+  )
+  @page:software(
+    sidebar(
+      logo>"LM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Licenses",btn:ghost>"Software",btn:ghost>"Assignments",btn:ghost>"Vendors")
+    )+main(
+      header>h1>"Software"+btn:primary>"Add Software"
+      grid:3>software>*sw(
+        card(
+          h2>#sw.name
+          text:"muted">#sw.version
+          badge:#sw.category
+          text:"muted">#sw.vendorName
+          stat:"Licenses">#sw.licenseCount
+          row(btn:ghost>"View Licenses",btn:icon:!del(#sw.id))
+        )
+      )
+    )
+  )
+  @page:assignments(
+    sidebar(
+      logo>"LM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Licenses",btn:ghost>"Software",btn:ghost>"Assignments",btn:ghost>"Vendors")
+    )+main(
+      header>h1>"Assignments"+btn:primary>"New Assignment"
+      table>assignments>*asn(
+        text>#asn.userName+text>#asn.licenseName+text:"muted">#asn.softwareName+text:"muted">#asn.assignedAt
+        row(btn:ghost>"Revoke">!revoke(#asn.id))
+      )
+    )
+  )
+  @page:vendors(
+    sidebar(
+      logo>"LM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Licenses",btn:ghost>"Software",btn:ghost>"Assignments",btn:ghost>"Vendors")
+    )+main(
+      header>h1>"Vendors"+btn:primary>"Add Vendor"
+      grid:3>vendors>*vendor(
+        card(
+          h2>#vendor.name
+          text:"muted">#vendor.contactEmail
+          ?vendor.website>text:"muted">#vendor.website
+          stat:"Software">#vendor.softwareCount
+          row(btn:ghost>"Edit",btn:icon:!del(#vendor.id))
+        )
+      )
+    )
+  )
+)

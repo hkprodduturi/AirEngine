@@ -1,0 +1,163 @@
+# ================================================================
+# PawsHome — Pet Adoption & Animal Shelter
+# ================================================================
+# Animals, breeds, applications, and adopters.
+# Demonstrates dual status enums, adoption workflow, search.
+# ================================================================
+
+@app:pawsHome
+
+@style(theme:dark,accent:#f59e0b,radius:12,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  animals:[{id:int,name:str,species:str,breed:str,age:int,gender:str,status:str,imageUrl:?str}],
+  breeds:[{id:int,name:str,species:str,animalCount:int}],
+  applications:[{id:int,animalName:str,adopterName:str,status:str,reason:str,createdAt:str}],
+  adopters:[{id:int,name:str,email:str,phone:?str,address:str,applicationCount:int}],
+  stats:{totalAnimals:int,available:int,pending:int,adopted:int},
+  animalStatusFilter:enum(all,available,pending,adopted),
+  appStatusFilter:enum(all,submitted,reviewed,approved,rejected),
+  search:str
+}
+
+@db{
+  Breed{id:int:primary:auto,name:str:required,species:enum(dog,cat,bird,rabbit,other):required}
+  Animal{id:int:primary:auto,name:str:required,age:int:required,gender:enum(male,female):required,description:?str,image_url:?str,status:enum(available,pending,adopted):default(available),breed_id:int:required,intake_date:date:required,created_at:datetime:auto}
+  Adopter{id:int:primary:auto,name:str:required,email:str:required,phone:?str,address:str:required,created_at:datetime:auto}
+  Application{id:int:primary:auto,reason:str:required,status:enum(submitted,reviewed,approved,rejected):default(submitted),home_type:enum(house,apartment,condo):required,has_yard:bool:default(false),animal_id:int:required,adopter_id:int:required,created_at:datetime:auto}
+  @relation(Breed.animals<>Animal.breed)
+  @relation(Animal.applications<>Application.animal)
+  @relation(Adopter.applications<>Application.adopter)
+  @index(Adopter.email:unique)
+  @index(Animal.status+Animal.breed_id)
+  @index(Application.status+Application.animal_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/animals>~db.Animal.findMany
+  POST:/animals(name:str,age:int,gender:str,breed_id:int,intake_date:str)>~db.Animal.create
+  PUT:/animals/:id(status:str)>~db.Animal.update
+  DELETE:/animals/:id>~db.Animal.delete
+  GET:/breeds>~db.Breed.findMany
+  POST:/breeds(name:str,species:str)>~db.Breed.create
+  GET:/applications>~db.Application.findMany
+  POST:/applications(reason:str,home_type:str,animal_id:int,adopter_id:int)>~db.Application.create
+  PUT:/applications/:id(status:str)>~db.Application.update
+  GET:/adopters>~db.Adopter.findMany
+  POST:/adopters(name:str,email:str,address:str)>~db.Adopter.create
+  GET:/stats>~db.Animal.aggregate
+)
+
+@auth(required,role:enum(staff,manager,admin),redirect:/login)
+
+@email(
+  applicationReceived(name:str,animal:str)>"New adoption application received"
+  applicationApproved(name:str,animal:str)>"Your adoption application has been approved"
+  applicationRejected(name:str,animal:str)>"Update on your adoption application"
+)
+
+@nav(
+  />?user>dashboard:login
+  /animals>?user>animals:login
+  /applications>?user>applications:login
+  /adopters>?user>adopters:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.animals+~api.stats+~api.breeds
+  onChange:animalStatusFilter>~api.animals
+  onChange:appStatusFilter>~api.applications
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"PawsHome"
+        p:"muted">"Find forever homes for animals in need"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"PH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Animals",btn:ghost>"Applications",btn:ghost>"Adopters")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Animals">#stats.totalAnimals
+        stat:"Available">#stats.available
+        stat:"Pending">#stats.pending
+        stat:"Adopted">#stats.adopted
+      )
+      @section:recent(
+        h2>"Recently Added Animals"
+        grid:3>animals>*animal(card(h2>#animal.name+row(badge:#animal.species+badge:#animal.status)+text:"muted">"Age: "+#animal.age+" years"+text:"muted">#animal.breed))
+      )
+    )
+  )
+  @page:animals(
+    sidebar(
+      logo>"PH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Animals",btn:ghost>"Applications",btn:ghost>"Adopters")
+    )+main(
+      header>h1>"Animals"+search:input>#search+tabs>animalStatusFilter.set(all,available,pending,adopted)+btn:primary>"Add Animal"
+      grid:3>animals|animalStatusFilter|search>*animal(
+        card(
+          h2>#animal.name
+          row(badge:#animal.species+badge:#animal.status)
+          text>"Breed: "+#animal.breed
+          row(text:"muted">"Age: "+#animal.age+text:"muted">#animal.gender)
+          row(btn:ghost>"Edit">!edit(#animal.id),btn:ghost>"Delete">!del(#animal.id))
+        )
+      )
+    )
+  )
+  @page:applications(
+    sidebar(
+      logo>"PH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Animals",btn:ghost>"Applications",btn:ghost>"Adopters")
+    )+main(
+      header>h1>"Applications"+tabs>appStatusFilter.set(all,submitted,reviewed,approved,rejected)
+      table>applications|appStatusFilter>*app(
+        text>#app.animalName
+        text>#app.adopterName
+        badge:#app.status
+        text:"muted">#app.reason
+        text:"muted">#app.createdAt
+        row(btn:ghost>"Review">!review(#app.id),btn:ghost>"Approve">!approve(#app.id),btn:ghost>"Reject">!reject(#app.id))
+      )
+    )
+  )
+  @page:adopters(
+    sidebar(
+      logo>"PH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Animals",btn:ghost>"Applications",btn:ghost>"Adopters")
+    )+main(
+      header>h1>"Adopters"+search:input>#search+btn:primary>"Add Adopter"
+      table>adopters|search>*adopter(
+        text>#adopter.name
+        text>#adopter.email
+        text:"muted">#adopter.phone
+        text>#adopter.address
+        stat:"Apps">#adopter.applicationCount
+      )
+    )
+  )
+)

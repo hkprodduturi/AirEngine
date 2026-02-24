@@ -1,0 +1,165 @@
+# ColdChain — Temperature-Controlled Logistics Monitoring
+
+@app:coldChain
+
+@style(theme:dark,accent:#06b6d4,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  facilities:[{id:int,name:str,location:str,type:str,capacity:int,active:bool}],
+  sensors:[{id:int,name:str,type:str,facility:str,reading:float,battery:int,status:str}],
+  shipments:[{id:int,reference:str,status:str,origin:str,destination:str,minTemp:float,maxTemp:float}],
+  alerts:[{id:int,message:str,severity:str,sensor:str,reading:float,triggered:str,resolved:bool}],
+  stats:{totalShipments:int,inTransit:int,activeAlerts:int,avgTemp:float},
+  shipmentFilter:enum(all,pending,in_transit,delivered),
+  alertFilter:enum(all,info,warning,critical),
+  search:str
+}
+
+@db{
+  Facility{id:int:primary:auto,name:str:required,location:str:required,facility_type:enum(warehouse,hub,distribution_center):required,capacity:int:required,min_temp:float:required,max_temp:float:required,active:bool:default(true),created_at:datetime:auto}
+  Sensor{id:int:primary:auto,name:str:required,sensor_type:enum(temperature,humidity,pressure):required,serial_number:str:required,current_reading:float:default(0),battery_level:int:default(100),status:enum(online,offline,error):default(online),facility_id:int:required,created_at:datetime:auto}
+  Shipment{id:int:primary:auto,reference:str:required,status:enum(pending,in_transit,delivered):default(pending),origin_facility_id:int:required,destination:str:required,min_temp_required:float:required,max_temp_required:float:required,cargo_description:str:required,created_at:datetime:auto}
+  Alert{id:int:primary:auto,message:str:required,severity:enum(info,warning,critical):required,sensor_id:int:required,reading_value:float:required,threshold_value:float:required,resolved:bool:default(false),triggered_at:datetime:auto}
+  @relation(Facility.sensors<>Sensor.facility)
+  @relation(Facility.shipments<>Shipment.origin_facility)
+  @relation(Sensor.alerts<>Alert.sensor)
+  @index(Sensor.serial_number:unique)
+  @index(Shipment.reference:unique)
+  @index(Alert.severity+Alert.resolved)
+  @index(Shipment.status+Shipment.origin_facility_id)
+}
+
+@env(DATABASE_URL:str:required JWT_SECRET:str:required ALERT_WEBHOOK_URL:str:required PORT:int:3001)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/facilities>~db.Facility.findMany
+  POST:/facilities(name:str,location:str,facility_type:str,capacity:int,min_temp:float,max_temp:float)>~db.Facility.create
+  PUT:/facilities/:id(active:bool)>~db.Facility.update
+  DELETE:/facilities/:id>~db.Facility.delete
+  GET:/sensors>~db.Sensor.findMany
+  POST:/sensors(name:str,sensor_type:str,serial_number:str,facility_id:int)>~db.Sensor.create
+  PUT:/sensors/:id(current_reading:float,battery_level:int,status:str)>~db.Sensor.update
+  DELETE:/sensors/:id>~db.Sensor.delete
+  GET:/shipments>~db.Shipment.findMany
+  POST:/shipments(reference:str,origin_facility_id:int,destination:str,min_temp_required:float,max_temp_required:float,cargo_description:str)>~db.Shipment.create
+  PUT:/shipments/:id(status:str)>~db.Shipment.update
+  DELETE:/shipments/:id>~db.Shipment.delete
+  GET:/alerts>~db.Alert.findMany
+  POST:/alerts(message:str,severity:str,sensor_id:int,reading_value:float,threshold_value:float)>~db.Alert.create
+  PUT:/alerts/:id(resolved:bool)>~db.Alert.update
+  GET:/stats>~db.Shipment.aggregate
+)
+
+@auth(required,role:enum(admin,operator,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /shipments>?user>shipments:login
+  /sensors>?user>sensors:login
+  /alerts>?user>alerts:login
+  /facilities>?user>facilities:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.alerts
+  onChange:shipmentFilter>~api.shipments
+  onChange:alertFilter>~api.alerts
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"ColdChain"
+        p:"muted">"Temperature-controlled logistics monitoring"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"CC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Sensors",btn:ghost>"Alerts",btn:ghost>"Facilities")
+    )+main(
+      header>h1>"Cold Chain Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Shipments">#stats.totalShipments
+        stat:"In Transit">#stats.inTransit
+        stat:"Active Alerts">#stats.activeAlerts
+        stat:"Avg Temp">#stats.avgTemp
+      )
+      @section:critical(
+        h2>"Critical Alerts"
+        list>alerts|critical>*alert(
+          card(row(badge:#alert.severity+text>#alert.message)+text:"muted">"Sensor: "+text>#alert.sensor+text:"muted">#alert.triggered+btn:primary>"Resolve">!resolve(#alert.id))
+        )
+      )
+    )
+  )
+  @page:shipments(
+    sidebar(
+      logo>"CC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Sensors",btn:ghost>"Alerts",btn:ghost>"Facilities")
+    )+main(
+      header>h1>"Shipments"+tabs>shipmentFilter.set(all,pending,in_transit,delivered)+btn:primary>"New Shipment"
+      table>shipments|shipmentFilter>*shipment(
+        text>#shipment.reference+badge:#shipment.status+text>#shipment.origin+text>#shipment.destination
+        row(text>"Min: "+text>#shipment.minTemp,text>"Max: "+text>#shipment.maxTemp)
+        row(btn:ghost>"Track",btn:ghost>"Update">!update(#shipment.id),btn:icon:!del(#shipment.id))
+      )
+    )
+  )
+  @page:sensors(
+    sidebar(
+      logo>"CC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Sensors",btn:ghost>"Alerts",btn:ghost>"Facilities")
+    )+main(
+      header>h1>"Sensors"+search:input>#search+btn:primary>"Add Sensor"
+      table>sensors|search>*sensor(
+        text>#sensor.name+badge:#sensor.type+text:"muted">#sensor.facility+text>#sensor.reading+text>"Battery: "+text>#sensor.battery+badge:#sensor.status
+        row(btn:ghost>"Calibrate",btn:icon:!del(#sensor.id))
+      )
+    )
+  )
+  @page:alerts(
+    sidebar(
+      logo>"CC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Sensors",btn:ghost>"Alerts",btn:ghost>"Facilities")
+    )+main(
+      header>h1>"Alerts"+tabs>alertFilter.set(all,info,warning,critical)
+      table>alerts|alertFilter>*alert(
+        badge:#alert.severity+text>#alert.message+text:"muted">#alert.sensor+text>#alert.reading+text:"muted">#alert.triggered+badge:#alert.resolved
+        btn:ghost>"Resolve">!resolve(#alert.id)
+      )
+    )
+  )
+  @page:facilities(
+    sidebar(
+      logo>"CC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Shipments",btn:ghost>"Sensors",btn:ghost>"Alerts",btn:ghost>"Facilities")
+    )+main(
+      header>h1>"Facilities"+btn:primary>"Add Facility"
+      grid:3>facilities>*facility(
+        card(
+          h2>#facility.name
+          text>"Location: "+text>#facility.location
+          badge:#facility.type
+          text>"Capacity: "+text>#facility.capacity
+          badge:#facility.active
+          row(btn:ghost>"Manage",btn:icon:!del(#facility.id))
+        )
+      )
+    )
+  )
+)

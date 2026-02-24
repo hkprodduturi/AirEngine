@@ -1,0 +1,170 @@
+# ================================================================
+# FleetTrack — Vehicle Fleet Management
+# ================================================================
+# Vehicles, drivers, trips, and maintenance records.
+# Demonstrates status enums, date fields, fleet stats.
+# ================================================================
+
+@app:fleettrack
+
+@style(theme:dark,accent:#dc2626,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  vehicles:[{id:int,plate:str,make:str,model:str,year:int,status:str,mileage:int}],
+  drivers:[{id:int,name:str,email:str,license:str,status:str,vehiclePlate:?str}],
+  trips:[{id:int,driverName:str,vehiclePlate:str,origin:str,destination:str,distance:float,status:str,startDate:str}],
+  maintenanceRecords:[{id:int,vehiclePlate:str,type:str,description:str,cost:float,status:str,scheduledDate:str}],
+  fleetStats:{totalVehicles:int,activeTrips:int,maintenanceDue:int,totalMileage:int},
+  vehicleStatusFilter:enum(all,available,in_use,maintenance,retired),
+  tripStatusFilter:enum(all,scheduled,in_progress,completed,cancelled),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(driver,dispatcher,admin),created_at:datetime:auto}
+  Vehicle{id:int:primary:auto,plate:str:required,make:str:required,model:str:required,year:int:required,mileage:int:default(0),status:enum(available,in_use,maintenance,retired):default(available),fuel_type:enum(gasoline,diesel,electric,hybrid):required,created_at:datetime:auto}
+  Driver{id:int:primary:auto,name:str:required,email:str:required,license_number:str:required,phone:?str,status:enum(available,on_trip,off_duty):default(available),user_id:int:required,created_at:datetime:auto}
+  Trip{id:int:primary:auto,origin:str:required,destination:str:required,distance:?float,status:enum(scheduled,in_progress,completed,cancelled):default(scheduled),start_date:date:required,end_date:?date,notes:?str,vehicle_id:int:required,driver_id:int:required,created_at:datetime:auto}
+  MaintenanceRecord{id:int:primary:auto,type:enum(oil_change,tire_rotation,brake_service,inspection,repair):required,description:str:required,cost:float:required,status:enum(scheduled,in_progress,completed):default(scheduled),scheduled_date:date:required,completed_date:?date,vehicle_id:int:required,created_at:datetime:auto}
+  @relation(User.driver<>Driver.user)
+  @relation(Vehicle.trips<>Trip.vehicle)
+  @relation(Driver.trips<>Trip.driver)
+  @relation(Vehicle.maintenance<>MaintenanceRecord.vehicle)
+  @index(User.email:unique)
+  @index(Vehicle.plate:unique)
+  @index(Driver.license_number:unique)
+  @index(Trip.status+Trip.driver_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/vehicles>~db.Vehicle.findMany
+  POST:/vehicles(plate:str,make:str,model:str,year:int,fuel_type:str)>~db.Vehicle.create
+  PUT:/vehicles/:id(status:str,mileage:int)>~db.Vehicle.update
+  DELETE:/vehicles/:id>~db.Vehicle.delete
+  GET:/drivers>~db.Driver.findMany
+  POST:/drivers(name:str,email:str,license_number:str)>~db.Driver.create
+  GET:/trips>~db.Trip.findMany
+  POST:/trips(origin:str,destination:str,start_date:str,vehicle_id:int,driver_id:int)>~db.Trip.create
+  PUT:/trips/:id(status:str,distance:float)>~db.Trip.update
+  DELETE:/trips/:id>~db.Trip.delete
+  GET:/maintenance>~db.MaintenanceRecord.findMany
+  POST:/maintenance(type:str,description:str,cost:float,scheduled_date:str,vehicle_id:int)>~db.MaintenanceRecord.create
+  PUT:/maintenance/:id(status:str)>~db.MaintenanceRecord.update
+  GET:/fleet/stats>~db.Vehicle.aggregate
+)
+
+@auth(required,role:enum(driver,dispatcher,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /vehicles>?user>vehicles:login
+  /trips>?user>trips:login
+  /maintenance>?user>maintenance:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.vehicles+~api.trips+~api.stats
+  onChange:vehicleStatusFilter>~api.vehicles
+  onChange:tripStatusFilter>~api.trips
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"FleetTrack"
+        p:"muted">"Vehicle fleet management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Vehicles",btn:ghost>"Trips",btn:ghost>"Maintenance")
+    )+main(
+      header>h1>"Fleet Dashboard"
+      grid:4(
+        stat:"Total Vehicles">#fleetStats.totalVehicles
+        stat:"Active Trips">#fleetStats.activeTrips
+        stat:"Maintenance Due">#fleetStats.maintenanceDue
+        stat:"Total Mileage">#fleetStats.totalMileage
+      )
+      @section:activeTrips(
+        h2>"Active Trips"
+        table>trips>*trip(text>#trip.driverName+text>#trip.vehiclePlate+text>#trip.origin+text>#trip.destination+badge:#trip.status+text:"muted">#trip.startDate)
+      )
+      @section:upcomingMaintenance(
+        h2>"Upcoming Maintenance"
+        list>maintenanceRecords>*rec(card(text>#rec.vehiclePlate+badge:#rec.type+text:"muted">#rec.scheduledDate+badge:#rec.status))
+      )
+    )
+  )
+  @page:vehicles(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Vehicles",btn:ghost>"Trips",btn:ghost>"Maintenance")
+    )+main(
+      header>h1>"Vehicles"+search:input>#search+tabs>vehicleStatusFilter.set(all,available,in_use,maintenance,retired)+btn:primary>"Add Vehicle"
+      grid:3>vehicles|vehicleStatusFilter|search>*veh(
+        card(
+          h2>#veh.make+" "+#veh.model
+          text:"muted">#veh.plate
+          row(badge:#veh.status+text>#veh.year)
+          stat:"Mileage">#veh.mileage
+          row(btn:ghost>"Edit">!update(#veh.id),btn:ghost>"Delete">!del(#veh.id))
+        )
+      )
+    )
+  )
+  @page:trips(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Vehicles",btn:ghost>"Trips",btn:ghost>"Maintenance")
+    )+main(
+      header>h1>"Trips"+tabs>tripStatusFilter.set(all,scheduled,in_progress,completed,cancelled)+btn:primary>"New Trip"
+      table>trips|tripStatusFilter>*trip(
+        text>#trip.driverName
+        text>#trip.vehiclePlate
+        text>#trip.origin
+        text>#trip.destination
+        text>#trip.distance
+        badge:#trip.status
+        text:"muted">#trip.startDate
+        row(btn:ghost>"Start">!start(#trip.id),btn:ghost>"Complete">!complete(#trip.id))
+      )
+    )
+  )
+  @page:maintenance(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Vehicles",btn:ghost>"Trips",btn:ghost>"Maintenance")
+    )+main(
+      header>h1>"Maintenance"+btn:primary>"Schedule Service"
+      table>maintenanceRecords>*rec(
+        text>#rec.vehiclePlate
+        badge:#rec.type
+        text>#rec.description
+        text:amount:$#rec.cost
+        badge:#rec.status
+        text:"muted">#rec.scheduledDate
+        row(btn:ghost>"Start">!start(#rec.id),btn:ghost>"Complete">!complete(#rec.id))
+      )
+    )
+  )
+)

@@ -1,0 +1,172 @@
+# ================================================================
+# TenantPortal — Tenant Communication & Maintenance System
+# ================================================================
+# Properties, tenants, maintenance requests, and payments.
+# Demonstrates request status workflow, payment tracking, filters.
+# ================================================================
+
+@app:tenantPortal
+
+@style(theme:dark,accent:#8b5cf6,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  properties:[{id:int,name:str,address:str,units:int,occupancy:int}],
+  tenants:[{id:int,name:str,email:str,phone:?str,unit:str,propertyName:str,leaseEnd:?str}],
+  requests:[{id:int,title:str,description:str,status:str,priority:str,unit:str,tenantName:str,created:str}],
+  payments:[{id:int,amount:float,status:str,dueDate:str,paidDate:?str,tenantName:str,propertyName:str}],
+  stats:{totalPayments:float,pendingPayments:float,openRequests:int,occupancyRate:float},
+  requestStatus:enum(all,submitted,in_progress,scheduled,completed,cancelled),
+  paymentStatus:enum(all,pending,paid,overdue),
+  search:str
+}
+
+@db{
+  Property{id:int:primary:auto,name:str:required,address:str:required,units:int:required,description:?str,created_at:datetime:auto}
+  Tenant{id:int:primary:auto,name:str:required,email:str:required,phone:?str,unit:str:required,lease_start:date:required,lease_end:date:required,property_id:int:required,created_at:datetime:auto}
+  MaintenanceRequest{id:int:primary:auto,title:str:required,description:str:required,status:enum(submitted,in_progress,scheduled,completed,cancelled):default(submitted),priority:enum(low,medium,high,emergency):default(medium),unit:str:required,tenant_id:int:required,property_id:int:required,created_at:datetime:auto}
+  Payment{id:int:primary:auto,amount:float:required,status:enum(pending,paid,overdue):default(pending),due_date:date:required,paid_date:?date,notes:?str,tenant_id:int:required,property_id:int:required,created_at:datetime:auto}
+  @relation(Property.tenants<>Tenant.property)
+  @relation(Property.requests<>MaintenanceRequest.property)
+  @relation(Tenant.requests<>MaintenanceRequest.tenant)
+  @relation(Tenant.payments<>Payment.tenant)
+  @relation(Property.payments<>Payment.property)
+  @index(Tenant.email:unique)
+  @index(MaintenanceRequest.status+MaintenanceRequest.priority)
+  @index(Payment.status+Payment.due_date)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/properties>~db.Property.findMany
+  POST:/properties(name:str,address:str,units:int)>~db.Property.create
+  GET:/tenants>~db.Tenant.findMany
+  POST:/tenants(name:str,email:str,unit:str,lease_start:str,lease_end:str,property_id:int)>~db.Tenant.create
+  DELETE:/tenants/:id>~db.Tenant.delete
+  GET:/requests>~db.MaintenanceRequest.findMany
+  POST:/requests(title:str,description:str,priority:str,unit:str,tenant_id:int,property_id:int)>~db.MaintenanceRequest.create
+  PUT:/requests/:id(status:str)>~db.MaintenanceRequest.update
+  GET:/payments>~db.Payment.findMany
+  POST:/payments(amount:float,due_date:str,tenant_id:int,property_id:int)>~db.Payment.create
+  PUT:/payments/:id(status:str,paid_date:?str)>~db.Payment.update
+  GET:/stats>~db.Payment.aggregate
+)
+
+@auth(required,role:enum(tenant,manager,admin),redirect:/login)
+
+@email(
+  requestReceived(name:str,title:str)>"Maintenance request received"
+  requestUpdated(name:str,title:str,status:str)>"Your request status has been updated"
+  paymentReminder(name:str,amount:float,dueDate:str)>"Payment reminder"
+)
+
+@nav(
+  />?user>dashboard:login
+  /requests>?user>requests:login
+  /payments>?user>payments:login
+  /properties>?user>properties:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.requests+~api.payments+~api.stats
+  onChange:requestStatus>~api.requests
+  onChange:paymentStatus>~api.payments
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"TenantPortal"
+        p:"muted">"Manage your rental experience"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"TP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Requests",btn:ghost>"Payments",btn:ghost>"Properties")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Payments">#stats.totalPayments
+        stat:"Pending">#stats.pendingPayments
+        stat:"Open Requests">#stats.openRequests
+        stat:"Occupancy">#stats.occupancyRate
+      )
+      @section:recentRequests(
+        h2>"Recent Requests"
+        table>requests>*req(text>#req.title+badge:#req.status+badge:#req.priority+text:"muted">#req.tenantName+text:"muted">#req.created)
+      )
+      @section:recentPayments(
+        h2>"Upcoming Payments"
+        list>payments>*pay(card(text>#pay.tenantName+text:amount:$#pay.amount+badge:#pay.status+text:"muted">"Due: "+#pay.dueDate))
+      )
+    )
+  )
+  @page:requests(
+    sidebar(
+      logo>"TP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Requests",btn:ghost>"Payments",btn:ghost>"Properties")
+    )+main(
+      header>h1>"Maintenance Requests"+tabs>requestStatus.set(all,submitted,in_progress,scheduled,completed)+btn:primary>"New Request"
+      table>requests|requestStatus>*req(
+        text>#req.title
+        text>#req.unit
+        text>#req.tenantName
+        badge:#req.status
+        badge:#req.priority
+        text:"muted">#req.created
+        row(btn:ghost>"Update">!update(#req.id),btn:ghost>"Complete">!complete(#req.id))
+      )
+    )
+  )
+  @page:payments(
+    sidebar(
+      logo>"TP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Requests",btn:ghost>"Payments",btn:ghost>"Properties")
+    )+main(
+      header>h1>"Payments"+tabs>paymentStatus.set(all,pending,paid,overdue)
+      table>payments|paymentStatus>*pay(
+        text>#pay.tenantName
+        text>#pay.propertyName
+        text:amount:$#pay.amount
+        badge:#pay.status
+        text>#pay.dueDate
+        text:"muted">#pay.paidDate
+        btn:ghost>"Mark Paid">!markPaid(#pay.id)
+      )
+    )
+  )
+  @page:properties(
+    sidebar(
+      logo>"TP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Requests",btn:ghost>"Payments",btn:ghost>"Properties")
+    )+main(
+      header>h1>"Properties"+btn:primary>"Add Property"
+      grid:3>properties>*prop(
+        card(
+          h2>#prop.name
+          text:"muted">#prop.address
+          row(stat:"Units">#prop.units+stat:"Occupied">#prop.occupancy)
+          row(btn:ghost>"View Tenants",btn:ghost>"Edit">!edit(#prop.id))
+        )
+      )
+    )
+  )
+)

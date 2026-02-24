@@ -1,0 +1,173 @@
+# Newsroom — News Editorial Management System
+# Authors, articles, categories, and comments.
+
+@app:newsroom
+@style(theme:dark,accent:#ef4444,radius:10,font:sans,density:comfortable,maxWidth:1400)
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  authors:[{id:int,name:str,email:str,bio:?str,articleCount:int}],
+  articles:[{id:int,title:str,status:str,categoryName:?str,authorName:str,publishedAt:?str}],
+  categories:[{id:int,name:str,slug:str,articleCount:int}],
+  comments:[{id:int,body:str,commenter:str,articleTitle:str,createdAt:str}],
+  stats:{totalArticles:int,publishedCount:int,draftCount:int,totalComments:int},
+  statusFilter:enum(all,draft,review,published,archived),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(writer,editor,admin),created_at:datetime:auto}
+  Author{id:int:primary:auto,name:str:required,email:str:required,bio:?str,avatar:?str,user_id:int:required,created_at:datetime:auto}
+  Category{id:int:primary:auto,name:str:required,slug:str:required}
+  Article{id:int:primary:auto,title:str:required,slug:str:required,content:str:required,excerpt:?str,status:enum(draft,review,published,archived):default(draft),featured:bool:default(false),author_id:int:required,category_id:?int,published_at:?datetime,created_at:datetime:auto}
+  Comment{id:int:primary:auto,body:str:required,commenter_name:str:required,commenter_email:?str,article_id:int:required,created_at:datetime:auto}
+  @relation(User.authors<>Author.user)
+  @relation(Author.articles<>Article.author)
+  @relation(Category.articles<>Article.category)
+  @relation(Article.comments<>Comment.article)
+  @index(User.email:unique)
+  @index(Author.email:unique)
+  @index(Article.slug:unique)
+  @index(Category.slug:unique)
+  @index(Article.status+Article.author_id)
+}
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/authors>~db.Author.findMany
+  POST:/authors(name:str,email:str,bio:?str)>~db.Author.create
+  DELETE:/authors/:id>~db.Author.delete
+  GET:/articles>~db.Article.findMany
+  POST:/articles(title:str,slug:str,content:str,author_id:int)>~db.Article.create
+  PUT:/articles/:id(title:str,status:str,featured:bool)>~db.Article.update
+  DELETE:/articles/:id>~db.Article.delete
+  GET:/categories>~db.Category.findMany
+  POST:/categories(name:str,slug:str)>~db.Category.create
+  DELETE:/categories/:id>~db.Category.delete
+  GET:/articles/:id/comments>~db.Comment.findMany
+  POST:/articles/:id/comments(body:str,commenter_name:str)>~db.Comment.create
+  DELETE:/comments/:id>~db.Comment.delete
+  GET:/stats>~db.Article.aggregate
+)
+@auth(required,role:enum(writer,editor,admin),redirect:/login)
+@nav(
+  />?user>dashboard:login
+  /articles>?user>articles:login
+  /categories>?user>categories:login
+  /authors>?user>authors:login
+  /comments>?user>comments:login
+  /login>login
+)
+@persist:cookie(user,httpOnly,7d)
+@hook(
+  onMount>~api.articles+~api.categories+~api.stats
+  onChange:statusFilter>~api.articles
+)
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Newsroom"
+        p:"muted">"Editorial content management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"New here? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"NR"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Articles",btn:ghost>"Categories",btn:ghost>"Authors",btn:ghost>"Comments")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Articles">#stats.totalArticles
+        stat:"Published">#stats.publishedCount
+        stat:"Drafts">#stats.draftCount
+        stat:"Comments">#stats.totalComments
+      )
+      @section:recentArticles(
+        h2>"Recent Articles"
+        table>articles>*article(
+          text>#article.title
+          badge:#article.status
+          text:"muted">#article.authorName
+          text:"muted">#article.categoryName
+          text:"muted">#article.publishedAt
+        )
+      )
+    )
+  )
+  @page:articles(
+    sidebar(
+      logo>"NR"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Articles",btn:ghost>"Categories",btn:ghost>"Authors",btn:ghost>"Comments")
+    )+main(
+      header>h1>"Articles"+search:input>#search+tabs>statusFilter.set(all,draft,review,published,archived)+btn:primary>"New Article"
+      table>articles|statusFilter|search>*article(
+        text>#article.title
+        badge:#article.status
+        text:"muted">#article.authorName
+        text:"muted">#article.categoryName
+        text:"muted">#article.publishedAt
+        row(btn:ghost>"Edit",btn:ghost>"Publish">!update(#article.id),btn:icon:!del(#article.id))
+      )
+    )
+  )
+  @page:categories(
+    sidebar(
+      logo>"NR"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Articles",btn:ghost>"Categories",btn:ghost>"Authors",btn:ghost>"Comments")
+    )+main(
+      header>h1>"Categories"+btn:primary>"New Category"
+      grid:3>categories>*cat(
+        card(
+          h2>#cat.name
+          text:"muted">#cat.slug
+          stat:"Articles">#cat.articleCount
+          row(btn:ghost>"Edit",btn:ghost>"Delete">!del(#cat.id))
+        )
+      )
+    )
+  )
+  @page:authors(
+    sidebar(
+      logo>"NR"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Articles",btn:ghost>"Categories",btn:ghost>"Authors",btn:ghost>"Comments")
+    )+main(
+      header>h1>"Authors"+btn:primary>"Add Author"
+      grid:3>authors>*author(
+        card(
+          h2>#author.name
+          text>#author.email
+          p:"muted">#author.bio
+          stat:"Articles">#author.articleCount
+          row(btn:ghost>"Edit",btn:ghost>"Delete">!del(#author.id))
+        )
+      )
+    )
+  )
+  @page:comments(
+    sidebar(
+      logo>"NR"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Articles",btn:ghost>"Categories",btn:ghost>"Authors",btn:ghost>"Comments")
+    )+main(
+      header>h1>"Comments"
+      table>comments>*comment(
+        text>#comment.body
+        text:"muted">#comment.commenter
+        text:"muted">#comment.articleTitle
+        text:"muted">#comment.createdAt
+        btn:icon:!del(#comment.id)
+      )
+    )
+  )
+)

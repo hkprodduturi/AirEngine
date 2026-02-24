@@ -1,0 +1,146 @@
+# ================================================================
+# Inventory Manager — Warehouse & Stock Management System
+# ================================================================
+# Products, warehouses, stock levels, suppliers, movements.
+# Demonstrates composite indexes, cron, queue, stock transactions.
+# ================================================================
+
+@app:inventory
+
+@style(theme:dark,accent:#0ea5e9,radius:8,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,role:str},
+  products:[{id:int,sku:str,name:str,category:str,minStock:int}],
+  warehouses:[{id:int,name:str,location:str,capacity:int}],
+  stockLevels:[{id:int,quantity:int,product:str,warehouse:str}],
+  movements:[{id:int,type:str,quantity:int,reason:str,created:str}],
+  lowStockAlerts:[{id:int,sku:str,name:str,quantity:int,minStock:int}],
+  suppliers:[{id:int,name:str,email:str,phone:str}],
+  warehouseFilter:?int,
+  search:str
+}
+
+@db{
+  Supplier{id:int:primary:auto,name:str:required,email:str:required,phone:?str,created_at:datetime:auto}
+  Product{id:int:primary:auto,sku:str:required,name:str:required,description:?str,min_stock:int:default(10),category:enum(electronics,clothing,food,hardware,other):required,supplier_id:int:required,created_at:datetime:auto}
+  Warehouse{id:int:primary:auto,name:str:required,location:str:required,capacity:int:required,created_at:datetime:auto}
+  StockLevel{id:int:primary:auto,quantity:int:default(0),product_id:int:required,warehouse_id:int:required}
+  StockMovement{id:int:primary:auto,type:enum(in,out,transfer):required,quantity:int:required,reason:?str,product_id:int:required,warehouse_id:int:required,created_at:datetime:auto}
+  @relation(Supplier.products<>Product.supplier)
+  @relation(Product.stockLevels<>StockLevel.product)
+  @relation(Warehouse.stockLevels<>StockLevel.warehouse)
+  @relation(Product.movements<>StockMovement.product)
+  @relation(Warehouse.movements<>StockMovement.warehouse)
+  @index(Product.sku:unique)
+  @index(StockLevel.product_id+StockLevel.warehouse_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  GET:/products>~db.Product.findMany
+  POST:/products(sku:str,name:str,category:str,supplier_id:int)>~db.Product.create
+  GET:/warehouses>~db.Warehouse.findMany
+  POST:/warehouses(name:str,location:str,capacity:int)>~db.Warehouse.create
+  GET:/stock-levels>~db.StockLevel.findMany
+  POST:/stock-movements(type:str,quantity:int,product_id:int,warehouse_id:int)>~db.StockMovement.create
+  GET:/stock-movements>~db.StockMovement.findMany
+  GET:/suppliers>~db.Supplier.findMany
+  POST:/suppliers(name:str,email:str)>~db.Supplier.create
+  GET:/low-stock>~db.Product.findMany
+)
+
+@auth(required,role:enum(warehouse_staff,manager,admin),redirect:/login)
+
+@cron(
+  lowStockCheck>"0 8 * * *">!checkLowStock
+)
+
+@queue(
+  stockReport(warehouse_id:int)>!reports.generateStock
+)
+
+@nav(
+  />?user>dashboard:login
+  /products>?user>products:login
+  /stock>?user>stock:login
+  /suppliers>?user>suppliers:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.products+~api.warehouses
+  onChange:warehouseFilter>~api.stock-levels
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Inventory Manager"
+        p:"muted">"Warehouse stock management system"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"IM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Products",btn:ghost>"Stock",btn:ghost>"Suppliers")
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:3(
+        stat:"Total Products">#products.length
+        stat:"Low Stock Alerts">#lowStockAlerts.length
+        stat:"Warehouses">#warehouses.length
+      )
+      @section:recent(
+        h2>"Recent Movements"
+        table>movements>*mov(text>#mov.type+badge:#mov.quantity+text>#mov.reason+text:"muted">#mov.created)
+      )
+      @section:alerts(
+        h2>"Low Stock Alerts"
+        list>lowStockAlerts>*alert(card(text>#alert.name+badge:#alert.quantity+text:"muted">"Min: "+#alert.minStock))
+      )
+    )
+  )
+  @page:products(
+    sidebar(
+      logo>"IM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Products",btn:ghost>"Stock",btn:ghost>"Suppliers")
+    )+main(
+      header>h1>"Products"+search:input>#search+btn:primary>"Add Product"
+      table>products|search>*product(text>#product.sku+text>#product.name+badge:#product.category+stat:"Min Stock">#product.minStock)
+    )
+  )
+  @page:stock(
+    sidebar(
+      logo>"IM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Products",btn:ghost>"Stock",btn:ghost>"Suppliers")
+    )+main(
+      header>h1>"Stock Management"+select:#warehouseFilter
+      grid:3>stockLevels>*level(
+        card(text>#level.product+stat:"Quantity">#level.quantity+row(btn:ghost>"In">!stockIn(#level.id)+btn:ghost>"Out">!stockOut(#level.id)))
+      )
+    )
+  )
+  @page:suppliers(
+    sidebar(
+      logo>"IM"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Products",btn:ghost>"Stock",btn:ghost>"Suppliers")
+    )+main(
+      header>h1>"Suppliers"+btn:primary>"Add Supplier"
+      table>suppliers>*supplier(text>#supplier.name+text>#supplier.email+text>#supplier.phone)
+    )
+  )
+)

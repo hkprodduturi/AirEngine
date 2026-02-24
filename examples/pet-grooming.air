@@ -1,0 +1,146 @@
+# PetGrooming — Manage pets, owners, appointments, and services
+
+@app:petGrooming
+@style(theme:dark,accent:#ec4899,radius:12,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  pets:[{id:int,name:str,type:str,breed:str,age:int,owner_id:int}],
+  owners:[{id:int,name:str,email:str,phone:str,petCount:int}],
+  appointments:[{id:int,date:date,time:str,status:str,notes:str,pet_id:int,service_id:int,petName:str}],
+  services:[{id:int,name:str,description:str,price:float,duration:int}],
+  stats:{totalAppointments:int,scheduled:int,inProgress:int,completed:int,totalRevenue:float},
+  appointmentFilter:enum(all,scheduled,in_progress,completed,cancelled),
+  petFilter:enum(all,dog,cat,bird,rabbit),
+  search:str
+}
+
+@db{
+  Pet{id:int:primary:auto,name:str:required,type:enum(dog,cat,bird,rabbit):required,breed:?str,age:?int,weight:?float,notes:?str,owner_id:int:required,created_at:datetime:auto}
+  Owner{id:int:primary:auto,name:str:required,email:str:required,phone:?str,address:?str,created_at:datetime:auto}
+  Appointment{id:int:primary:auto,date:date:required,time:str:required,status:enum(scheduled,in_progress,completed,cancelled):default(scheduled),notes:?str,total:float:default(0),pet_id:int:required,service_id:int:required,created_at:datetime:auto}
+  Service{id:int:primary:auto,name:str:required,description:?str,price:float:required,duration:int:default(60),created_at:datetime:auto}
+  @relation(Owner.pets<>Pet.owner)
+  @relation(Pet.appointments<>Appointment.pet)
+  @relation(Service.appointments<>Appointment.service)
+  @index(Owner.email:unique)
+  @index(Appointment.status+Appointment.date)
+  @index(Pet.type+Pet.owner_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/pets>~db.Pet.findMany
+  POST:/pets(name:str,type:str,breed:str,owner_id:int)>~db.Pet.create
+  PUT:/pets/:id(name:str,weight:float)>~db.Pet.update
+  DELETE:/pets/:id>~db.Pet.delete
+  GET:/owners>~db.Owner.findMany
+  POST:/owners(name:str,email:str,phone:str)>~db.Owner.create
+  PUT:/owners/:id(name:str,phone:str)>~db.Owner.update
+  DELETE:/owners/:id>~db.Owner.delete
+  GET:/appointments>~db.Appointment.findMany
+  POST:/appointments(date:date,time:str,pet_id:int,service_id:int)>~db.Appointment.create
+  PUT:/appointments/:id(status:str)>~db.Appointment.update
+  DELETE:/appointments/:id>~db.Appointment.delete
+  GET:/services>~db.Service.findMany
+  POST:/services(name:str,price:float,duration:int)>~db.Service.create
+  PUT:/services/:id(price:float)>~db.Service.update
+  DELETE:/services/:id>~db.Service.delete
+  GET:/stats>~db.Appointment.aggregate
+)
+
+@auth(required,role:enum(admin,groomer,receptionist),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /appointments>?user>appointments:login
+  /pets>?user>pets:login
+  /owners>?user>owners:login
+  /services>?user>services:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.appointments
+  onChange:appointmentFilter>~api.appointments
+  onChange:petFilter>~api.pets
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Pet Grooming"
+        p:"muted">"Pamper your furry friends"
+        form(input:email>#user.email+input:password>#user.password+btn:primary>"Sign In">!login)
+        p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"PG"
+      nav:vertical(dashboard,appointments,pets,owners,services)
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Appointments">#stats.totalAppointments
+        stat:"Scheduled">#stats.scheduled
+        stat:"In Progress">#stats.inProgress
+        stat:"Completed">#stats.completed
+      )
+      grid:2(
+        card(h2>"Revenue"+stat:"Total">#stats.totalRevenue)
+        card(h2>"Today's Schedule"+list>appointments|scheduled>*apt(text>#apt.petName+text:"muted">#apt.time+badge:#apt.status))
+      )
+    )
+  )
+  @page:appointments(
+    sidebar(
+      logo>"PG"
+      nav:vertical(dashboard,appointments,pets,owners,services)
+    )+main(
+      header>h1>"Appointments"+tabs>appointmentFilter.set(all,scheduled,in_progress,completed,cancelled)+btn:primary>"New Appointment"
+      search:input>#search
+      table(data:#appointments|appointmentFilter|search,cols:[petName,date,time,status:badge,notes,service_id],actions:[edit,!del])
+    )
+  )
+  @page:pets(
+    sidebar(
+      logo>"PG"
+      nav:vertical(dashboard,appointments,pets,owners,services)
+    )+main(
+      header>h1>"Pets"+tabs>petFilter.set(all,dog,cat,bird,rabbit)+btn:primary>"Add Pet"
+      table(data:#pets|petFilter,cols:[name,type:badge,breed,age,owner_id],actions:[edit,!del])
+    )
+  )
+  @page:owners(
+    sidebar(
+      logo>"PG"
+      nav:vertical(dashboard,appointments,pets,owners,services)
+    )+main(
+      header>h1>"Owners"+btn:primary>"Add Owner"
+      table(data:#owners,cols:[name,email,phone,petCount],actions:[edit,!del])
+    )
+  )
+  @page:services(
+    sidebar(
+      logo>"PG"
+      nav:vertical(dashboard,appointments,pets,owners,services)
+    )+main(
+      header>h1>"Services"+btn:primary>"Add Service"
+      grid:3>services>*svc(
+        card(h2>#svc.name+p>#svc.description+stat:"Price">#svc.price+text>#svc.duration+" minutes"+row(btn:ghost>"Edit",btn:ghost>"Remove">!del(#svc.id)))
+      )
+    )
+  )
+)

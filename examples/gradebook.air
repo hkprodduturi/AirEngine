@@ -1,0 +1,215 @@
+# ================================================================
+# Gradebook — Teacher Grading System
+# ================================================================
+# A grading platform for managing courses, students,
+# assignments, and grade tracking.
+# ================================================================
+
+@app:gradebook
+
+# ---- Design System ----
+
+@style(theme:dark,accent:#4f46e5,radius:10,font:sans,density:comfortable,maxWidth:1280)
+
+# ---- Client State ----
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  courses:[{id:int,name:str,code:str,semester:str,studentCount:int}],
+  students:[{id:int,name:str,email:str,gpa:float,enrollmentDate:str}],
+  assignments:[{id:int,title:str,course:str,maxPoints:int,dueDate:str}],
+  grades:[{id:int,student:str,assignment:str,score:int,letter:str}],
+  stats:{totalCourses:int,totalStudents:int,avgGpa:float,pendingGrades:int},
+  search:str,
+  gradeFilter:enum(all,A,B,C,D,F),
+  semesterFilter:enum(all,fall,spring,summer)
+}
+
+# ---- Database Models ----
+
+@db{
+  Course{id:int:primary:auto,name:str:required,code:str:required,semester:enum(fall,spring,summer):required,year:int:required,created_at:datetime:auto}
+  Student{id:int:primary:auto,name:str:required,email:str:required,gpa:float:default(0.0),enrolled_at:datetime:auto}
+  Assignment{id:int:primary:auto,title:str:required,description:?str,max_points:int:required,due_date:date:required,course_id:int:required,created_at:datetime:auto}
+  Grade{id:int:primary:auto,score:int:required,letter:enum(A,B,C,D,F):required,student_id:int:required,assignment_id:int:required,graded_at:datetime:auto}
+  @relation(Course.assignments<>Assignment.course)
+  @relation(Assignment.grades<>Grade.assignment)
+  @relation(Student.grades<>Grade.student)
+  @relation(Course.students<>Student.courses)
+  @index(Student.email:unique)
+  @index(Course.code:unique)
+  @index(Grade.student_id+Grade.assignment_id)
+}
+
+# ---- Environment Variables ----
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+# ---- API Routes ----
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/courses>~db.Course.findMany
+  POST:/courses(name:str,code:str,semester:str,year:int)>~db.Course.create
+  PUT:/courses/:id(name:str)>~db.Course.update
+  DELETE:/courses/:id>~db.Course.delete
+  GET:/students>~db.Student.findMany
+  POST:/students(name:str,email:str)>~db.Student.create
+  PUT:/students/:id(name:str,email:str)>~db.Student.update
+  DELETE:/students/:id>~db.Student.delete
+  GET:/assignments>~db.Assignment.findMany
+  POST:/assignments(title:str,max_points:int,due_date:str,course_id:int)>~db.Assignment.create
+  DELETE:/assignments/:id>~db.Assignment.delete
+  GET:/grades>~db.Grade.findMany
+  POST:/grades(score:int,letter:str,student_id:int,assignment_id:int)>~db.Grade.create
+  PUT:/grades/:id(score:int,letter:str)>~db.Grade.update
+  GET:/stats>~db.Grade.aggregate
+)
+
+# ---- Authentication ----
+
+@auth(required,role:enum(admin,teacher,viewer),redirect:/login)
+
+# ---- Navigation ----
+
+@nav(
+  />?user>dashboard:login
+  /courses>?user>courses:login
+  /students>?user>students:login
+  /assignments>?user>assignments:login
+  /grades>?user>grades:login
+  /login>login
+)
+
+# ---- Session Persistence ----
+
+@persist:cookie(user,httpOnly,7d)
+
+# ---- Lifecycle Hooks ----
+
+@hook(
+  onMount>~api.stats+~api.courses+~api.students
+  onChange:gradeFilter>~api.grades
+  onChange:semesterFilter>~api.courses
+)
+
+# ---- User Interface ----
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Gradebook"
+        p:"muted">"Track grades and student performance"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"GB"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Students"
+        btn:ghost>"Assignments"
+        btn:ghost>"Grades"
+      )
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Courses">#stats.totalCourses
+        stat:"Total Students">#stats.totalStudents
+        stat:"Average GPA">#stats.avgGpa
+        stat:"Pending Grades">#stats.pendingGrades
+      )
+      @section:recent(
+        h2>"Recent Grades"
+        table>grades>*grade(
+          text>#grade.student
+          text>#grade.assignment
+          text>#grade.score
+          badge:#grade.letter
+        )
+      )
+    )
+  )
+  @page:courses(
+    sidebar(
+      logo>"GB"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Students"
+        btn:ghost>"Assignments"
+        btn:ghost>"Grades"
+      )
+    )+main(
+      header>h1>"Courses"+tabs>semesterFilter.set(all,fall,spring,summer)+btn:primary>"New Course"
+      grid:3>courses|semesterFilter>*course(
+        card(
+          h2>#course.name
+          text:"muted">#course.code
+          badge:#course.semester
+          stat:"Students">#course.studentCount
+          row(btn:ghost>"Open",btn:ghost>"Delete">!del(#course.id))
+        )
+      )
+    )
+  )
+  @page:students(
+    sidebar(
+      logo>"GB"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Students"
+        btn:ghost>"Assignments"
+        btn:ghost>"Grades"
+      )
+    )+main(
+      header>h1>"Students"+search:input>#search+btn:primary>"Add Student"
+      table(data:#students|search,cols:[name,email,gpa,enrollmentDate],actions:[edit,!del])
+    )
+  )
+  @page:assignments(
+    sidebar(
+      logo>"GB"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Students"
+        btn:ghost>"Assignments"
+        btn:ghost>"Grades"
+      )
+    )+main(
+      header>h1>"Assignments"+btn:primary>"New Assignment"
+      table(data:#assignments,cols:[title,course,maxPoints,dueDate],actions:[edit,!del])
+    )
+  )
+  @page:grades(
+    sidebar(
+      logo>"GB"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Courses"
+        btn:ghost>"Students"
+        btn:ghost>"Assignments"
+        btn:ghost>"Grades"
+      )
+    )+main(
+      header>h1>"Grades"+tabs>gradeFilter.set(all,A,B,C,D,F)+btn:primary>"Enter Grade"
+      table(data:#grades|gradeFilter,cols:[student,assignment,score,letter:badge],actions:[edit,!del])
+    )
+  )
+)

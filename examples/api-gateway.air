@@ -1,0 +1,164 @@
+# ================================================================
+# ApiGateway — API Key Management Platform
+# ================================================================
+# Applications, API keys, usage logs, and rate limits.
+# Demonstrates key lifecycle, usage tracking, quota management.
+# ================================================================
+
+@app:apiGateway
+
+@style(theme:dark,accent:#8b5cf6,radius:10,font:mono,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  applications:[{id:int,name:str,description:?str,keyCount:int,createdAt:str}],
+  apiKeys:[{id:int,keyPrefix:str,status:str,appName:str,lastUsed:?str,createdAt:str}],
+  usageLogs:[{id:int,endpoint:str,method:str,statusCode:int,keyPrefix:str,timestamp:str}],
+  rateLimits:[{id:int,appName:str,requestsPerMin:int,requestsPerDay:int,burstLimit:int}],
+  stats:{totalKeys:int,activeKeys:int,totalRequests:int,errorRate:float},
+  keyStatusFilter:enum(all,active,revoked,expired),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(admin,developer,viewer),created_at:datetime:auto}
+  Application{id:int:primary:auto,name:str:required,description:?str,owner_id:int:required,created_at:datetime:auto}
+  ApiKey{id:int:primary:auto,key_hash:str:required,key_prefix:str:required,status:enum(active,revoked,expired):default(active),app_id:int:required,last_used:?datetime,expires_at:?datetime,created_at:datetime:auto}
+  UsageLog{id:int:primary:auto,endpoint:str:required,method:str:required,status_code:int:required,response_time:int:required,key_id:int:required,created_at:datetime:auto}
+  RateLimit{id:int:primary:auto,requests_per_min:int:default(60),requests_per_day:int:default(10000),burst_limit:int:default(100),app_id:int:required}
+  @relation(User.applications<>Application.owner)
+  @relation(Application.keys<>ApiKey.app)
+  @relation(ApiKey.logs<>UsageLog.key)
+  @relation(Application.rateLimit<>RateLimit.app)
+  @index(User.email:unique)
+  @index(ApiKey.key_hash:unique)
+  @index(ApiKey.status+ApiKey.app_id)
+  @index(UsageLog.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  ENCRYPTION_KEY:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/applications>~db.Application.findMany
+  POST:/applications(name:str,description:?str)>~db.Application.create
+  PUT:/applications/:id(name:str)>~db.Application.update
+  DELETE:/applications/:id>~db.Application.delete
+  GET:/keys>~db.ApiKey.findMany
+  POST:/keys(app_id:int)>~db.ApiKey.create
+  PUT:/keys/:id(status:str)>~db.ApiKey.update
+  DELETE:/keys/:id>~db.ApiKey.delete
+  GET:/usage>~db.UsageLog.findMany
+  GET:/limits>~db.RateLimit.findMany
+  PUT:/limits/:id(requests_per_min:int,requests_per_day:int)>~db.RateLimit.update
+  GET:/stats>~db.ApiKey.aggregate
+)
+
+@auth(required,role:enum(admin,developer,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /keys>?user>keys:login
+  /applications>?user>applications:login
+  /usage>?user>usage:login
+  /limits>?user>limits:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.keys+~api.applications+~api.stats
+  onChange:keyStatusFilter>~api.keys
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"ApiGateway"
+        p:"muted">"Manage your API keys and usage"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"AG"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Keys",btn:ghost>"Apps",btn:ghost>"Usage",btn:ghost>"Limits")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Keys">#stats.totalKeys
+        stat:"Active Keys">#stats.activeKeys
+        stat:"Total Requests">#stats.totalRequests
+        stat:"Error Rate">#stats.errorRate
+      )
+      @section:recent(
+        h2>"Recent API Keys"
+        table>apiKeys>*key(text>#key.keyPrefix+badge:#key.status+text:"muted">#key.appName+text:"muted">#key.lastUsed+text:"muted">#key.createdAt)
+      )
+    )
+  )
+  @page:keys(
+    sidebar(
+      logo>"AG"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Keys",btn:ghost>"Apps",btn:ghost>"Usage",btn:ghost>"Limits")
+    )+main(
+      header>h1>"API Keys"+tabs>keyStatusFilter.set(all,active,revoked,expired)+btn:primary>"Generate Key"
+      table>apiKeys|keyStatusFilter>*key(
+        text>#key.keyPrefix+badge:#key.status+text:"muted">#key.appName+text:"muted">#key.lastUsed+text:"muted">#key.createdAt
+        row(btn:ghost>"Revoke">!revoke(#key.id),btn:icon:!del(#key.id))
+      )
+    )
+  )
+  @page:applications(
+    sidebar(
+      logo>"AG"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Keys",btn:ghost>"Apps",btn:ghost>"Usage",btn:ghost>"Limits")
+    )+main(
+      header>h1>"Applications"+search:input>#search+btn:primary>"New App"
+      grid:3>applications|search>*app(
+        card(
+          h2>#app.name
+          ?app.description>p:"muted">#app.description
+          stat:"Keys">#app.keyCount
+          text:"muted">#app.createdAt
+          row(btn:ghost>"Edit",btn:icon:!del(#app.id))
+        )
+      )
+    )
+  )
+  @page:usage(
+    sidebar(
+      logo>"AG"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Keys",btn:ghost>"Apps",btn:ghost>"Usage",btn:ghost>"Limits")
+    )+main(
+      header>h1>"Usage Logs"
+      table>usageLogs>*log(
+        text>#log.endpoint+badge:#log.method+text>#log.statusCode+text:"muted">#log.keyPrefix+text:"muted">#log.timestamp
+      )
+    )
+  )
+  @page:limits(
+    sidebar(
+      logo>"AG"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Keys",btn:ghost>"Apps",btn:ghost>"Usage",btn:ghost>"Limits")
+    )+main(
+      header>h1>"Rate Limits"
+      table>rateLimits>*limit(
+        text>#limit.appName+text>#limit.requestsPerMin+text>#limit.requestsPerDay+text>#limit.burstLimit
+        row(btn:ghost>"Edit">!editLimit(#limit.id))
+      )
+    )
+  )
+)

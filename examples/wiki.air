@@ -1,0 +1,114 @@
+# ================================================================
+# WikiBase — Knowledge Base & Wiki
+# ================================================================
+# Pages, categories, revisions, and content management.
+# Demonstrates versioning, tree structure, rich content.
+# ================================================================
+
+@app:wikibase
+
+@style(theme:light,accent:#0ea5e9,radius:8,font:sans+mono,maxWidth:1100)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  pages:[{id:int,title:str,category:str,updatedAt:str,author:str}],
+  categories:[{id:int,name:str,pageCount:int}],
+  revisions:[{id:int,page:str,author:str,createdAt:str,summary:str}],
+  selectedPage:?{id:int,title:str,content:str,category:str,author:str,updatedAt:str},
+  search:str,
+  categoryFilter:enum(all,general,technical,guides,faq,policies)
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(reader,editor,admin):default(reader),created_at:datetime:auto}
+  Category{id:int:primary:auto,name:str:required,description:?str}
+  Page{id:int:primary:auto,title:str:required,content:str:required,slug:str:required,category_id:int:required,author_id:int:required,published:bool:default(true),created_at:datetime:auto,updated_at:datetime:auto}
+  Revision{id:int:primary:auto,content:str:required,summary:?str,page_id:int:required,editor_id:int:required,created_at:datetime:auto}
+  @relation(Category.pages<>Page.category)
+  @relation(User.pages<>Page.author)
+  @relation(Page.revisions<>Revision.page)
+  @relation(User.revisions<>Revision.editor)
+  @index(User.email:unique)
+  @index(Page.slug:unique)
+  @index(Page.category_id+Page.published)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/pages>~db.Page.findMany
+  GET:/pages/:id>~db.Page.findFirst
+  POST:/pages(title:str,content:str,slug:str,category_id:int)>~db.Page.create
+  PUT:/pages/:id(title:str,content:str)>~db.Page.update
+  DELETE:/pages/:id>~db.Page.delete
+  GET:/revisions>~db.Revision.findMany
+  POST:/revisions(content:str,summary:str,page_id:int)>~db.Revision.create
+  GET:/categories>~db.Category.findMany
+  POST:/categories(name:str,description:str)>~db.Category.create
+)
+
+@auth(required,role:enum(reader,editor,admin),redirect:/login)
+
+@nav(
+  />?user>pages:login
+  /categories>?user>categories:login
+  /revisions>?user>revisions:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.pages+~api.categories
+  onChange:categoryFilter>~api.pages
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"WikiBase"
+        p:"muted">"Collaborative knowledge base"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"New here? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:pages(
+    header>h1>"Pages"+search:input>#search+tabs>categoryFilter.set(all,general,technical,guides,faq,policies)+btn:primary>"New Page"
+    list>pages|categoryFilter|search>*page(
+      card(
+        row(h2>#page.title+badge:#page.category)
+        row(text:"muted">"By "+#page.author+text:"muted">#page.updatedAt)
+        btn:ghost>"Read">!selectPage(#page.id)
+      )
+    )
+  )
+  @page:categories(
+    header>h1>"Categories"+btn:primary>"New Category"
+    grid:3>categories>*category(
+      card(
+        h2>#category.name
+        stat:"Pages">#category.pageCount
+      )
+    )
+  )
+  @page:revisions(
+    header>h1>"Recent Changes"
+    table>revisions>*rev(
+      text>#rev.page
+      text:#rev.author
+      text:"muted">#rev.summary
+      text:"muted">#rev.createdAt
+    )
+  )
+)

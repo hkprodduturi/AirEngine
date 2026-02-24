@@ -1,0 +1,170 @@
+# ================================================================
+# BookCircle — Book Club Management
+# ================================================================
+# Books, members, meetings, and discussions.
+# Demonstrates meeting workflow, reading lists, group stats.
+# ================================================================
+
+@app:bookCircle
+
+@style(theme:dark,accent:#8b5cf6,radius:10,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  books:[{id:int,title:str,author:str,genre:str,rating:?float,pageCount:int,addedBy:str}],
+  members:[{id:int,name:str,email:str,joinedAt:str,booksRead:int,avatar:?str}],
+  meetings:[{id:int,title:str,bookTitle:str,date:str,location:str,status:str,attendeeCount:int}],
+  discussions:[{id:int,title:str,bookTitle:str,author:str,commentCount:int,createdAt:str}],
+  stats:{totalBooks:int,activeMembers:int,upcomingMeetings:int,totalDiscussions:int},
+  meetingStatusFilter:enum(all,upcoming,in_progress,completed),
+  search:str
+}
+
+@db{
+  Member{id:int:primary:auto,name:str:required,email:str:required,avatar:?str,bio:?str,created_at:datetime:auto}
+  Book{id:int:primary:auto,title:str:required,author:str:required,genre:enum(fiction,nonfiction,mystery,scifi,fantasy,romance,biography,history):required,isbn:?str,page_count:int:required,rating:?float,added_by_id:int:required,created_at:datetime:auto}
+  Meeting{id:int:primary:auto,title:str:required,date:date:required,location:str:required,notes:?str,status:enum(upcoming,in_progress,completed):default(upcoming),book_id:int:required,host_id:int:required,created_at:datetime:auto}
+  Discussion{id:int:primary:auto,title:str:required,body:str:required,book_id:int:required,author_id:int:required,created_at:datetime:auto}
+  @relation(Member.books<>Book.addedBy)
+  @relation(Book.meetings<>Meeting.book)
+  @relation(Member.hostedMeetings<>Meeting.host)
+  @relation(Book.discussions<>Discussion.book)
+  @relation(Member.discussions<>Discussion.author)
+  @index(Member.email:unique)
+  @index(Book.isbn:unique)
+  @index(Meeting.status+Meeting.date)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/books>~db.Book.findMany
+  POST:/books(title:str,author:str,genre:str,page_count:int)>~db.Book.create
+  PUT:/books/:id(rating:float)>~db.Book.update
+  DELETE:/books/:id>~db.Book.delete
+  GET:/members>~db.Member.findMany
+  POST:/members(name:str,email:str)>~db.Member.create
+  DELETE:/members/:id>~db.Member.delete
+  GET:/meetings>~db.Meeting.findMany
+  POST:/meetings(title:str,date:str,location:str,book_id:int)>~db.Meeting.create
+  PUT:/meetings/:id(status:str)>~db.Meeting.update
+  DELETE:/meetings/:id>~db.Meeting.delete
+  GET:/discussions>~db.Discussion.findMany
+  POST:/discussions(title:str,body:str,book_id:int)>~db.Discussion.create
+  GET:/stats>~db.Book.aggregate
+)
+
+@auth(required,role:enum(member,moderator,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /books>?user>books:login
+  /meetings>?user>meetings:login
+  /members>?user>members:login
+  /discussions>?user>discussions:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.books+~api.stats+~api.meetings
+  onChange:meetingStatusFilter>~api.meetings
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"BookCircle"
+        p:"muted">"Read together, grow together"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"BC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Books",btn:ghost>"Meetings",btn:ghost>"Members",btn:ghost>"Discussions")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Books">#stats.totalBooks
+        stat:"Members">#stats.activeMembers
+        stat:"Upcoming">#stats.upcomingMeetings
+        stat:"Discussions">#stats.totalDiscussions
+      )
+      @section:nextMeeting(
+        h2>"Next Meeting"
+        list>meetings>*meeting(card(row(h2>#meeting.title+badge:#meeting.status)+text>#meeting.bookTitle+text:"muted">#meeting.date))
+      )
+      @section:recentDiscussions(
+        h2>"Recent Discussions"
+        list>discussions>*disc(card(text>#disc.title+text:"muted">#disc.bookTitle+text:"muted">#disc.createdAt))
+      )
+    )
+  )
+  @page:books(
+    sidebar(
+      logo>"BC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Books",btn:ghost>"Meetings",btn:ghost>"Members",btn:ghost>"Discussions")
+    )+main(
+      header>h1>"Book Collection"+search:input>#search+btn:primary>"Add Book"
+      grid:3>books|search>*book(
+        card(
+          h2>#book.title
+          row(text>"By "+#book.author+badge:#book.genre)
+          row(btn:ghost>"Rate">!rate(#book.id),btn:ghost>"Discuss">!discuss(#book.id))
+        )
+      )
+    )
+  )
+  @page:meetings(
+    sidebar(
+      logo>"BC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Books",btn:ghost>"Meetings",btn:ghost>"Members",btn:ghost>"Discussions")
+    )+main(
+      header>h1>"Meetings"+tabs>meetingStatusFilter.set(all,upcoming,in_progress,completed)+btn:primary>"Schedule Meeting"
+      table>meetings|meetingStatusFilter>*meeting(
+        text>#meeting.title
+        text>#meeting.bookTitle
+        text>#meeting.date
+        badge:#meeting.status
+        row(btn:ghost>"Start">!start(#meeting.id),btn:ghost>"Complete">!complete(#meeting.id))
+      )
+    )
+  )
+  @page:members(
+    sidebar(
+      logo>"BC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Books",btn:ghost>"Meetings",btn:ghost>"Members",btn:ghost>"Discussions")
+    )+main(
+      header>h1>"Members"+btn:primary>"Invite Member"
+      grid:3>members>*member(
+        card(h2>#member.name+text:"muted">#member.email+stat:"Books Read">#member.booksRead)
+      )
+    )
+  )
+  @page:discussions(
+    sidebar(
+      logo>"BC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Books",btn:ghost>"Meetings",btn:ghost>"Members",btn:ghost>"Discussions")
+    )+main(
+      header>h1>"Discussions"+btn:primary>"New Discussion"
+      list>discussions>*disc(
+        card(
+          row(h2>#disc.title+badge:#disc.bookTitle)
+          row(text:"muted">"By "+#disc.author+stat:"Comments">#disc.commentCount)
+        )
+      )
+    )
+  )
+)

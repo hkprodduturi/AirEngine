@@ -1,0 +1,161 @@
+# SupplyChain — End-to-End Supply Chain Tracking
+
+@app:supplyChain
+
+@style(theme:dark,accent:#14b8a6,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  suppliers:[{id:int,name:str,contact:str,country:str,rating:float,active:bool}],
+  products:[{id:int,name:str,sku:str,price:float,stock:int,supplier:str}],
+  orders:[{id:int,reference:str,status:str,total:float,supplier:str,ordered:str}],
+  shipments:[{id:int,tracking:str,status:str,origin:str,destination:str,eta:str}],
+  stats:{totalOrders:int,submitted:int,shipped:int,received:int},
+  orderFilter:enum(all,draft,submitted,approved,shipped,received),
+  search:str
+}
+
+@db{
+  Supplier{id:int:primary:auto,name:str:required,contact_name:str:required,contact_email:str:required,country:str:required,rating:float:default(0),active:bool:default(true),created_at:datetime:auto}
+  Product{id:int:primary:auto,name:str:required,sku:str:required,description:?str,unit_price:float:required,stock_quantity:int:default(0),supplier_id:int:required,created_at:datetime:auto}
+  PurchaseOrder{id:int:primary:auto,reference:str:required,status:enum(draft,submitted,approved,shipped,received):default(draft),total_amount:float:required,notes:?str,supplier_id:int:required,ordered_at:?datetime,created_at:datetime:auto}
+  Shipment{id:int:primary:auto,tracking_number:str:required,status:enum(pending,in_transit,delivered):default(pending),origin:str:required,destination:str:required,order_id:int:required,estimated_arrival:?date,created_at:datetime:auto}
+  @relation(Supplier.products<>Product.supplier)
+  @relation(Supplier.orders<>PurchaseOrder.supplier)
+  @relation(PurchaseOrder.shipment<>Shipment.order)
+  @index(Supplier.contact_email:unique)
+  @index(Product.sku:unique)
+  @index(PurchaseOrder.reference:unique)
+  @index(PurchaseOrder.status+PurchaseOrder.supplier_id)
+}
+
+@env(DATABASE_URL:str:required JWT_SECRET:str:required PORT:int:3001)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/suppliers>~db.Supplier.findMany
+  POST:/suppliers(name:str,contact_name:str,contact_email:str,country:str)>~db.Supplier.create
+  PUT:/suppliers/:id(rating:float,active:bool)>~db.Supplier.update
+  DELETE:/suppliers/:id>~db.Supplier.delete
+  GET:/products>~db.Product.findMany
+  POST:/products(name:str,sku:str,unit_price:float,supplier_id:int)>~db.Product.create
+  PUT:/products/:id(stock_quantity:int)>~db.Product.update
+  DELETE:/products/:id>~db.Product.delete
+  GET:/orders>~db.PurchaseOrder.findMany
+  POST:/orders(reference:str,total_amount:float,supplier_id:int)>~db.PurchaseOrder.create
+  PUT:/orders/:id(status:str)>~db.PurchaseOrder.update
+  DELETE:/orders/:id>~db.PurchaseOrder.delete
+  GET:/shipments>~db.Shipment.findMany
+  POST:/shipments(tracking_number:str,origin:str,destination:str,order_id:int)>~db.Shipment.create
+  PUT:/shipments/:id(status:str)>~db.Shipment.update
+  GET:/stats>~db.PurchaseOrder.aggregate
+)
+
+@auth(required,role:enum(admin,procurement,viewer),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /orders>?user>orders:login
+  /products>?user>products:login
+  /suppliers>?user>suppliers:login
+  /shipments>?user>shipments:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.orders
+  onChange:orderFilter>~api.orders
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"SupplyChain"
+        p:"muted">"End-to-end supply chain visibility"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"SC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Products",btn:ghost>"Suppliers",btn:ghost>"Shipments")
+    )+main(
+      header>h1>"Supply Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Orders">#stats.totalOrders
+        stat:"Submitted">#stats.submitted
+        stat:"Shipped">#stats.shipped
+        stat:"Received">#stats.received
+      )
+      @section:recent(
+        h2>"Recent Orders"
+        table>orders>*order(
+          text>#order.reference+badge:#order.status+text>#order.total+text:"muted">#order.supplier+text:"muted">#order.ordered
+        )
+      )
+    )
+  )
+  @page:orders(
+    sidebar(
+      logo>"SC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Products",btn:ghost>"Suppliers",btn:ghost>"Shipments")
+    )+main(
+      header>h1>"Purchase Orders"+tabs>orderFilter.set(all,draft,submitted,approved,shipped,received)+btn:primary>"New Order"
+      table>orders|orderFilter>*order(
+        text>#order.reference+badge:#order.status+text>#order.total+text:"muted">#order.supplier+text:"muted">#order.ordered
+        row(btn:ghost>"Approve">!approve(#order.id),btn:ghost>"Ship">!ship(#order.id),btn:icon:!del(#order.id))
+      )
+    )
+  )
+  @page:products(
+    sidebar(
+      logo>"SC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Products",btn:ghost>"Suppliers",btn:ghost>"Shipments")
+    )+main(
+      header>h1>"Products"+search:input>#search+btn:primary>"Add Product"
+      table>products|search>*product(
+        text>#product.name+text>#product.sku+text>#product.price+text>#product.stock+text:"muted">#product.supplier
+        row(btn:ghost>"Edit",btn:icon:!del(#product.id))
+      )
+    )
+  )
+  @page:suppliers(
+    sidebar(
+      logo>"SC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Products",btn:ghost>"Suppliers",btn:ghost>"Shipments")
+    )+main(
+      header>h1>"Suppliers"+btn:primary>"Add Supplier"
+      grid:3>suppliers>*supplier(
+        card(
+          h2>#supplier.name
+          text>"Contact: "+text>#supplier.contact
+          text>"Country: "+text>#supplier.country
+          text>"Rating: "+text>#supplier.rating
+          badge:#supplier.active
+          row(btn:ghost>"Edit",btn:icon:!del(#supplier.id))
+        )
+      )
+    )
+  )
+  @page:shipments(
+    sidebar(
+      logo>"SC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Orders",btn:ghost>"Products",btn:ghost>"Suppliers",btn:ghost>"Shipments")
+    )+main(
+      header>h1>"Shipments"+btn:primary>"Track Shipment"
+      table>shipments>*shipment(
+        text>#shipment.tracking+badge:#shipment.status+text>#shipment.origin+text>#shipment.destination+text:"muted">#shipment.eta
+      )
+    )
+  )
+)

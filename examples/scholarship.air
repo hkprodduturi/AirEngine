@@ -1,0 +1,197 @@
+# ================================================================
+# Scholarship — Scholarship Application Management
+# ================================================================
+# A platform for managing scholarships, applicants,
+# applications, and review processes.
+# ================================================================
+
+@app:scholarship
+
+# ---- Design System ----
+
+@style(theme:dark,accent:#10b981,radius:10,font:sans,density:comfortable,maxWidth:1280)
+
+# ---- Client State ----
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  scholarships:[{id:int,name:str,amount:float,deadline:str,field:str,applicationCount:int}],
+  applicants:[{id:int,name:str,email:str,gpa:float,university:str}],
+  applications:[{id:int,scholarship:str,applicant:str,status:str,submittedAt:str,gpa:float}],
+  reviews:[{id:int,application:str,reviewer:str,score:int,comments:str,reviewedAt:str}],
+  stats:{totalScholarships:int,totalApplications:int,acceptedCount:int,pendingReviews:int},
+  search:str,
+  statusFilter:enum(all,submitted,reviewed,accepted,rejected),
+  fieldFilter:enum(all,stem,humanities,business,arts,medicine)
+}
+
+# ---- Database Models ----
+
+@db{
+  Scholarship{id:int:primary:auto,name:str:required,description:?str,amount:float:required,deadline:date:required,field:enum(stem,humanities,business,arts,medicine):required,active:bool:default(true),created_at:datetime:auto}
+  Applicant{id:int:primary:auto,name:str:required,email:str:required,gpa:float:required,university:str:required,major:?str,created_at:datetime:auto}
+  Application{id:int:primary:auto,status:enum(submitted,reviewed,accepted,rejected):default(submitted),essay:?str,scholarship_id:int:required,applicant_id:int:required,submitted_at:datetime:auto}
+  Review{id:int:primary:auto,score:int:required,comments:?str,reviewer_name:str:required,application_id:int:required,reviewed_at:datetime:auto}
+  @relation(Scholarship.applications<>Application.scholarship)
+  @relation(Applicant.applications<>Application.applicant)
+  @relation(Application.reviews<>Review.application)
+  @index(Applicant.email:unique)
+  @index(Application.status+Application.scholarship_id)
+  @index(Scholarship.deadline)
+}
+
+# ---- Environment Variables ----
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+# ---- API Routes ----
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/scholarships>~db.Scholarship.findMany
+  POST:/scholarships(name:str,description:str,amount:float,deadline:str,field:str)>~db.Scholarship.create
+  PUT:/scholarships/:id(name:str,amount:float,active:bool)>~db.Scholarship.update
+  DELETE:/scholarships/:id>~db.Scholarship.delete
+  GET:/applicants>~db.Applicant.findMany
+  POST:/applicants(name:str,email:str,gpa:float,university:str,major:str)>~db.Applicant.create
+  PUT:/applicants/:id(name:str,gpa:float)>~db.Applicant.update
+  DELETE:/applicants/:id>~db.Applicant.delete
+  GET:/applications>~db.Application.findMany
+  POST:/applications(essay:str,scholarship_id:int,applicant_id:int)>~db.Application.create
+  PUT:/applications/:id(status:str)>~db.Application.update
+  DELETE:/applications/:id>~db.Application.delete
+  GET:/reviews>~db.Review.findMany
+  POST:/reviews(score:int,comments:str,reviewer_name:str,application_id:int)>~db.Review.create
+  PUT:/reviews/:id(score:int,comments:str)>~db.Review.update
+  GET:/stats>~db.Application.aggregate
+)
+
+# ---- Authentication ----
+
+@auth(required,role:enum(admin,reviewer,applicant),redirect:/login)
+
+# ---- Navigation ----
+
+@nav(
+  />?user>dashboard:login
+  /scholarships>?user>scholarships:login
+  /applications>?user>applications:login
+  /reviews>?user>reviews:login
+  /login>login
+)
+
+# ---- Session Persistence ----
+
+@persist:cookie(user,httpOnly,7d)
+
+# ---- Lifecycle Hooks ----
+
+@hook(
+  onMount>~api.stats+~api.scholarships+~api.applications
+  onChange:statusFilter>~api.applications
+  onChange:fieldFilter>~api.scholarships
+)
+
+# ---- User Interface ----
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Scholarships"
+        p:"muted">"Scholarship application and review portal"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"SC"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Scholarships"
+        btn:ghost>"Applications"
+        btn:ghost>"Reviews"
+      )
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Scholarships">#stats.totalScholarships
+        stat:"Applications">#stats.totalApplications
+        stat:"Accepted">#stats.acceptedCount
+        stat:"Pending Reviews">#stats.pendingReviews
+      )
+      @section:recentApplications(
+        h2>"Recent Applications"
+        table>applications>*app(
+          text>#app.scholarship
+          text>#app.applicant
+          badge:#app.status
+          text:"muted">#app.gpa
+          text:"muted">#app.submittedAt
+        )
+      )
+    )
+  )
+  @page:scholarships(
+    sidebar(
+      logo>"SC"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Scholarships"
+        btn:ghost>"Applications"
+        btn:ghost>"Reviews"
+      )
+    )+main(
+      header>h1>"Scholarships"+tabs>fieldFilter.set(all,stem,humanities,business,arts,medicine)+btn:primary>"New Scholarship"
+      grid:3>scholarships|fieldFilter>*scholarship(
+        card(
+          h2>#scholarship.name
+          badge:#scholarship.field
+          stat:"Amount">$#scholarship.amount
+          text:"muted">"Deadline: "+#scholarship.deadline
+          stat:"Applications">#scholarship.applicationCount
+          row(btn:ghost>"View",btn:ghost>"Delete">!del(#scholarship.id))
+        )
+      )
+    )
+  )
+  @page:applications(
+    sidebar(
+      logo>"SC"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Scholarships"
+        btn:ghost>"Applications"
+        btn:ghost>"Reviews"
+      )
+    )+main(
+      header>h1>"Applications"+tabs>statusFilter.set(all,submitted,reviewed,accepted,rejected)+search:input>#search
+      table(data:#applications|statusFilter|search,cols:[scholarship,applicant,status:badge,gpa,submittedAt],actions:[edit,!del])
+    )
+  )
+  @page:reviews(
+    sidebar(
+      logo>"SC"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Scholarships"
+        btn:ghost>"Applications"
+        btn:ghost>"Reviews"
+      )
+    )+main(
+      header>h1>"Reviews"+btn:primary>"New Review"
+      table(data:#reviews,cols:[application,reviewer,score,comments,reviewedAt],actions:[edit,!del])
+    )
+  )
+)

@@ -1,0 +1,146 @@
+# EscapeRoom — Manage rooms, themes, bookings, and reviews
+
+@app:escapeRoom
+@style(theme:dark,accent:#ef4444,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  rooms:[{id:int,name:str,difficulty:str,capacity:int,duration:int,price:float,theme_id:int}],
+  themes:[{id:int,name:str,description:str,roomCount:int}],
+  bookings:[{id:int,date:date,time:str,status:str,players:int,room_id:int,customerName:str}],
+  reviews:[{id:int,rating:int,comment:str,date:date,room_id:int,author:str}],
+  stats:{totalBookings:int,pendingBookings:int,completedBookings:int,avgRating:float,totalRooms:int},
+  difficultyFilter:enum(all,beginner,intermediate,advanced,expert),
+  bookingFilter:enum(all,pending,confirmed,completed,cancelled),
+  search:str
+}
+
+@db{
+  Room{id:int:primary:auto,name:str:required,difficulty:enum(beginner,intermediate,advanced,expert):required,capacity:int:default(6),duration:int:default(60),price:float:required,description:?str,image:?str,theme_id:int:required,created_at:datetime:auto}
+  Theme{id:int:primary:auto,name:str:required,description:?str,color:?str,created_at:datetime:auto}
+  Booking{id:int:primary:auto,date:date:required,time:str:required,status:enum(pending,confirmed,completed,cancelled):default(pending),players:int:required,customerName:str:required,customerEmail:str:required,customerPhone:?str,notes:?str,room_id:int:required,created_at:datetime:auto}
+  Review{id:int:primary:auto,rating:int:required,comment:?str,date:date:required,author:str:required,room_id:int:required,created_at:datetime:auto}
+  @relation(Theme.rooms<>Room.theme)
+  @relation(Room.bookings<>Booking.room)
+  @relation(Room.reviews<>Review.room)
+  @index(Theme.name:unique)
+  @index(Booking.status+Booking.date)
+  @index(Booking.room_id+Booking.date)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/rooms>~db.Room.findMany
+  POST:/rooms(name:str,difficulty:str,capacity:int,duration:int,price:float,theme_id:int)>~db.Room.create
+  PUT:/rooms/:id(price:float,capacity:int)>~db.Room.update
+  DELETE:/rooms/:id>~db.Room.delete
+  GET:/themes>~db.Theme.findMany
+  POST:/themes(name:str,description:str)>~db.Theme.create
+  DELETE:/themes/:id>~db.Theme.delete
+  GET:/bookings>~db.Booking.findMany
+  POST:/bookings(date:date,time:str,players:int,customerName:str,customerEmail:str,room_id:int)>~db.Booking.create
+  PUT:/bookings/:id(status:str)>~db.Booking.update
+  DELETE:/bookings/:id>~db.Booking.delete
+  GET:/reviews>~db.Review.findMany
+  POST:/reviews(rating:int,comment:str,author:str,room_id:int)>~db.Review.create
+  DELETE:/reviews/:id>~db.Review.delete
+  GET:/stats>~db.Booking.aggregate
+)
+
+@auth(required,role:enum(admin,manager,staff),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /rooms>?user>rooms:login
+  /bookings>?user>bookings:login
+  /reviews>?user>reviews:login
+  /themes>?user>themes:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.rooms
+  onChange:difficultyFilter>~api.rooms
+  onChange:bookingFilter>~api.bookings
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Escape Room"
+        p:"muted">"Book your next adventure"
+        form(input:email>#user.email+input:password>#user.password+btn:primary>"Sign In">!login)
+        p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"ER"
+      nav:vertical(dashboard,rooms,bookings,reviews,themes)
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Bookings">#stats.totalBookings
+        stat:"Pending">#stats.pendingBookings
+        stat:"Completed">#stats.completedBookings
+        stat:"Avg Rating">#stats.avgRating
+      )
+      grid:2(
+        card(h2>"Rooms Overview"+stat:"Total Rooms">#stats.totalRooms+list>rooms>*room(text>#room.name+badge:#room.difficulty+text:"muted">#room.capacity+" players"))
+        card(h2>"Upcoming Bookings"+list>bookings|pending>*booking(text>#booking.customerName+text:"muted">#booking.date+" "+#booking.time+badge:#booking.status))
+      )
+    )
+  )
+  @page:rooms(
+    sidebar(
+      logo>"ER"
+      nav:vertical(dashboard,rooms,bookings,reviews,themes)
+    )+main(
+      header>h1>"Rooms"+tabs>difficultyFilter.set(all,beginner,intermediate,advanced,expert)+btn:primary>"Add Room"
+      grid:3>rooms|difficultyFilter>*room(
+        card(h2>#room.name+badge:#room.difficulty+text>#room.capacity+" players max"+text>#room.duration+" minutes"+stat:"Price">#room.price+row(btn:ghost>"Edit",btn:primary>"Book">!book(#room.id),btn:ghost>"Remove">!del(#room.id)))
+      )
+    )
+  )
+  @page:bookings(
+    sidebar(
+      logo>"ER"
+      nav:vertical(dashboard,rooms,bookings,reviews,themes)
+    )+main(
+      header>h1>"Bookings"+tabs>bookingFilter.set(all,pending,confirmed,completed,cancelled)+btn:primary>"New Booking"
+      search:input>#search
+      table(data:#bookings|bookingFilter|search,cols:[customerName,date,time,players,status:badge,room_id],actions:[edit,!del])
+    )
+  )
+  @page:reviews(
+    sidebar(
+      logo>"ER"
+      nav:vertical(dashboard,rooms,bookings,reviews,themes)
+    )+main(
+      header>h1>"Reviews"+btn:primary>"Add Review"
+      table(data:#reviews,cols:[author,rating,comment,date,room_id],actions:[!del])
+    )
+  )
+  @page:themes(
+    sidebar(
+      logo>"ER"
+      nav:vertical(dashboard,rooms,bookings,reviews,themes)
+    )+main(
+      header>h1>"Themes"+btn:primary>"Add Theme"
+      grid:3>themes>*theme(
+        card(h2>#theme.name+p>#theme.description+stat:"Rooms">#theme.roomCount+row(btn:ghost>"Edit",btn:ghost>"Remove">!del(#theme.id)))
+      )
+    )
+  )
+)

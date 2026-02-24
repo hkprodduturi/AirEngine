@@ -230,8 +230,13 @@ export function resolveRelations(db: AirDbBlock): { resolved: ResolvedRelation[]
 
 function findFkField(model: AirDbModel, relName: string, otherModel: string): AirDbField | undefined {
   const lcOther = otherModel.charAt(0).toLowerCase() + otherModel.slice(1);
+  // Convert camelCase to snake_case: "homeTeam" → "home_team", "purchaseOrder" → "purchase_order"
+  const snakeRelName = relName.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
+  const snakeOther = otherModel.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
   return model.fields.find(f => f.name === `${relName}_id`) ??
-    model.fields.find(f => f.name === `${lcOther}_id`);
+    model.fields.find(f => f.name === `${lcOther}_id`) ??
+    model.fields.find(f => f.name === `${snakeRelName}_id`) ??
+    model.fields.find(f => f.name === `${snakeOther}_id`);
 }
 
 function isOptionalField(field: AirDbField): boolean {

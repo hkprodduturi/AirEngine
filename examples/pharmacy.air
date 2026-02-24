@@ -1,0 +1,163 @@
+# ================================================================
+# PharmaCare — Medication Inventory & Prescription System
+# ================================================================
+# Drugs, categories, prescriptions, and supplier management.
+# Demonstrates inventory tracking, status workflows, category filters.
+# ================================================================
+
+@app:pharmacare
+
+@style(theme:dark,accent:#06b6d4,radius:10,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  drugs:[{id:int,name:str,genericName:str,category:str,quantity:int,unitPrice:float,expiryDate:str}],
+  categories:[{id:int,name:str,drugCount:int}],
+  prescriptions:[{id:int,patientName:str,drugName:str,dosage:str,status:str,prescribedAt:str}],
+  suppliers:[{id:int,name:str,email:str,phone:?str,supplyCount:int}],
+  stats:{totalDrugs:int,lowStock:int,pendingRx:int,dispensedToday:int},
+  statusFilter:enum(all,pending,dispensed,cancelled),
+  categoryFilter:?int,
+  search:str
+}
+
+@db{
+  Category{id:int:primary:auto,name:str:required,description:?str,created_at:datetime:auto}
+  Supplier{id:int:primary:auto,name:str:required,email:str:required,phone:?str,address:?str,created_at:datetime:auto}
+  Drug{id:int:primary:auto,name:str:required,generic_name:str:required,dosage_form:str:required,strength:str:required,quantity:int:default(0),unit_price:float:required,expiry_date:date:required,category_id:int:required,supplier_id:int:required,created_at:datetime:auto}
+  Prescription{id:int:primary:auto,patient_name:str:required,patient_phone:?str,dosage:str:required,frequency:str:required,duration:str:required,status:enum(pending,dispensed,cancelled):default(pending),notes:?str,drug_id:int:required,prescribed_by:str:required,created_at:datetime:auto}
+  @relation(Category.drugs<>Drug.category)
+  @relation(Supplier.drugs<>Drug.supplier)
+  @relation(Drug.prescriptions<>Prescription.drug)
+  @index(Drug.name:unique)
+  @index(Supplier.email:unique)
+  @index(Prescription.status+Prescription.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/drugs>~db.Drug.findMany
+  POST:/drugs(name:str,generic_name:str,dosage_form:str,strength:str,quantity:int,unit_price:float,expiry_date:str,category_id:int,supplier_id:int)>~db.Drug.create
+  PUT:/drugs/:id(quantity:int)>~db.Drug.update
+  DELETE:/drugs/:id>~db.Drug.delete
+  GET:/categories>~db.Category.findMany
+  POST:/categories(name:str)>~db.Category.create
+  GET:/prescriptions>~db.Prescription.findMany
+  POST:/prescriptions(patient_name:str,dosage:str,frequency:str,duration:str,drug_id:int,prescribed_by:str)>~db.Prescription.create
+  PUT:/prescriptions/:id(status:str)>~db.Prescription.update
+  GET:/suppliers>~db.Supplier.findMany
+  POST:/suppliers(name:str,email:str,phone:str)>~db.Supplier.create
+  GET:/stats>~db.Drug.aggregate
+)
+
+@auth(required,role:enum(pharmacist,technician,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /drugs>?user>drugs:login
+  /prescriptions>?user>prescriptions:login
+  /suppliers>?user>suppliers:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.drugs+~api.categories+~api.stats
+  onChange:statusFilter>~api.prescriptions
+  onChange:categoryFilter>~api.drugs
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"PharmaCare"
+        p:"muted">"Medication inventory management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"PC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Drugs",btn:ghost>"Prescriptions",btn:ghost>"Suppliers")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Drugs">#stats.totalDrugs
+        stat:"Low Stock">#stats.lowStock
+        stat:"Pending Rx">#stats.pendingRx
+        stat:"Dispensed Today">#stats.dispensedToday
+      )
+      @section:recent(
+        h2>"Recent Prescriptions"
+        table>prescriptions>*rx(text>#rx.patientName+text>#rx.drugName+text>#rx.dosage+badge:#rx.status+text:"muted">#rx.prescribedAt)
+      )
+      @section:expiring(
+        h2>"Expiring Soon"
+        list>drugs>*drug(card(text>#drug.name+text:#drug.expiryDate+stat:"Qty">#drug.quantity))
+      )
+    )
+  )
+  @page:drugs(
+    sidebar(
+      logo>"PC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Drugs",btn:ghost>"Prescriptions",btn:ghost>"Suppliers")
+    )+main(
+      header>h1>"Drug Inventory"+search:input>#search+select:#categoryFilter+btn:primary>"Add Drug"
+      table>drugs|categoryFilter|search>*drug(
+        text>#drug.name
+        text>"(">#drug.genericName+")"
+        badge:#drug.category
+        stat:"Qty">#drug.quantity
+        text:amount:$#drug.unitPrice
+        text:"muted">#drug.expiryDate
+        row(btn:ghost>"Edit">!edit(#drug.id),btn:ghost>"Delete">!del(#drug.id))
+      )
+    )
+  )
+  @page:prescriptions(
+    sidebar(
+      logo>"PC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Drugs",btn:ghost>"Prescriptions",btn:ghost>"Suppliers")
+    )+main(
+      header>h1>"Prescriptions"+tabs>statusFilter.set(all,pending,dispensed,cancelled)+btn:primary>"New Prescription"
+      table>prescriptions|statusFilter>*rx(
+        text>#rx.patientName
+        text>#rx.drugName
+        text>#rx.dosage
+        badge:#rx.status
+        text:"muted">#rx.prescribedAt
+        row(btn:ghost>"Dispense">!dispense(#rx.id),btn:ghost>"Cancel">!cancel(#rx.id))
+      )
+    )
+  )
+  @page:suppliers(
+    sidebar(
+      logo>"PC"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Drugs",btn:ghost>"Prescriptions",btn:ghost>"Suppliers")
+    )+main(
+      header>h1>"Suppliers"+btn:primary>"Add Supplier"
+      grid:3>suppliers>*supplier(
+        card(
+          h2>#supplier.name
+          text>#supplier.email
+          text:"muted">#supplier.phone
+          stat:"Products">#supplier.supplyCount
+          row(btn:ghost>"Edit",btn:ghost>"Delete">!del(#supplier.id))
+        )
+      )
+    )
+  )
+)

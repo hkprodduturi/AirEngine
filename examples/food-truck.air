@@ -1,0 +1,168 @@
+# FoodTruck — Food Truck Management
+# Locations, menu items, events, and sales.
+# Demonstrates location scheduling, event management, sales tracking.
+
+@app:foodTruck
+
+@style(theme:dark,accent:#f59e0b,radius:12,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  locations:[{id:int,name:str,address:str,city:str,type:str}],
+  menuItems:[{id:int,name:str,price:float,category:str,available:bool}],
+  events:[{id:int,name:str,date:str,location:str,status:str,expectedGuests:int}],
+  sales:[{id:int,amount:float,paymentMethod:str,event:?str,itemCount:int,createdAt:str}],
+  stats:{todaySales:float,totalEvents:int,avgSale:float,topLocation:str},
+  categoryFilter:enum(all,tacos,burgers,sides,drinks,specials),
+  eventStatus:enum(all,upcoming,active,completed),
+  search:str
+}
+
+@db{
+  Location{id:int:primary:auto,name:str:required,address:str:required,city:str:required,type:enum(street,park,market,festival,private):required,permit_required:bool:default(false),notes:?str,created_at:datetime:auto}
+  MenuItem{id:int:primary:auto,name:str:required,description:?str,price:float:required,category:enum(tacos,burgers,sides,drinks,specials):required,available:bool:default(true),cost:float:default(0),created_at:datetime:auto}
+  Event{id:int:primary:auto,name:str:required,date:date:required,start_time:str:required,end_time:str:required,status:enum(upcoming,active,completed,cancelled):default(upcoming),expected_guests:int:default(0),notes:?str,location_id:int:required,created_at:datetime:auto}
+  Sale{id:int:primary:auto,amount:float:required,payment_method:enum(cash,card,mobile):required,item_count:int:required,event_id:?int,created_at:datetime:auto}
+  @relation(Location.events<>Event.location)
+  @relation(Event.sales<>Sale.event)
+  @index(Location.name:unique)
+  @index(Event.date+Event.status)
+  @index(Sale.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/locations>~db.Location.findMany
+  POST:/locations(name:str,address:str,city:str,type:str)>~db.Location.create
+  PUT:/locations/:id(name:str,address:str)>~db.Location.update
+  DELETE:/locations/:id>~db.Location.delete
+  GET:/menu>~db.MenuItem.findMany
+  POST:/menu(name:str,price:float,category:str)>~db.MenuItem.create
+  PUT:/menu/:id(available:bool,price:float)>~db.MenuItem.update
+  DELETE:/menu/:id>~db.MenuItem.delete
+  GET:/events>~db.Event.findMany
+  POST:/events(name:str,date:str,start_time:str,end_time:str,location_id:int)>~db.Event.create
+  PUT:/events/:id(status:str)>~db.Event.update
+  DELETE:/events/:id>~db.Event.delete
+  GET:/sales>~db.Sale.findMany
+  POST:/sales(amount:float,payment_method:str,item_count:int,event_id:?int)>~db.Sale.create
+  GET:/stats>~db.Sale.aggregate
+)
+
+@auth(required,role:enum(staff,manager,owner),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /events>?user>events:login
+  /menu>?user>menu:login
+  /locations>?user>locations:login
+  /sales>?user>sales:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.events+~api.sales+~api.stats
+  onChange:eventStatus>~api.events
+  onChange:categoryFilter>~api.menu
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"FoodTruck"
+        p:"muted">"Manage your food truck business"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Menu",btn:ghost>"Locations",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Today Sales">#stats.todaySales
+        stat:"Total Events">#stats.totalEvents
+        stat:"Avg Sale">#stats.avgSale
+        stat:"Top Location">#stats.topLocation
+      )
+      @section:upcoming(
+        h2>"Upcoming Events"
+        list>events|upcoming>*event(
+          card(row(text>#event.name+text>#event.date+text>#event.location+badge:#event.status+stat:"Expected">#event.expectedGuests))
+        )
+      )
+      @section:recent(
+        h2>"Recent Sales"
+        table>sales>*sale(text:amount:$#sale.amount+badge:#sale.paymentMethod+stat:"Items">#sale.itemCount+text:"muted">#sale.createdAt)
+      )
+    )
+  )
+  @page:events(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Menu",btn:ghost>"Locations",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Events"+search:input>#search+tabs>eventStatus.set(all,upcoming,active,completed)+btn:primary>"New Event"
+      table>events|eventStatus|search>*event(
+        text>#event.name+text>#event.date+text>#event.location
+        badge:#event.status+stat:"Guests">#event.expectedGuests
+        row(btn:ghost>"Activate">!activate(#event.id),btn:ghost>"Complete">!complete(#event.id),btn:ghost>"Cancel">!cancel(#event.id))
+      )
+    )
+  )
+  @page:menu(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Menu",btn:ghost>"Locations",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Menu"+tabs>categoryFilter.set(all,tacos,burgers,sides,drinks,specials)+btn:primary>"Add Item"
+      grid:3>menuItems|categoryFilter>*item(
+        card(h2>#item.name+badge:#item.category+text:amount:$#item.price+badge:#item.available+row(btn:ghost>"Edit">!edit(#item.id),btn:ghost>"Toggle">!toggle(#item.id),btn:ghost>"Delete">!del(#item.id)))
+      )
+    )
+  )
+  @page:locations(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Menu",btn:ghost>"Locations",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Locations"+btn:primary>"Add Location"
+      grid:3>locations>*loc(
+        card(
+          h2>#loc.name
+          text>#loc.address
+          text>"City: "+#loc.city
+          badge:#loc.type
+          row(btn:ghost>"Schedule Event">!schedule(#loc.id),btn:ghost>"Edit">!edit(#loc.id),btn:ghost>"Delete">!del(#loc.id))
+        )
+      )
+    )
+  )
+  @page:sales(
+    sidebar(
+      logo>"FT"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Events",btn:ghost>"Menu",btn:ghost>"Locations",btn:ghost>"Sales")
+    )+main(
+      header>h1>"Sales"+btn:primary>"Record Sale"
+      table>sales>*sale(
+        text:amount:$#sale.amount+badge:#sale.paymentMethod+stat:"Items">#sale.itemCount
+        text:"muted">#sale.event+text:"muted">#sale.createdAt
+      )
+    )
+  )
+)

@@ -1,0 +1,179 @@
+# DesignStudio — Design Project Management Platform
+# Clients, projects, deliverables, and feedback tracking.
+
+@app:designStudio
+@style(theme:dark,accent:#f97316,radius:10,font:sans,density:comfortable,maxWidth:1400)
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  clients:[{id:int,name:str,email:str,company:?str,projectCount:int}],
+  projects:[{id:int,name:str,status:str,clientName:str,deadline:?str,deliverableCount:int}],
+  deliverables:[{id:int,title:str,type:str,status:str,projectName:str,dueDate:?str}],
+  feedback:[{id:int,comment:str,rating:int,clientName:str,projectName:str,createdAt:str}],
+  stats:{totalProjects:int,activeCount:int,approvedCount:int,totalDeliverables:int},
+  statusFilter:enum(all,briefing,designing,revision,approved),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(designer,lead,admin),created_at:datetime:auto}
+  Client{id:int:primary:auto,name:str:required,email:str:required,company:?str,phone:?str,created_at:datetime:auto}
+  Project{id:int:primary:auto,name:str:required,description:?str,status:enum(briefing,designing,revision,approved):default(briefing),deadline:?date,client_id:int:required,user_id:int:required,created_at:datetime:auto}
+  Deliverable{id:int:primary:auto,title:str:required,type:enum(logo,banner,mockup,prototype,final):required,status:enum(pending,in_progress,completed):default(pending),file_url:?str,project_id:int:required,due_date:?date,created_at:datetime:auto}
+  Feedback{id:int:primary:auto,comment:str:required,rating:int:default(3),project_id:int:required,client_id:int:required,created_at:datetime:auto}
+  @relation(Client.projects<>Project.client)
+  @relation(User.projects<>Project.user)
+  @relation(Project.deliverables<>Deliverable.project)
+  @relation(Project.feedback<>Feedback.project)
+  @relation(Client.feedback<>Feedback.client)
+  @index(User.email:unique)
+  @index(Client.email:unique)
+  @index(Project.status+Project.client_id)
+  @index(Deliverable.project_id)
+}
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/clients>~db.Client.findMany
+  POST:/clients(name:str,email:str,company:?str)>~db.Client.create
+  PUT:/clients/:id(name:str,email:str)>~db.Client.update
+  DELETE:/clients/:id>~db.Client.delete
+  GET:/projects>~db.Project.findMany
+  POST:/projects(name:str,client_id:int,deadline:?str)>~db.Project.create
+  PUT:/projects/:id(name:str,status:str)>~db.Project.update
+  DELETE:/projects/:id>~db.Project.delete
+  GET:/deliverables>~db.Deliverable.findMany
+  POST:/deliverables(title:str,type:str,project_id:int)>~db.Deliverable.create
+  PUT:/deliverables/:id(status:str)>~db.Deliverable.update
+  DELETE:/deliverables/:id>~db.Deliverable.delete
+  GET:/feedback>~db.Feedback.findMany
+  POST:/feedback(comment:str,rating:int,project_id:int,client_id:int)>~db.Feedback.create
+  GET:/stats>~db.Project.aggregate
+)
+@auth(required,role:enum(designer,lead,admin),redirect:/login)
+@nav(
+  />?user>dashboard:login
+  /projects>?user>projects:login
+  /clients>?user>clients:login
+  /deliverables>?user>deliverables:login
+  /feedback>?user>feedback:login
+  /login>login
+)
+@persist:cookie(user,httpOnly,7d)
+@hook(
+  onMount>~api.projects+~api.clients+~api.stats
+  onChange:statusFilter>~api.projects
+)
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"DesignStudio"
+        p:"muted">"Creative project management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"New here? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"DS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Projects",btn:ghost>"Clients",btn:ghost>"Deliverables",btn:ghost>"Feedback")
+    )+main(
+      header>h1>"Dashboard"
+      grid:4(
+        stat:"Total Projects">#stats.totalProjects
+        stat:"Active">#stats.activeCount
+        stat:"Approved">#stats.approvedCount
+        stat:"Deliverables">#stats.totalDeliverables
+      )
+      @section:recentProjects(
+        h2>"Recent Projects"
+        grid:3>projects>*project(
+          card(
+            h2>#project.name
+            badge:#project.status
+            text:"muted">#project.clientName
+            text:"muted">#project.deadline
+          )
+        )
+      )
+      @section:recentFeedback(
+        h2>"Recent Feedback"
+        list>feedback>*fb(text>#fb.clientName+text>#fb.comment+text:"muted">#fb.createdAt)
+      )
+    )
+  )
+  @page:projects(
+    sidebar(
+      logo>"DS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Projects",btn:ghost>"Clients",btn:ghost>"Deliverables",btn:ghost>"Feedback")
+    )+main(
+      header>h1>"Projects"+tabs>statusFilter.set(all,briefing,designing,revision,approved)+btn:primary>"New Project"
+      grid:3>projects|statusFilter>*project(
+        card(
+          h2>#project.name
+          badge:#project.status
+          text:"muted">#project.clientName
+          stat:"Deliverables">#project.deliverableCount
+          text:"muted">#project.deadline
+          row(btn:ghost>"Open",btn:ghost>"Edit",btn:ghost>"Delete">!del(#project.id))
+        )
+      )
+    )
+  )
+  @page:clients(
+    sidebar(
+      logo>"DS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Projects",btn:ghost>"Clients",btn:ghost>"Deliverables",btn:ghost>"Feedback")
+    )+main(
+      header>h1>"Clients"+search:input>#search+btn:primary>"Add Client"
+      table>clients|search>*client(
+        text>#client.name
+        text>#client.email
+        text:"muted">#client.company
+        stat:"Projects">#client.projectCount
+        row(btn:ghost>"Edit",btn:icon:!del(#client.id))
+      )
+    )
+  )
+  @page:deliverables(
+    sidebar(
+      logo>"DS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Projects",btn:ghost>"Clients",btn:ghost>"Deliverables",btn:ghost>"Feedback")
+    )+main(
+      header>h1>"Deliverables"+btn:primary>"New Deliverable"
+      table>deliverables>*item(
+        text>#item.title
+        badge:#item.type
+        badge:#item.status
+        text:"muted">#item.projectName
+        text:"muted">#item.dueDate
+        row(btn:ghost>"Complete">!update(#item.id),btn:icon:!del(#item.id))
+      )
+    )
+  )
+  @page:feedback(
+    sidebar(
+      logo>"DS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Projects",btn:ghost>"Clients",btn:ghost>"Deliverables",btn:ghost>"Feedback")
+    )+main(
+      header>h1>"Feedback"
+      table>feedback>*fb(
+        text>#fb.comment
+        text>#fb.rating
+        text:"muted">#fb.clientName
+        text:"muted">#fb.projectName
+        text:"muted">#fb.createdAt
+      )
+    )
+  )
+)

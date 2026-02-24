@@ -1,0 +1,167 @@
+# ================================================================
+# InvoiceHub — Invoice & Billing Management
+# ================================================================
+# Clients, invoices, line items, and payments.
+# Demonstrates status workflows, aggregation, financial stats.
+# ================================================================
+
+@app:invoicehub
+
+@style(theme:dark,accent:#059669,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  clients:[{id:int,name:str,email:str,company:?str,phone:?str}],
+  invoices:[{id:int,number:str,clientName:str,total:float,status:str,dueDate:str,createdAt:str}],
+  invoiceItems:[{id:int,description:str,quantity:int,unitPrice:float,total:float}],
+  payments:[{id:int,invoiceNumber:str,amount:float,method:str,paidAt:str}],
+  revenueStats:{totalRevenue:float,outstanding:float,overdue:float,paidCount:int},
+  statusFilter:enum(all,draft,sent,paid,overdue),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(accountant,manager,admin),created_at:datetime:auto}
+  Client{id:int:primary:auto,name:str:required,email:str:required,company:?str,phone:?str,address:?str,created_at:datetime:auto}
+  Invoice{id:int:primary:auto,number:str:required,status:enum(draft,sent,paid,overdue):default(draft),subtotal:float:required,tax:float:default(0),total:float:required,due_date:date:required,notes:?str,client_id:int:required,user_id:int:required,created_at:datetime:auto}
+  InvoiceItem{id:int:primary:auto,description:str:required,quantity:int:required,unit_price:float:required,total:float:required,invoice_id:int:required}
+  Payment{id:int:primary:auto,amount:float:required,method:enum(card,bank_transfer,cash,check):required,reference:?str,invoice_id:int:required,paid_at:datetime:auto,created_at:datetime:auto}
+  @relation(Client.invoices<>Invoice.client)
+  @relation(User.invoices<>Invoice.user)
+  @relation(Invoice.items<>InvoiceItem.invoice)
+  @relation(Invoice.payments<>Payment.invoice)
+  @index(User.email:unique)
+  @index(Client.email:unique)
+  @index(Invoice.number:unique)
+  @index(Invoice.status+Invoice.client_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  PORT:int:3001
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/clients>~db.Client.findMany
+  POST:/clients(name:str,email:str,company:?str)>~db.Client.create
+  PUT:/clients/:id(name:str,email:str)>~db.Client.update
+  DELETE:/clients/:id>~db.Client.delete
+  GET:/invoices>~db.Invoice.findMany
+  POST:/invoices(number:str,subtotal:float,tax:float,total:float,due_date:str,client_id:int)>~db.Invoice.create
+  PUT:/invoices/:id(status:str)>~db.Invoice.update
+  DELETE:/invoices/:id>~db.Invoice.delete
+  POST:/invoice-items(description:str,quantity:int,unit_price:float,total:float,invoice_id:int)>~db.InvoiceItem.create
+  GET:/payments>~db.Payment.findMany
+  POST:/payments(amount:float,method:str,invoice_id:int)>~db.Payment.create
+  GET:/revenue/stats>~db.Invoice.aggregate
+)
+
+@auth(required,role:enum(accountant,manager,admin),redirect:/login)
+
+@email(
+  invoiceSent(name:str,number:str)>"Invoice has been sent"
+  paymentReceived(name:str,amount:float)>"Payment received"
+)
+
+@nav(
+  />?user>dashboard:login
+  /invoices>?user>invoices:login
+  /clients>?user>clients:login
+  /payments>?user>payments:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.invoices+~api.clients+~api.stats
+  onChange:statusFilter>~api.invoices
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"InvoiceHub"
+        p:"muted">"Billing and invoice management"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"IH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Invoices",btn:ghost>"Clients",btn:ghost>"Payments")
+    )+main(
+      header>h1>"Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Revenue">#revenueStats.totalRevenue
+        stat:"Outstanding">#revenueStats.outstanding
+        stat:"Overdue">#revenueStats.overdue
+        stat:"Paid Invoices">#revenueStats.paidCount
+      )
+      @section:recentInvoices(
+        h2>"Recent Invoices"
+        table>invoices>*inv(text>#inv.number+text>#inv.clientName+text:amount:$#inv.total+badge:#inv.status+text:"muted">#inv.dueDate)
+      )
+      @section:recentPayments(
+        h2>"Recent Payments"
+        list>payments>*pay(card(text>#pay.invoiceNumber+text:amount:$#pay.amount+badge:#pay.method+text:"muted">#pay.paidAt))
+      )
+    )
+  )
+  @page:invoices(
+    sidebar(
+      logo>"IH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Invoices",btn:ghost>"Clients",btn:ghost>"Payments")
+    )+main(
+      header>h1>"Invoices"+search:input>#search+tabs>statusFilter.set(all,draft,sent,paid,overdue)+btn:primary>"New Invoice"
+      table>invoices|statusFilter|search>*inv(
+        text>#inv.number
+        text>#inv.clientName
+        text:amount:$#inv.total
+        badge:#inv.status
+        text:"muted">#inv.dueDate
+        text:"muted">#inv.createdAt
+        row(btn:ghost>"Send">!send(#inv.id),btn:ghost>"Edit">!update(#inv.id),btn:ghost>"Delete">!del(#inv.id))
+      )
+    )
+  )
+  @page:clients(
+    sidebar(
+      logo>"IH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Invoices",btn:ghost>"Clients",btn:ghost>"Payments")
+    )+main(
+      header>h1>"Clients"+search:input>#search+btn:primary>"Add Client"
+      grid:3>clients|search>*client(
+        card(
+          h2>#client.name
+          text>"muted">#client.company
+          text>#client.email
+          text:"muted">#client.phone
+          row(btn:ghost>"Edit">!update(#client.id),btn:ghost>"Delete">!del(#client.id))
+        )
+      )
+    )
+  )
+  @page:payments(
+    sidebar(
+      logo>"IH"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Invoices",btn:ghost>"Clients",btn:ghost>"Payments")
+    )+main(
+      header>h1>"Payments"+btn:primary>"Record Payment"
+      table>payments>*pay(
+        text>#pay.invoiceNumber
+        text:amount:$#pay.amount
+        badge:#pay.method
+        text:"muted">#pay.paidAt
+      )
+    )
+  )
+)

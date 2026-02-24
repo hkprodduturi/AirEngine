@@ -1,0 +1,129 @@
+# ================================================================
+# EventHub — Event Management Platform
+# ================================================================
+# Events, venues, tickets, RSVPs, and calendar views.
+# Demonstrates date/time fields, capacity tracking, email invites.
+# ================================================================
+
+@app:eventhub
+
+@style(theme:light,accent:#8b5cf6,radius:12,font:sans,maxWidth:1200)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  events:[{id:int,title:str,date:str,venue:str,capacity:int,attendees:int,status:str}],
+  venues:[{id:int,name:str,address:str,capacity:int,eventCount:int}],
+  tickets:[{id:int,event:str,date:str,type:str,status:str}],
+  stats:{upcoming:int,totalAttendees:int,totalEvents:int,venueCount:int},
+  statusFilter:enum(all,upcoming,ongoing,completed,cancelled),
+  search:str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(organizer,attendee,admin):default(attendee),created_at:datetime:auto}
+  Venue{id:int:primary:auto,name:str:required,address:str:required,capacity:int:required,description:?str,created_at:datetime:auto}
+  Event{id:int:primary:auto,title:str:required,description:str:required,date:datetime:required,end_date:datetime:required,status:enum(upcoming,ongoing,completed,cancelled):default(upcoming),capacity:int:required,venue_id:int:required,organizer_id:int:required,created_at:datetime:auto}
+  Ticket{id:int:primary:auto,type:enum(general,vip,early_bird):default(general),status:enum(confirmed,cancelled,used):default(confirmed),event_id:int:required,attendee_id:int:required,created_at:datetime:auto}
+  @relation(Venue.events<>Event.venue)
+  @relation(User.organizedEvents<>Event.organizer)
+  @relation(Event.tickets<>Ticket.event)
+  @relation(User.tickets<>Ticket.attendee)
+  @index(User.email:unique)
+  @index(Event.date+Event.status)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/events>~db.Event.findMany
+  GET:/events/:id>~db.Event.findFirst
+  POST:/events(title:str,description:str,date:str,end_date:str,capacity:int,venue_id:int)>~db.Event.create
+  PUT:/events/:id(status:str)>~db.Event.update
+  DELETE:/events/:id>~db.Event.delete
+  POST:/events/:id/register(type:str)>~db.Ticket.create
+  GET:/tickets>~db.Ticket.findMany
+  GET:/venues>~db.Venue.findMany
+  POST:/venues(name:str,address:str,capacity:int)>~db.Venue.create
+  GET:/stats>~db.Event.aggregate
+)
+
+@auth(required,role:enum(organizer,attendee,admin),redirect:/login)
+
+@email(
+  eventCreated(name:str,event:str,date:str)>"New event: {event}"
+  ticketConfirmed(name:str,event:str,type:str)>"Your ticket is confirmed"
+  eventReminder(name:str,event:str,date:str)>"Reminder: {event} is coming up"
+)
+
+@nav(
+  />?user>events:login
+  /venues>?user>venues:login
+  /tickets>?user>tickets:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.events+~api.venues+~api.stats
+  onChange:statusFilter>~api.events
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"EventHub"
+        p:"muted">"Discover and manage events"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"New here? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:events(
+    header>h1>"Events"+search:input>#search+tabs>statusFilter.set(all,upcoming,ongoing,completed,cancelled)+btn:primary>"Create Event"
+    grid:4(
+      stat:"Upcoming">#stats.upcoming
+      stat:"Total Events">#stats.totalEvents
+      stat:"Attendees">#stats.totalAttendees
+      stat:"Venues">#stats.venueCount
+    )
+    grid:3>events|statusFilter|search>*event(
+      card(
+        h2>#event.title
+        row(badge:#event.status+text:"muted">#event.date)
+        row(text>#event.venue+text:"muted">#event.capacity+" capacity")
+        row(stat:"Attendees">#event.attendees)
+        btn:primary>"Register">!register(#event.id)
+      )
+    )
+  )
+  @page:venues(
+    header>h1>"Venues"+btn:primary>"Add Venue"
+    grid:3>venues>*venue(
+      card(
+        h2>#venue.name
+        text:"muted">#venue.address
+        row(stat:"Capacity">#venue.capacity+stat:"Events">#venue.eventCount)
+      )
+    )
+  )
+  @page:tickets(
+    header>h1>"My Tickets"
+    list>tickets>*ticket(
+      card(
+        row(h2>#ticket.event+badge:#ticket.type+badge:#ticket.status)
+        text:"muted">#ticket.date
+      )
+    )
+  )
+)

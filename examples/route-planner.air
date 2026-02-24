@@ -1,0 +1,165 @@
+# RoutePlanner — Delivery Route Optimization & Tracking
+
+@app:routePlanner
+
+@style(theme:dark,accent:#f97316,radius:10,font:sans,density:comfortable,maxWidth:1400)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  drivers:[{id:int,name:str,phone:str,license:str,status:str,activeRoute:?str}],
+  routes:[{id:int,name:str,driver:str,totalStops:int,distance:float,status:str,date:str}],
+  stops:[{id:int,address:str,sequence:int,route:str,arrival:?str,status:str}],
+  deliveries:[{id:int,tracking:str,status:str,recipient:str,address:str,route:str,delivered:?str}],
+  stats:{totalDeliveries:int,delivered:int,pending:int,failed:int},
+  deliveryFilter:enum(all,pending,picked_up,delivered,failed),
+  search:str
+}
+
+@db{
+  Driver{id:int:primary:auto,name:str:required,email:str:required,phone:str:required,license_number:str:required,status:enum(available,on_route,off_duty):default(available),vehicle_plate:?str,created_at:datetime:auto}
+  Route{id:int:primary:auto,name:str:required,driver_id:int:required,total_distance_km:float:default(0),estimated_minutes:int:default(0),status:enum(planned,active,completed,cancelled):default(planned),scheduled_date:date:required,started_at:?datetime,completed_at:?datetime,created_at:datetime:auto}
+  Stop{id:int:primary:auto,address:str:required,latitude:?float,longitude:?float,sequence_order:int:required,route_id:int:required,arrival_time:?datetime,notes:?str,created_at:datetime:auto}
+  Delivery{id:int:primary:auto,tracking_number:str:required,status:enum(pending,picked_up,delivered,failed):default(pending),recipient_name:str:required,recipient_phone:?str,delivery_address:str:required,route_id:int:required,stop_id:?int,delivered_at:?datetime,created_at:datetime:auto}
+  @relation(Driver.routes<>Route.driver)
+  @relation(Route.stops<>Stop.route)
+  @relation(Route.deliveries<>Delivery.route)
+  @relation(Stop.deliveries<>Delivery.stop)
+  @index(Driver.email:unique)
+  @index(Driver.license_number:unique)
+  @index(Delivery.tracking_number:unique)
+  @index(Route.status+Route.driver_id)
+  @index(Delivery.status+Delivery.route_id)
+}
+
+@env(DATABASE_URL:str:required JWT_SECRET:str:required MAPS_API_KEY:str:required PORT:int:3001)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  GET:/drivers>~db.Driver.findMany
+  POST:/drivers(name:str,email:str,phone:str,license_number:str)>~db.Driver.create
+  PUT:/drivers/:id(status:str,vehicle_plate:?str)>~db.Driver.update
+  DELETE:/drivers/:id>~db.Driver.delete
+  GET:/routes>~db.Route.findMany
+  POST:/routes(name:str,driver_id:int,scheduled_date:str)>~db.Route.create
+  PUT:/routes/:id(status:str)>~db.Route.update
+  DELETE:/routes/:id>~db.Route.delete
+  GET:/stops>~db.Stop.findMany
+  POST:/stops(address:str,sequence_order:int,route_id:int)>~db.Stop.create
+  PUT:/stops/:id(arrival_time:?str)>~db.Stop.update
+  DELETE:/stops/:id>~db.Stop.delete
+  GET:/deliveries>~db.Delivery.findMany
+  POST:/deliveries(tracking_number:str,recipient_name:str,delivery_address:str,route_id:int)>~db.Delivery.create
+  PUT:/deliveries/:id(status:str)>~db.Delivery.update
+  DELETE:/deliveries/:id>~db.Delivery.delete
+  GET:/stats>~db.Delivery.aggregate
+)
+
+@auth(required,role:enum(admin,planner,driver),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /routes>?user>routes:login
+  /stops>?user>stops:login
+  /deliveries>?user>deliveries:login
+  /drivers>?user>drivers:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.deliveries
+  onChange:deliveryFilter>~api.deliveries
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"RoutePlanner"
+        p:"muted">"Delivery route optimization and tracking"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"RP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Routes",btn:ghost>"Stops",btn:ghost>"Deliveries",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Delivery Dashboard"+search:input>#search
+      grid:4(
+        stat:"Total Deliveries">#stats.totalDeliveries
+        stat:"Delivered">#stats.delivered
+        stat:"Pending">#stats.pending
+        stat:"Failed">#stats.failed
+      )
+      @section:active(
+        h2>"Active Routes"
+        list>routes|active>*route(
+          card(row(h2>#route.name+badge:#route.status)+text:"muted">"Driver: "+text>#route.driver+row(text>"Stops: "+text>#route.totalStops,text>"Distance: "+text>#route.distance))
+        )
+      )
+    )
+  )
+  @page:routes(
+    sidebar(
+      logo>"RP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Routes",btn:ghost>"Stops",btn:ghost>"Deliveries",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Routes"+search:input>#search+btn:primary>"Plan Route"
+      table>routes|search>*route(
+        text>#route.name+text:"muted">#route.driver+text>#route.totalStops+text>#route.distance+badge:#route.status+text:"muted">#route.date
+        row(btn:ghost>"Start">!start(#route.id),btn:ghost>"View",btn:icon:!del(#route.id))
+      )
+    )
+  )
+  @page:stops(
+    sidebar(
+      logo>"RP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Routes",btn:ghost>"Stops",btn:ghost>"Deliveries",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Stops"+btn:primary>"Add Stop"
+      table>stops>*stop(
+        text>#stop.address+text>"Seq: "+text>#stop.sequence+text:"muted">#stop.route+text:"muted">#stop.arrival+badge:#stop.status
+        row(btn:ghost>"Arrived">!arrived(#stop.id),btn:icon:!del(#stop.id))
+      )
+    )
+  )
+  @page:deliveries(
+    sidebar(
+      logo>"RP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Routes",btn:ghost>"Stops",btn:ghost>"Deliveries",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Deliveries"+tabs>deliveryFilter.set(all,pending,picked_up,delivered,failed)+btn:primary>"New Delivery"
+      table>deliveries|deliveryFilter>*delivery(
+        text>#delivery.tracking+badge:#delivery.status+text>#delivery.recipient+text>#delivery.address+text:"muted">#delivery.route
+        row(btn:ghost>"Deliver">!deliver(#delivery.id),btn:ghost>"Fail">!fail(#delivery.id),btn:icon:!del(#delivery.id))
+      )
+    )
+  )
+  @page:drivers(
+    sidebar(
+      logo>"RP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Routes",btn:ghost>"Stops",btn:ghost>"Deliveries",btn:ghost>"Drivers")
+    )+main(
+      header>h1>"Drivers"+btn:primary>"Add Driver"
+      grid:3>drivers>*driver(
+        card(
+          h2>#driver.name
+          text>"Phone: "+text>#driver.phone
+          text>"License: "+text>#driver.license
+          badge:#driver.status
+          text:"muted">"Route: "+text>#driver.activeRoute
+          row(btn:ghost>"Assign Route",btn:icon:!del(#driver.id))
+        )
+      )
+    )
+  )
+)
