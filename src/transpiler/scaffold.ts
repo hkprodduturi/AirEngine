@@ -353,7 +353,7 @@ function getFontFamily(ctx: TranspileContext): string {
   for (const p of parts) {
     switch (p.trim()) {
       case 'sans': families.push('system-ui', '-apple-system', 'sans-serif'); break;
-      case 'mono': families.push("'SF Mono'", "'Fira Code'", 'monospace'); break;
+      case 'mono': families.push("-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "'Inter'", "system-ui", "sans-serif"); break;
       case 'display': families.push("'Inter'", 'system-ui', 'sans-serif'); break;
       case 'serif': families.push('Georgia', 'serif'); break;
       default: families.push(p.trim());

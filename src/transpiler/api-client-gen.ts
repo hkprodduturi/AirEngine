@@ -79,8 +79,12 @@ export function generateApiClient(ctx: TranspileContext): string {
 
     // JSDoc
     const modelName = extractModelFromHandler(route.handler);
-    if (modelName) {
-      if (method === 'GET' && pathParams.length === 0) {
+    const isNestedList = method === 'GET' && isListHandler(route.handler) && pathParams.length > 0;
+    const isAggregate = route.handler.endsWith('.aggregate');
+    if (isAggregate) {
+      lines.push(`/** @returns {Promise<Record<string, number>>} */`);
+    } else if (modelName) {
+      if (isList || isNestedList) {
         lines.push(`/** @returns {Promise<{ data: import('./types').${modelName}[], meta: { page: number, limit: number, total: number, totalPages: number } }>} */`);
       } else if (isDelete) {
         lines.push(`/** @returns {Promise<null>} */`);
@@ -90,10 +94,11 @@ export function generateApiClient(ctx: TranspileContext): string {
     }
 
     // Build function signature
+    const wantsPagination = isList || isNestedList;
     const args: string[] = [];
     for (const p of pathParams) args.push(p);
     if (hasBody) args.push('data');
-    if (isList) args.push('{ page, limit, search, sort } = {}');
+    if (wantsPagination) args.push('{ page, limit, search, sort } = {}');
     const sig = args.join(', ');
 
     // Build URL expression
@@ -104,8 +109,8 @@ export function generateApiClient(ctx: TranspileContext): string {
 
     lines.push(`export async function ${fnName}(${sig}) {`);
 
-    // For list routes, build query string with pagination and search params
-    if (isList) {
+    // For list routes (including nested), build query string with pagination and search params
+    if (wantsPagination) {
       lines.push('  const params = new URLSearchParams();');
       lines.push("  if (page !== undefined) params.set('page', String(page));");
       lines.push("  if (limit !== undefined) params.set('limit', String(limit));");
@@ -119,7 +124,7 @@ export function generateApiClient(ctx: TranspileContext): string {
     const headersExpr = hasAuth && !isAuthEndpoint ? 'authHeaders()' : "{ 'Content-Type': 'application/json' }";
 
     if (method === 'GET' || method === 'DELETE') {
-      const fetchUrl = isList ? 'url' : urlExpr;
+      const fetchUrl = wantsPagination ? 'url' : urlExpr;
       if (hasAuth && !isAuthEndpoint) {
         const opts = method === 'DELETE'
           ? `{ method: 'DELETE', headers: authHeaders() }`

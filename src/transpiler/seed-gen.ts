@@ -356,11 +356,24 @@ function generateStringValue(fieldName: string, modelName: string, n: number): s
   }
   if (lower === 'slug') return `'sample-${modelPrefix}-${n}'`;
   if (lower === 'password') return `'password${n}'`;
-  if (lower === 'title') return `'${modelName} ${fieldName} ${n}'`;
-  if (lower === 'subject') return `'${modelName} ${fieldName} ${n}'`;
+  if (lower === 'title') {
+    const titles = [
+      `'Design landing page'`, `'Fix navigation bug'`, `'Update API docs'`,
+      `'Add unit tests'`, `'Refactor auth flow'`,
+    ];
+    return titles[(n - 1) % titles.length];
+  }
+  if (lower === 'subject') {
+    const subjects = [
+      `'Welcome aboard'`, `'Weekly update'`, `'Action required'`,
+      `'Meeting notes'`, `'Quick question'`,
+    ];
+    return subjects[(n - 1) % subjects.length];
+  }
   if (lower === 'description' || lower === 'bio') return `'${modelName} description for record ${n}.'`;
   if (lower === 'url' || lower === 'website') return `'https://example.com/${modelPrefix}/${n}'`;
   if (lower === 'avatar' || lower === 'image') return `'https://api.dicebear.com/7.x/initials/svg?seed=${modelPrefix}${n}'`;
+  if (lower.includes('image') && lower.includes('url')) return `'https://picsum.photos/seed/${modelPrefix}${n}/400/300'`;
   if (lower === 'phone') return `'+155500${n}${String(modelPrefix.charCodeAt(0)).slice(-2)}'`;
   if (lower === 'address') return `'${n}00 Main St, City, ST'`;
   if (lower === 'content' || lower === 'body' || lower === 'text') return `'Sample content for ${modelPrefix} ${n}.'`;

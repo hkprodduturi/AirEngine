@@ -367,8 +367,10 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
           lines.push(`    setError(err.message || 'Login failed');`);
         }
         lines.push(`    console.error('Login failed:', err);`);
-        lines.push(`  } finally {`);
-        if (hasLoading) lines.push(`    setLoading(false);`);
+        if (hasLoading) {
+          lines.push(`  } finally {`);
+          lines.push(`    setLoading(false);`);
+        }
         lines.push(`  }`);
         lines.push('};');
       } else {
@@ -391,8 +393,10 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         if (hasAuth) lines.push(`    setAuthError(err.message || 'Login failed');`);
         else if (hasError) lines.push(`    setError(err.message || 'Login failed');`);
         lines.push(`    console.error('Login failed:', err);`);
-        lines.push(`  } finally {`);
-        if (hasLoading) lines.push(`    setLoading(false);`);
+        if (hasLoading) {
+          lines.push(`  } finally {`);
+          lines.push(`    setLoading(false);`);
+        }
         lines.push(`  }`);
         lines.push('};');
       }
@@ -433,8 +437,10 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         if (hasAuth) lines.push(`    setAuthError(err.message || '${capitalize(name)} failed');`);
         else if (hasError) lines.push(`    setError(err.message || '${capitalize(name)} failed');`);
         lines.push(`    console.error('${capitalize(name)} failed:', err);`);
-        lines.push(`  } finally {`);
-        if (hasLoading) lines.push(`    setLoading(false);`);
+        if (hasLoading) {
+          lines.push(`  } finally {`);
+          lines.push(`    setLoading(false);`);
+        }
         lines.push(`  }`);
         lines.push('};');
       } else {
@@ -456,8 +462,10 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         if (hasAuth) lines.push(`    setAuthError(err.message || '${capitalize(name)} failed');`);
         else if (hasError) lines.push(`    setError(err.message || '${capitalize(name)} failed');`);
         lines.push(`    console.error('${capitalize(name)} failed:', err);`);
-        lines.push(`  } finally {`);
-        if (hasLoading) lines.push(`    setLoading(false);`);
+        if (hasLoading) {
+          lines.push(`  } finally {`);
+          lines.push(`    setLoading(false);`);
+        }
         lines.push(`  }`);
         lines.push('};');
       }

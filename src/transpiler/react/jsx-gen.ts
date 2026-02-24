@@ -29,7 +29,7 @@ let _hasAuthGating = false;
 
 // ---- Root JSX ----
 
-export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy = false, hasAuthGating = false): string[] {
+export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy = false, hasAuthGating = false, hasLayout = false): string[] {
   _hasAuthGating = hasAuthGating;
   const rootClasses = 'min-h-screen bg-[var(--bg)] text-[var(--fg)]';
 
@@ -39,6 +39,44 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
   const hasSidebar = ctx.uiNodes.some(n =>
     n.kind === 'element' && n.element === 'sidebar'
   );
+
+  // When Layout is generated for non-auth apps, use it instead of inline sidebar
+  if (hasLayout && !hasAuthGating && ctx.hasBackend && analysis.hasPages) {
+    const lines: string[] = [];
+    // Only pass user/logout to Layout if the app actually has user state (auth mutations)
+    const hasUserState = ctx.state.some(f => f.name === 'user');
+    const hasLogout = analysis.mutations.some(m => m.name === 'logout');
+    const layoutProps = (hasUserState && hasLogout)
+      ? 'currentPage={currentPage} setCurrentPage={setCurrentPage} user={user} logout={logout}'
+      : 'currentPage={currentPage} setCurrentPage={setCurrentPage}';
+    lines.push(`<div className="${rootClasses}">`);
+    lines.push(`  <Layout ${layoutProps}>`);
+
+    // Render only page component references (skip sidebar, main, nav nodes)
+    // Extract all @page scoped nodes from the UI tree
+    const allPages: AirUINode[] = [];
+    for (const node of ctx.uiNodes) {
+      allPages.push(...extractScopedPages(node));
+    }
+    const contentIndent = 4;
+    if (useLazy) {
+      lines.push(`    <Suspense fallback={<div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>}>`);
+      for (const pn of allPages) {
+        const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, contentIndent + 2);
+        if (jsx) lines.push(jsx);
+      }
+      lines.push(`    </Suspense>`);
+    } else {
+      for (const pn of allPages) {
+        const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, contentIndent);
+        if (jsx) lines.push(jsx);
+      }
+    }
+
+    lines.push('  </Layout>');
+    lines.push('</div>');
+    return lines;
+  }
 
   // Determine wrapper: explicit maxWidth > sidebar (no wrapper) > default 900px container
   // Fullstack pages handle their own padding — don't add px/space-y to wrapper
@@ -83,6 +121,22 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
 
   lines.push('</div>');
   return lines;
+}
+
+/** Recursively extract @page scoped nodes from a binary tree */
+function extractScopedPages(node: AirUINode): AirUINode[] {
+  if (node.kind === 'scoped' && node.scope === 'page') return [node];
+  if (node.kind === 'binary') {
+    return [...extractScopedPages(node.left), ...extractScopedPages(node.right)];
+  }
+  if (node.kind === 'element' && node.children) {
+    const pages: AirUINode[] = [];
+    for (const child of node.children) {
+      pages.push(...extractScopedPages(child));
+    }
+    return pages;
+  }
+  return [];
 }
 
 // ---- Core JSX Generator ----
@@ -1035,6 +1089,8 @@ export function generateBoundElement(
     const plainRef = ref.replace(/\?\./, '.');
     const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
     const nameAttr = scope.insideForm ? ` name="${resolvedFieldName}"` : '';
+    // Auth forms (login/register) use uncontrolled inputs — FormData reads values on submit
+    const isAuthForm = scope.insideForm && (scope.formAction === 'login' || scope.formAction === 'register' || scope.formAction === 'signup');
     const valueExpr = ref !== plainRef ? `${ref} ?? ''` : ref;
     // Smart placeholder: "Search..." for search-related inputs, contextual for others
     const isSearchLike = resolved.element === 'search' || resolvedFieldName === 'search' || resolvedFieldName === 'input' || mapping.inputType === 'search';
@@ -1043,7 +1099,9 @@ export function generateBoundElement(
       : (resolvedFieldName === 'password' ? 'Enter password...'
         : resolvedFieldName === 'email' ? 'Enter email...'
         : `${capitalize(resolvedFieldName)}...`);
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${placeholderText}" />`;
+    const inputJsx = isAuthForm
+      ? `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" placeholder="${placeholderText}" />`
+      : `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${placeholderText}" />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
@@ -1310,8 +1368,15 @@ export function generateFlowBoundElement(
     const valueExpr = stateRef !== plainRef ? `${stateRef} ?? ''` : stateRef;
     // Smart placeholder based on context
     const isSearchLike = resolved.element === 'search' || resolvedFieldName === 'search' || resolvedFieldName === 'input' || mapping.inputType === 'search';
-    const placeholderText = isSearchLike ? 'Search...' : `${capitalize(resolvedFieldName)}...`;
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${placeholderText}" />`;
+    const placeholderText = isSearchLike ? 'Search...'
+      : (resolvedFieldName === 'password' ? 'Enter password...'
+        : resolvedFieldName === 'email' ? 'Enter email...'
+        : `${capitalize(resolvedFieldName)}...`);
+    // Auth forms (login/register) use uncontrolled inputs — FormData reads values on submit
+    const isAuthForm = scope.insideForm && (scope.formAction === 'login' || scope.formAction === 'register' || scope.formAction === 'signup');
+    const inputJsx = isAuthForm
+      ? `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" placeholder="${placeholderText}" />`
+      : `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${placeholderText}" />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);

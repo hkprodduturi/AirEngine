@@ -50,16 +50,19 @@ function pushCatchBlock(lines: string[]): void {
 
 /** Generate a response for a prisma result based on PrismaCallInfo */
 function pushPrismaResponse(lines: string[], info: PrismaCallInfo, method: string, handler: string): void {
-  lines.push(`    const result = ${info.call};`);
-  if (info.needs404) {
-    lines.push("    if (!result) return res.status(404).json({ error: 'Not found' });");
-  }
   if (info.isDelete) {
+    lines.push(`    ${info.call};`);
     lines.push('    res.status(204).end();');
-  } else if (method === 'post' && handler.includes('.create')) {
-    lines.push('    res.status(201).json(result);');
   } else {
-    lines.push('    res.json(result);');
+    lines.push(`    const result = ${info.call};`);
+    if (info.needs404) {
+      lines.push("    if (!result) return res.status(404).json({ error: 'Not found' });");
+    }
+    if (method === 'post' && handler.includes('.create')) {
+      lines.push('    res.status(201).json(result);');
+    } else {
+      lines.push('    res.json(result);');
+    }
   }
 }
 
@@ -146,17 +149,14 @@ export function generateApiRouter(ctx: TranspileContext): string {
     // Check if this is a findMany route — use enriched handler
     const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
     if (isFindMany && nestedMatch && ctx.db) {
-      // Nested findMany: filter by parent FK
+      // Nested findMany: paginated, filtered by parent FK
       const parentResource = nestedMatch[1];
       const parentSingular = parentResource.endsWith('s') ? parentResource.slice(0, -1) : parentResource;
-      const modelMatch = handler.match(/^~db\.(\w+)\.findMany$/);
-      const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
-      const fkField = `${parentSingular}_id`;
       lines.push(`    const parentId = parseInt(req.params.id);`);
-      lines.push(`    const result = await prisma.${modelVar}.findMany({ where: { ${fkField}: parentId }, orderBy: { id: 'desc' } });`);
-      lines.push('    res.json(result);');
+      const nestedLines = generateNestedFindManyHandler(handler, ctx.db, parentSingular, 'parentId');
+      for (const l of nestedLines) lines.push(l);
     } else if (isFindMany) {
-      const findManyLines = generateFindManyHandler(handler, ctx.db!);
+      const findManyLines = generateFindManyHandler(handler, ctx.db!, { hasAuth: !!ctx.auth });
       for (const l of findManyLines) lines.push(l);
     } else {
     // Check for aggregate handler
@@ -227,9 +227,55 @@ export function generateApiRouter(ctx: TranspileContext): string {
   return lines.join('\n');
 }
 
+// ---- Nested findMany with pagination ----
+
+/**
+ * Generate a paginated nested findMany handler.
+ * E.g., GET /tasks/:id/comments → paginated comments filtered by task_id.
+ */
+export function generateNestedFindManyHandler(
+  handler: string,
+  db: AirDbBlock,
+  parentSingular: string,
+  parentIdVar: string,
+): string[] {
+  const match = handler.match(/^~db\.(\w+)\.findMany$/);
+  if (!match) return [];
+
+  const [, modelName] = match;
+  const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+  const model = db.models.find(m => m.name === modelName);
+  const fkField = `${parentSingular}_id`;
+  const lines: string[] = [];
+
+  // Pagination
+  lines.push("    const page = Math.max(1, parseInt(req.query.page as string) || 1);");
+  lines.push("    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);");
+  lines.push("    const skip = (page - 1) * limit;");
+
+  // Default orderBy
+  let defaultOrderBy = "{ id: 'desc' }";
+  if (model) {
+    const hasCreatedAt = model.fields.some(f => f.name === 'created_at');
+    const hasCreatedAtCamel = model.fields.some(f => f.name === 'createdAt');
+    if (hasCreatedAt) defaultOrderBy = "{ created_at: 'desc' }";
+    else if (hasCreatedAtCamel) defaultOrderBy = "{ createdAt: 'desc' }";
+  }
+
+  const where = `{ ${fkField}: ${parentIdVar} }`;
+  lines.push(`    const [result, total] = await Promise.all([`);
+  lines.push(`      prisma.${modelVar}.findMany({ where: ${where}, orderBy: ${defaultOrderBy}, skip, take: limit }),`);
+  lines.push(`      prisma.${modelVar}.count({ where: ${where} }),`);
+  lines.push("    ]);");
+  lines.push("    res.setHeader('X-Total-Count', String(total));");
+  lines.push(`    res.json({ data: result, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } });`);
+
+  return lines;
+}
+
 // ---- findMany enrichment ----
 
-export function generateFindManyHandler(handler: string, db: AirDbBlock): string[] {
+export function generateFindManyHandler(handler: string, db: AirDbBlock, options?: { hasAuth?: boolean }): string[] {
   const match = handler.match(/^~db\.(\w+)\.findMany$/);
   if (!match) return [];
 
@@ -243,9 +289,12 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
   lines.push("    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);");
   lines.push("    const skip = (page - 1) * limit;");
 
-  // Determine sortable fields for the sort query parameter
+  // Determine sortable fields for the sort query parameter (exclude sensitive fields)
+  const SENSITIVE_FIELDS = new Set(['password', 'password_hash', 'secret', 'token', 'refresh_token']);
+  // If auth exists and this is the User model, password is injected at Prisma level — treat as sensitive
+  const hasInjectedPassword = options?.hasAuth && modelName === 'User' && model && !model.fields.some(f => f.name === 'password');
   const sortableFields = model
-    ? model.fields.filter(f => !f.primary || f.name === 'id').map(f => f.name)
+    ? model.fields.filter(f => (!f.primary || f.name === 'id') && !SENSITIVE_FIELDS.has(f.name)).map(f => f.name)
     : [];
 
   // orderBy: support ?sort=field:asc, fall back to created_at > createdAt > id
@@ -267,13 +316,13 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
     lines.push("    }");
   }
 
-  // Text search: find string fields (non-PK)
+  // Text search: find string fields (non-PK, non-sensitive)
   const stringFields = model
     ? model.fields.filter(f => {
         const baseKind = f.type.kind === 'optional'
           ? (f.type as { kind: 'optional'; of: { kind: string } }).of.kind
           : f.type.kind;
-        return baseKind === 'str' && !f.primary;
+        return baseKind === 'str' && !f.primary && !SENSITIVE_FIELDS.has(f.name);
       }).map(f => f.name)
     : [];
 
@@ -289,8 +338,19 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock): string
     lines.push("    } : {};");
   }
 
+  // Exclude sensitive fields from response via select
+  const hasSensitiveFields = hasInjectedPassword || (model
+    ? model.fields.some(f => SENSITIVE_FIELDS.has(f.name))
+    : false);
+  if (hasSensitiveFields && model) {
+    const safeFields = model.fields.filter(f => !SENSITIVE_FIELDS.has(f.name));
+    const selectObj = safeFields.map(f => `${f.name}: true`).join(', ');
+    lines.push(`    const select = { ${selectObj} };`);
+  }
+
   // Build prisma query args
   const queryParts: string[] = [];
+  if (hasSensitiveFields) queryParts.push('select');
   if (stringFields.length > 0) queryParts.push('where');
   if (sortableFields.length > 0) {
     queryParts.push('orderBy');
@@ -775,19 +835,16 @@ export function generateResourceRouter(
     const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
     const isAggregate = handler.match(/^~db\.(\w+)\.aggregate$/) && ctx.db;
     if (isFindMany && nestedMatch && ctx.db) {
-      // Nested findMany: filter by parent FK
+      // Nested findMany: paginated, filtered by parent FK
       const parentResource = resourceKey.endsWith('s') ? resourceKey.slice(0, -1) : resourceKey;
-      const modelMatch = handler.match(/^~db\.(\w+)\.findMany$/);
-      const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
-      const fkField = `${parentResource}_id`;
       if (!hasAssertedId) {
         lines.push(`    const parentId = parseInt(req.params.id);`);
       }
       const parentIdVar = hasAssertedId ? 'id' : 'parentId';
-      lines.push(`    const result = await prisma.${modelVar}.findMany({ where: { ${fkField}: ${parentIdVar} }, orderBy: { id: 'desc' } });`);
-      lines.push('    res.json(result);');
+      const nestedLines = generateNestedFindManyHandler(handler, ctx.db, parentResource, parentIdVar);
+      for (const l of nestedLines) lines.push(l);
     } else if (isFindMany) {
-      const findManyLines = generateFindManyHandler(handler, ctx.db!);
+      const findManyLines = generateFindManyHandler(handler, ctx.db!, { hasAuth: !!ctx.auth });
       for (const l of findManyLines) lines.push(l);
     } else if (isAggregate) {
       const aggLines = generateAggregateHandler(handler, ctx.db!);
@@ -967,17 +1024,14 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
 
       if (isFindMany && ctx.db) {
         if (nestedMatch) {
-          // Nested findMany: filter by parent FK (e.g., GET /tasks/:id/comments → where: { task_id })
+          // Nested findMany: paginated, filtered by parent FK
           const parentResource = nestedMatch[1];
           const parentSingular = parentResource.endsWith('s') ? parentResource.slice(0, -1) : parentResource;
-          const modelMatch = handler.match(/^~db\.(\w+)\.findMany$/);
-          const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
-          const fkField = `${parentSingular}_id`;
           lines.push(`    const parentId = parseInt(req.params.id);`);
-          lines.push(`    const result = await prisma.${modelVar}.findMany({ where: { ${fkField}: parentId }, orderBy: { id: 'desc' } });`);
-          lines.push('    res.json(result);');
+          const nestedLines = generateNestedFindManyHandler(handler, ctx.db, parentSingular, 'parentId');
+          for (const l of nestedLines) lines.push(l);
         } else {
-          const findManyLines = generateFindManyHandler(handler, ctx.db);
+          const findManyLines = generateFindManyHandler(handler, ctx.db, { hasAuth: !!ctx.auth });
           for (const l of findManyLines) lines.push(l);
         }
       } else if (isAggregate && ctx.db) {

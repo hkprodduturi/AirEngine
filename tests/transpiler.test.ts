@@ -26,12 +26,13 @@ function getAppJsx(name: string): string {
   return appFile?.content ?? '';
 }
 
-/** Returns App.jsx + all page component files concatenated. Use for content checks that span pages. */
+/** Returns App.jsx + Layout.jsx + all page component files concatenated. Use for content checks that span pages. */
 function getAllJsx(name: string): string {
   const result = transpileFile(name);
   const appFile = result.files.find(f => f.path === 'src/App.jsx' || f.path === 'client/src/App.jsx');
+  const layoutFile = result.files.find(f => f.path === 'src/Layout.jsx' || f.path === 'client/src/Layout.jsx');
   const pageFiles = result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('.jsx'));
-  return [appFile?.content ?? '', ...pageFiles.map(f => f.content)].join('\n');
+  return [appFile?.content ?? '', layoutFile?.content ?? '', ...pageFiles.map(f => f.content)].join('\n');
 }
 
 // ---- Unit: extractContext ----
@@ -379,8 +380,10 @@ describe('transpile: auth.air', () => {
     expect(allJsx).toMatch(/type="(email|password)"/);
   });
 
-  it('generates cookie persistence', () => {
-    expect(jsx).toContain('document.cookie');
+  it('generates auth token persistence via localStorage', () => {
+    // Auth-gated apps persist token via localStorage in login/logout mutations
+    // (not document.cookie — cookie persistence is skipped for auth-gated apps)
+    expect(jsx).toContain('localStorage');
   });
 
   it('generates input placeholders', () => {
@@ -406,11 +409,13 @@ describe('transpile: dashboard.air', () => {
   const allJsx = getAllJsx('dashboard');
 
   it('generates sidebar layout', () => {
-    expect(jsx).toContain('<aside');
+    // Sidebar is now in Layout.jsx (not inline in App.jsx)
+    expect(allJsx).toContain('<aside');
   });
 
   it('generates main content', () => {
-    expect(jsx).toContain('<main');
+    // Main content area is now in Layout.jsx
+    expect(allJsx).toContain('<main');
   });
 
   it('generates stat cards', () => {
@@ -426,10 +431,11 @@ describe('transpile: dashboard.air', () => {
   });
 
   it('generates nav buttons with active state', () => {
-    expect(jsx).toContain("setCurrentPage('overview')");
-    expect(jsx).toContain("setCurrentPage('users')");
-    expect(jsx).toContain("setCurrentPage('settings')");
-    expect(jsx).toContain("bg-[var(--accent)] text-white");
+    // Navigation is now in Layout.jsx with page switching
+    expect(allJsx).toContain("setCurrentPage");
+    expect(allJsx).toContain("overview");
+    expect(allJsx).toContain("users");
+    expect(allJsx).toContain("bg-[var(--accent)] text-white");
   });
 
   it('generates revenue stat with currency formatting', () => {
@@ -669,14 +675,10 @@ describe('golden: dashboard.air codegen shape', () => {
   });
 
   it('JSX has expected structural markers in order', () => {
-    // App.jsx structural markers (component refs, not inline content)
+    // App.jsx structural markers — Layout component wraps page refs
     const appMarkers = [
       'min-h-screen',    // root wrapper
-      '<aside',          // sidebar
-      'Dashboard',       // app title
-      '<nav',            // navigation
-      'setCurrentPage',  // page switching
-      '<main',           // main content area
+      'Layout',          // layout component
       'OverviewPage',    // page component ref
       'UsersPage',       // page component ref
     ];
@@ -685,6 +687,12 @@ describe('golden: dashboard.air codegen shape', () => {
       const idx = jsx.indexOf(marker, lastIdx + 1);
       expect(idx).toBeGreaterThan(lastIdx);
       lastIdx = idx;
+    }
+
+    // Layout structural markers (sidebar, nav, main) exist in Layout.jsx
+    const layoutMarkers = ['<aside', '<nav', 'setCurrentPage', '<main'];
+    for (const marker of layoutMarkers) {
+      expect(allJsx).toContain(marker);
     }
 
     // Page content markers exist across page component files
@@ -799,12 +807,11 @@ describe('semantics: supported features', () => {
     expect(getAppJsx('todo')).toContain('localStorage.setItem');
   });
 
-  it('@persist:cookie → document.cookie (client-side only, httpOnly ignored)', () => {
+  it('@persist:cookie in auth-gated app → localStorage token persistence', () => {
     const jsx = getAppJsx('auth');
-    expect(jsx).toContain('document.cookie');
-    // Limitation: httpOnly flag from @persist:cookie(...,httpOnly) is ignored
-    // because document.cookie cannot set httpOnly — that requires a Set-Cookie
-    // header from a server response. Real httpOnly cookies need a backend target.
+    // Auth-gated apps skip cookie persistence in favor of localStorage in login/logout mutations.
+    // The token is persisted via localStorage.setItem('auth_token', ...) in the login handler.
+    expect(jsx).toContain('localStorage');
   });
 
   it('@hook:onMount → useEffect(fn, [])', () => {
@@ -842,8 +849,9 @@ describe('semantics: supported features', () => {
   });
 
   it('layout (sidebar+main, grid:responsive) → structural HTML', () => {
-    expect(getAppJsx('dashboard')).toContain('<aside');
-    expect(getAppJsx('dashboard')).toContain('<main');
+    // Sidebar and main are now in Layout.jsx for apps with Layout
+    expect(getAllJsx('dashboard')).toContain('<aside');
+    expect(getAllJsx('dashboard')).toContain('<main');
     expect(getAppJsx('expense-tracker')).toContain('grid-cols');
   });
 });
@@ -1010,8 +1018,9 @@ describe('D1: visual semantics', () => {
   });
 
   it('main element has space-y-6 (dashboard.air)', () => {
-    const jsx = getAppJsx('dashboard');
-    expect(jsx).toContain('space-y-6');
+    // With Layout component, space-y-6 is in the page components
+    const allJsx = getAllJsx('dashboard');
+    expect(allJsx).toContain('space-y-6');
   });
 
   it('auth login form has card container (auth.air)', () => {

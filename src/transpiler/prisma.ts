@@ -465,6 +465,15 @@ export function generatePrismaSchema(db: AirDbBlock, options?: { hasAuth?: boole
       lines.push('  password  String');
     }
 
+    // Inject updated_at if model has created_at but no updated_at
+    const hasCreatedAt = model.fields.some(f => f.name === 'created_at' || f.name === 'createdAt');
+    const hasUpdatedAt = model.fields.some(f => f.name === 'updated_at' || f.name === 'updatedAt');
+    if (hasCreatedAt && !hasUpdatedAt) {
+      const usesSnakeCase = model.fields.some(f => f.name === 'created_at');
+      const fieldName = usesSnakeCase ? 'updated_at' : 'updatedAt';
+      lines.push(`  ${fieldName}  DateTime  @updatedAt`);
+    }
+
     // Relation fields
     const relLines = relationFieldMap.get(model.name);
     if (relLines && relLines.length > 0) {

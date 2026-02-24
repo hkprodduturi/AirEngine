@@ -489,22 +489,6 @@ function generateCrudPage(
   if (putFnName) declaredVars.add('handleUpdate');
   if (deleteFnName) declaredVars.add('handleDelete');
 
-  // Pre-scan child JSX for undeclared state vars
-  const preChildren = page.children.filter(c => !hasSidebarNode(c));
-  const preMain = extractMainContent(page.children) || preChildren;
-  const preJsx = preMain.map(c =>
-    generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
-  ).filter(Boolean).join('\n');
-  const extraState = detectUndeclaredStateVars(preJsx, declaredVars, ctx);
-  for (const { name, defaultVal } of extraState) {
-    lines.push(`  const [${name}, set${capitalize(name)}] = useState(${defaultVal});`);
-    declaredVars.add(name);
-  }
-
-  // Alias mutation names from JSX to generated handlers
-  if (deleteFnName) {
-    lines.push('  const del = handleDelete;');
-  }
   lines.push('');
 
   // Load function
@@ -589,73 +573,27 @@ function generateCrudPage(
   lines.push('  return (');
   lines.push('    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>');
 
-  // Filter out sidebar/main wrappers since Layout provides them
-  const filteredChildren = page.children.filter(c => !hasSidebarNode(c));
-  const mainChildren = extractMainContent(page.children) || filteredChildren;
-  const childJsx = mainChildren.map(c =>
-    generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
-  ).filter(Boolean).join('\n');
-
-  if (childJsx.trim()) {
-    // Check if custom UI already has a form element or references showForm toggle
-    const hasFormInJsx = childJsx.includes('onSubmit') || childJsx.includes('<form');
-    lines.push('      <div className="space-y-6 animate-fade-in">');
-    // Inject create form toggle when POST route exists but custom UI doesn't include one
-    if (postFnName && !hasFormInJsx) {
-      lines.push(`        <div className="flex items-center justify-between">`);
-      lines.push(`          <div>`);
-      lines.push(`            <h1 className="text-2xl font-bold tracking-tight">${modelLabel}</h1>`);
-      lines.push(`            <p className="text-sm text-[var(--muted)] mt-1">{${modelPlural}.length} ${modelPlural} total</p>`);
-      lines.push(`          </div>`);
-      lines.push(`          <button`);
-      lines.push(`            onClick={() => setShowForm(!showForm)}`);
-      lines.push(`            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--accent)] text-white rounded-[var(--radius)] font-medium hover:opacity-90 transition-all text-sm"`);
-      lines.push(`          >`);
-      lines.push(`            {showForm ? (`);
-      lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg> Cancel</>`);
-      lines.push(`            ) : (`);
-      lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg> Add ${singularLabel}</>`);
-      lines.push(`            )}`);
-      lines.push(`          </button>`);
-      lines.push(`        </div>`);
-      if (binding.formFields.length > 0) {
-        lines.push(`        {showForm && (`);
-        lines.push(`          <form onSubmit={handleCreate} className="p-6 border border-[var(--border)] rounded-[var(--radius)] bg-[var(--surface)] space-y-4 animate-slide-up">`);
-        lines.push(`            <h3 className="text-lg font-semibold mb-2">New ${singularLabel}</h3>`);
-        for (const field of binding.formFields) {
-          lines.push(renderFormField(field, 12));
-        }
-        lines.push(`            <div className="flex justify-end gap-3 pt-2">`);
-        lines.push(`              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2.5 rounded-[var(--radius)] border border-[var(--border)] hover:bg-[var(--hover)] text-sm font-medium transition-colors">Cancel</button>`);
-        lines.push(`              <button type="submit" disabled={submitting} className="px-6 py-2.5 bg-[var(--accent)] text-white rounded-[var(--radius)] text-sm font-medium hover:opacity-90 transition-colors disabled:opacity-50">{submitting ? 'Creating...' : 'Create ${singularLabel}'}</button>`);
-        lines.push(`            </div>`);
-        lines.push(`          </form>`);
-        lines.push(`        )}`);
-      }
-    }
-    lines.push(childJsx);
-    lines.push('      </div>');
-  } else {
-    // If no UI tree content, generate a default CRUD view
-    lines.push(`      <div className="space-y-6 animate-fade-in">`);
-    lines.push(`        <div className="flex items-center justify-between">`);
-    lines.push(`          <div>`);
-    lines.push(`            <h1 className="text-2xl font-bold tracking-tight">${modelLabel}</h1>`);
-    lines.push(`            <p className="text-sm text-[var(--muted)] mt-1">{loading ? 'Loading...' : \`\${${modelPlural}.length} ${modelPlural} total\`}</p>`);
-    lines.push(`          </div>`);
-    if (postFnName) {
-      lines.push(`          <button`);
-      lines.push(`            onClick={() => setShowForm(!showForm)}`);
-      lines.push(`            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--accent)] text-white rounded-[var(--radius)] font-medium hover:opacity-90 transition-all text-sm"`);
-      lines.push(`          >`);
-      lines.push(`            {showForm ? (`);
-      lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg> Cancel</>`);
-      lines.push(`            ) : (`);
-      lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg> Add ${singularLabel}</>`);
-      lines.push(`            )}`);
-      lines.push(`          </button>`);
-    }
-    lines.push(`        </div>`);
+  // Auth-gated CRUD pages use the generated CRUD wrapper exclusively —
+  // skip the @ui block JSX since the wrapper already handles display.
+  lines.push(`      <div className="space-y-6 animate-fade-in">`);
+  lines.push(`        <div className="flex items-center justify-between">`);
+  lines.push(`          <div>`);
+  lines.push(`            <h1 className="text-2xl font-bold tracking-tight">${modelLabel}</h1>`);
+  lines.push(`            <p className="text-sm text-[var(--muted)] mt-1">{loading ? 'Loading...' : \`\${${modelPlural}.length} ${modelPlural} total\`}</p>`);
+  lines.push(`          </div>`);
+  if (postFnName) {
+    lines.push(`          <button`);
+    lines.push(`            onClick={() => setShowForm(!showForm)}`);
+    lines.push(`            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--accent)] text-white rounded-[var(--radius)] font-medium hover:opacity-90 transition-all text-sm"`);
+    lines.push(`          >`);
+    lines.push(`            {showForm ? (`);
+    lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg> Cancel</>`);
+    lines.push(`            ) : (`);
+    lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg> Add ${singularLabel}</>`);
+    lines.push(`            )}`);
+    lines.push(`          </button>`);
+  }
+  lines.push(`        </div>`);
 
     // Inline form with animation
     if (postFnName && binding.formFields.length > 0) {
@@ -732,7 +670,6 @@ function generateCrudPage(
     lines.push(`          </div>`);
     lines.push('        )}');
     lines.push(`      </div>`);
-  }
 
   // Delete confirmation modal
   if (deleteFnName) {
@@ -835,15 +772,23 @@ function hasSidebarNode(node: AirUINode): boolean {
   return false;
 }
 
-/** Extract main content children when page has sidebar+main layout. */
+/** Extract main content children when page has sidebar+main layout.
+ *  Strips sidebar and main wrapper, returning only the inner content. */
 function extractMainContent(children: AirUINode[]): AirUINode[] | null {
   for (const child of children) {
     if (child.kind === 'binary' && child.operator === '+') {
       if (hasSidebarNode(child.left)) {
         const mainNode = child.right;
         const resolved = tryResolveElement(mainNode);
-        if (resolved && resolved.element === 'main' && mainNode.kind === 'binary' && mainNode.operator === '>') {
-          return [mainNode.right];
+        if (resolved && resolved.element === 'main') {
+          // main > children (flow chain): extract the right side
+          if (mainNode.kind === 'binary' && mainNode.operator === '>') {
+            return [mainNode.right];
+          }
+          // main(children) (element with child array): extract children directly
+          if (mainNode.kind === 'element' && mainNode.children && mainNode.children.length > 0) {
+            return mainNode.children;
+          }
         }
         return [mainNode];
       }
@@ -891,6 +836,15 @@ function detectUndeclaredStateVars(
   // Find {varName === 'x'} patterns (filter/tab state)
   const eqPattern = /\{(\w+)\s*===\s/g;
   while ((m = eqPattern.exec(jsx)) !== null) {
+    const name = m[1];
+    if (!['currentPage', 'item', '_item', 'row', '_tab'].includes(name)) {
+      varRefs.add(name);
+    }
+  }
+
+  // Find variables in filter callbacks: => varName === 'all' || _item.field === varName
+  const filterCallbackPattern = /=>\s+(\w+)\s*===\s*'all'/g;
+  while ((m = filterCallbackPattern.exec(jsx)) !== null) {
     const name = m[1];
     if (!['currentPage', 'item', '_item', 'row', '_tab'].includes(name)) {
       varRefs.add(name);

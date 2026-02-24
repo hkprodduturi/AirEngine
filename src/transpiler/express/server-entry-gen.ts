@@ -290,6 +290,7 @@ export function generateEnvFile(ctx: TranspileContext): string {
     vars.set('JWT_SECRET', '"dev-secret-change-in-production"');
   }
   vars.set('PORT', '3001');
+  vars.set('CORS_ORIGIN', 'http://localhost:5173');
   vars.set('NODE_ENV', 'development');
 
   // @env block vars — override/add
@@ -349,7 +350,7 @@ export function generateValidation(): string {
   lines.push('  return parsed;');
   lines.push('}');
   lines.push('');
-  lines.push('type FieldSchema = Record<string, "string" | "number" | "boolean" | "optional_string" | "optional_number" | "optional_boolean">;');
+  lines.push('type FieldSchema = Record<string, "string" | "number" | "boolean" | "object" | "optional_string" | "optional_number" | "optional_boolean" | "optional_object">;');
   lines.push('');
   lines.push('/**');
   lines.push(' * Validate request body fields against a schema.');

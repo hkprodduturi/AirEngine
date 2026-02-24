@@ -1,48 +1,223 @@
 {
   "generatedBy": "AirEngine",
   "version": "0.1.7",
-  "sourceHash": "d60166934cb96421",
+  "sourceHash": "989e5c80216f6ee4",
   "files": [
     {
-      "path": "package.json",
-      "hash": "1c30922e8b7765bc",
+      "path": "client/package.json",
+      "hash": "bf43870b93706e50",
       "lines": 23
     },
     {
-      "path": "vite.config.js",
-      "hash": "b0d964f47e9ba450",
+      "path": "client/vite.config.js",
+      "hash": "3995fed37320e66c",
       "lines": 8
     },
     {
-      "path": "tailwind.config.cjs",
-      "hash": "2e7dbf5c539db45f",
-      "lines": 7
+      "path": "client/tailwind.config.cjs",
+      "hash": "cee06792f473ce54",
+      "lines": 37
     },
     {
-      "path": "postcss.config.cjs",
+      "path": "client/postcss.config.cjs",
       "hash": "fa650b380adfabb1",
       "lines": 7
     },
     {
-      "path": "index.html",
-      "hash": "de8f38d2651b5420",
+      "path": "client/index.html",
+      "hash": "0a52e135952fb9fe",
       "lines": 14
     },
     {
-      "path": "src/main.jsx",
-      "hash": "d2a5622fca5cfbd3",
+      "path": "client/src/main.jsx",
+      "hash": "6a2fdfd95a3cebca",
       "lines": 12
     },
     {
-      "path": "src/index.css",
-      "hash": "1f163c1dc1cfc4c1",
-      "lines": 89
+      "path": "client/src/index.css",
+      "hash": "3e753e482ac40b1e",
+      "lines": 160
     },
     {
-      "path": "src/App.jsx",
-      "hash": "0c1caede890af89c",
-      "lines": 63
+      "path": "client/src/App.jsx",
+      "hash": "8d940bedccdd4bdd",
+      "lines": 102
+    },
+    {
+      "path": "client/src/Layout.jsx",
+      "hash": "4a9316132b7843df",
+      "lines": 106
+    },
+    {
+      "path": "client/src/api.js",
+      "hash": "d041162ca61e1cee",
+      "lines": 216
+    },
+    {
+      "path": "client/src/types.ts",
+      "hash": "ef8760e57f4f53d8",
+      "lines": 50
+    },
+    {
+      "path": "client/src/pages/LoginPage.jsx",
+      "hash": "dc648fd93e59d651",
+      "lines": 35
+    },
+    {
+      "path": "client/src/pages/DashboardPage.jsx",
+      "hash": "09086932b88aa52f",
+      "lines": 104
+    },
+    {
+      "path": "client/src/pages/ProjectsPage.jsx",
+      "hash": "b64279c651158d60",
+      "lines": 168
+    },
+    {
+      "path": "client/src/pages/TasksPage.jsx",
+      "hash": "e63ff6f1389f1806",
+      "lines": 182
+    },
+    {
+      "path": "client/src/pages/SettingsPage.jsx",
+      "hash": "edbc7eaae47155c1",
+      "lines": 87
+    },
+    {
+      "path": "server/package.json",
+      "hash": "ebba8454de4b5aca",
+      "lines": 29
+    },
+    {
+      "path": "server/tsconfig.json",
+      "hash": "1b6d33775241d6b4",
+      "lines": 20
+    },
+    {
+      "path": "server/.env",
+      "hash": "2a0a5142e7cc90a2",
+      "lines": 13
+    },
+    {
+      "path": "server/prisma/schema.prisma",
+      "hash": "09a5a3c1c04845ce",
+      "lines": 80
+    },
+    {
+      "path": "server/prisma.ts",
+      "hash": "b572dee1abbfc72b",
+      "lines": 7
+    },
+    {
+      "path": "server/seed.ts",
+      "hash": "d9f085281efdfa6c",
+      "lines": 56
+    },
+    {
+      "path": "server/types.ts",
+      "hash": "c98e6ae7f29d91fe",
+      "lines": 53
+    },
+    {
+      "path": "server/validation.ts",
+      "hash": "92faf49ccd600f57",
+      "lines": 53
+    },
+    {
+      "path": "server/routes/users.ts",
+      "hash": "af3966a435733987",
+      "lines": 54
+    },
+    {
+      "path": "server/routes/workspaces.ts",
+      "hash": "70fd431e3d484d90",
+      "lines": 51
+    },
+    {
+      "path": "server/routes/projects.ts",
+      "hash": "1630879f46c8b5ea",
+      "lines": 74
+    },
+    {
+      "path": "server/routes/tasks.ts",
+      "hash": "d3db69d97a5fd555",
+      "lines": 74
+    },
+    {
+      "path": "server/api.ts",
+      "hash": "9ba9541d6f224760",
+      "lines": 107
+    },
+    {
+      "path": "server/webhooks.ts",
+      "hash": "b33908d180bab664",
+      "lines": 92
+    },
+    {
+      "path": "server/auth.ts",
+      "hash": "78db18e70c091f1a",
+      "lines": 74
+    },
+    {
+      "path": "server/env.ts",
+      "hash": "e65d46a4921c96d8",
+      "lines": 22
+    },
+    {
+      "path": "server/cron.ts",
+      "hash": "4c27da37f7be7c83",
+      "lines": 54
+    },
+    {
+      "path": "server/queue.ts",
+      "hash": "7f9da900cc7fcd7b",
+      "lines": 52
+    },
+    {
+      "path": "server/templates.ts",
+      "hash": "1caec2e903f01e79",
+      "lines": 101
+    },
+    {
+      "path": "server/middleware.ts",
+      "hash": "253c87ac68999356",
+      "lines": 39
+    },
+    {
+      "path": "server/server.ts",
+      "hash": "ce6645aa10a20e90",
+      "lines": 99
+    },
+    {
+      "path": "server/Dockerfile",
+      "hash": "697686029d7d84e1",
+      "lines": 43
+    },
+    {
+      "path": "server/.dockerignore",
+      "hash": "8919c6124bfd1683",
+      "lines": 14
+    },
+    {
+      "path": "server/.env.example",
+      "hash": "9fd34caa169dfa3a",
+      "lines": 20
+    },
+    {
+      "path": "docker-compose.yml",
+      "hash": "fa1d293461d34ea3",
+      "lines": 25
+    },
+    {
+      "path": "README.md",
+      "hash": "84c137c19b23c7e1",
+      "lines": 238
+    },
+    {
+      "path": "docker-compose.yml",
+      "hash": "fa1d293461d34ea3",
+      "lines": 25
     }
   ],
-  "timestamp": "2026-02-24T16:18:20.679Z"
+  "timestamp": "2026-02-24T17:16:28.197Z"
 }
