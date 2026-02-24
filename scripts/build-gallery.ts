@@ -358,11 +358,15 @@ export default function App() {
         </div>
 
         {/* Subtitle */}
-        <p style={{ color: 'var(--muted)', fontSize: 15, marginBottom: 24, lineHeight: 1.6 }}>
+        <p style={{ color: 'var(--muted)', fontSize: 15, marginBottom: 16, lineHeight: 1.6 }}>
           {activeCategory === 'All' ? 'All' : activeCategory} templates
           {search && <> matching "<strong style={{ color: 'var(--fg)' }}>{search}</strong>"</>}
           {' '}&mdash; click <strong style={{ color: 'var(--accent)' }}>Live Preview</strong> to open in a new tab.
           {' '}<span style={{ opacity: 0.6 }}>Showing {filtered.length} of {TEMPLATES.length}.</span>
+        </p>
+        <p style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 24, padding: '10px 14px', borderRadius: 'var(--radius)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)', borderLeft: '3px solid var(--accent)', lineHeight: 1.7 }}>
+          <strong>Note:</strong> Full-stack apps open directly to the dashboard (login is bypassed for previews). Data and API calls require a running backend &mdash; to try the full app, transpile locally: <code style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>air transpile {'<template>'}.air -o ./my-app</code>
+          <br/>Default seed credentials: <strong style={{ color: 'var(--fg)' }}>admin@example.com</strong> / <strong style={{ color: 'var(--fg)' }}>password123</strong>
         </p>
 
         {/* Grid */}
@@ -498,6 +502,31 @@ interface TranspileStats {
   failures: string[];
 }
 
+/** For auth-gated preview apps, inject a demo user so the app bypasses the login page */
+function patchAuthForPreview(appJsxPath: string): void {
+  if (!existsSync(appJsxPath)) return;
+  let content = readFileSync(appJsxPath, 'utf-8');
+
+  // Replace user state: null → demo user
+  content = content.replace(
+    "const [user, setUser] = useState(null);",
+    "const [user, setUser] = useState({ id: 1, name: 'Demo User', email: 'admin@example.com', role: 'admin' });"
+  );
+
+  // Replace initial page: 'login' → first non-login page
+  const pageMatch = content.match(/currentPage === '(\w+)' && \(\s*<div>/g);
+  const pages = pageMatch
+    ? pageMatch.map(m => m.match(/currentPage === '(\w+)'/)?.[1]).filter(p => p && p !== 'login' && p !== 'register')
+    : [];
+  const defaultPage = pages[0] || 'dashboard';
+  content = content.replace(
+    "const [currentPage, setCurrentPage] = useState('login');",
+    `const [currentPage, setCurrentPage] = useState('${defaultPage}');`
+  );
+
+  writeFileSync(appJsxPath, content, 'utf-8');
+}
+
 function pretranspileTemplate(meta: TemplateMeta): boolean {
   const filePath = join(EXAMPLES_DIR, `${meta.slug}.air`);
   const outDir = join(GALLERY_DIR, 'previews', meta.slug);
@@ -523,6 +552,12 @@ function pretranspileTemplate(meta: TemplateMeta): boolean {
     }
 
     patchViteConfig(outDir);
+
+    // Bypass auth for preview — inject demo user so apps open to dashboard
+    if (meta.hasAuth) {
+      patchAuthForPreview(join(outDir, 'src', 'App.jsx'));
+    }
+
     return true;
   } catch (err) {
     console.warn(`  ⚠ Failed to transpile ${meta.slug}: ${(err as Error).message}`);

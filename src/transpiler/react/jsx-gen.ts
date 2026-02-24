@@ -350,10 +350,10 @@ export function generateScopedJSX(
   if (node.scope === 'section') {
     const sectionClasses = (() => {
       switch (node.name) {
-        case 'hero': return 'py-24 px-6 space-y-6 text-center';
+        case 'hero': return 'py-28 px-6 space-y-8 text-center';
         case 'footer': return 'py-8 px-6 space-y-4 border-t border-[var(--border)] text-center';
         case 'cta': return 'py-20 px-6 space-y-6 text-center';
-        default: return scope.insideSidebarPage ? 'py-4 space-y-4' : (analysis.hasPages ? 'py-8 px-6 space-y-6' : 'py-16 px-6 space-y-6');
+        default: return scope.insideSidebarPage ? 'py-4 space-y-4' : (analysis.hasPages ? 'py-8 px-6 space-y-6' : 'py-20 px-6 space-y-6 text-center');
       }
     })();
     const childJsx = node.children.map(c =>

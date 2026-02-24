@@ -23,7 +23,7 @@ interface MappingEntry {
 const ELEMENT_MAP: Record<string, MappingEntry> = {
   header: {
     tag: 'header',
-    className: 'flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 border-b border-[var(--border)]',
+    className: 'sticky top-0 z-40 flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-b border-[var(--border)] bg-[var(--bg)]/80 backdrop-blur-lg',
   },
   footer: {
     tag: 'footer',
@@ -162,9 +162,9 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
     tag: 'a',
     className: 'text-[var(--accent)] hover:underline cursor-pointer block text-center text-sm',
     modifiers: {
-      primary: { className: 'bg-[var(--accent)] text-white px-5 py-2.5 rounded-[var(--radius)] font-medium hover:brightness-110 cursor-pointer transition-colors inline-flex items-center justify-center no-underline' },
-      secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-5 py-2.5 rounded-[var(--radius)] font-medium cursor-pointer hover:opacity-90 transition-colors inline-flex items-center justify-center no-underline' },
-      ghost: { className: 'bg-transparent hover:bg-[var(--hover)] px-4 py-2 rounded-[var(--radius)] cursor-pointer transition-colors inline-flex items-center justify-center no-underline' },
+      primary: { className: 'bg-[var(--accent)] text-white px-6 py-3 rounded-[var(--radius)] font-semibold hover:brightness-110 hover:shadow-lg hover:shadow-[var(--accent)]/20 cursor-pointer transition-all duration-200 inline-flex items-center justify-center no-underline' },
+      secondary: { className: 'border border-[var(--accent)] text-[var(--accent)] px-6 py-3 rounded-[var(--radius)] font-semibold cursor-pointer hover:bg-[var(--accent)]/10 transition-all duration-200 inline-flex items-center justify-center no-underline' },
+      ghost: { className: 'bg-transparent hover:bg-[var(--hover)] px-4 py-2 rounded-[var(--radius)] font-medium cursor-pointer transition-all duration-200 inline-flex items-center justify-center no-underline' },
     },
   },
   form: {

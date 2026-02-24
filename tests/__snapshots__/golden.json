@@ -8,8 +8,8 @@
       "postcss.config.cjs": "fa650b380adfabb1",
       "index.html": "de8f38d2651b5420",
       "src/main.jsx": "d2a5622fca5cfbd3",
-      "src/index.css": "3e753e482ac40b1e",
-      "src/App.jsx": "6bb17ceac49bc90d"
+      "src/index.css": "80423bf8513e23d2",
+      "src/App.jsx": "92406d6d10aed723"
     }
   },
   "expense-tracker": {
@@ -21,8 +21,8 @@
       "postcss.config.cjs": "fa650b380adfabb1",
       "index.html": "fc368be178bc4d6a",
       "src/main.jsx": "6099034bef7a7282",
-      "src/index.css": "f5382f2bd310b54a",
-      "src/App.jsx": "85ea4cf610fb30d6"
+      "src/index.css": "28c5b6294174540e",
+      "src/App.jsx": "50f7dde0791ebae2"
     }
   },
   "auth": {
@@ -34,7 +34,7 @@
       "client/postcss.config.cjs": "fa650b380adfabb1",
       "client/index.html": "91b86cbc86134073",
       "client/src/main.jsx": "798afb8cd21838e0",
-      "client/src/index.css": "3e753e482ac40b1e",
+      "client/src/index.css": "80423bf8513e23d2",
       "client/src/App.jsx": "16231dbcaecc2495",
       "client/src/api.js": "c089d167d12e9470",
       "client/src/pages/LoginPage.jsx": "aab5a6d4b258abde",
@@ -59,7 +59,7 @@
       "client/postcss.config.cjs": "fa650b380adfabb1",
       "client/index.html": "e8127e98921e1082",
       "client/src/main.jsx": "417c34b98736d2ee",
-      "client/src/index.css": "740c9fe63237eb1a",
+      "client/src/index.css": "a4bc0c126729f47d",
       "client/src/App.jsx": "c13e3b2127f1cb9a",
       "client/src/Layout.jsx": "e36330e0e6e96800",
       "client/src/api.js": "c81d9b7e91422d0c",
@@ -89,8 +89,8 @@
       "postcss.config.cjs": "fa650b380adfabb1",
       "index.html": "6960caefbd92e137",
       "src/main.jsx": "ebd6c45b5da28f33",
-      "src/index.css": "859ef9f6fbcc50a1",
-      "src/App.jsx": "b63d7b956b283eb7"
+      "src/index.css": "3ddac873cb8f460b",
+      "src/App.jsx": "09b9e3ff27e9e1fd"
     }
   },
   "fullstack-todo": {
@@ -102,8 +102,8 @@
       "client/postcss.config.cjs": "fa650b380adfabb1",
       "client/index.html": "09af4aaa46cb6fbc",
       "client/src/main.jsx": "c9e4f45f08db9432",
-      "client/src/index.css": "3e753e482ac40b1e",
-      "client/src/App.jsx": "544d7d02929346d4",
+      "client/src/index.css": "80423bf8513e23d2",
+      "client/src/App.jsx": "e55705cd54934946",
       "client/src/api.js": "8702d9b891d7b30e",
       "client/src/types.ts": "168ea41abdea173d",
       "client/src/components/EmptyState.jsx": "2ecd1120175fe3a0",
@@ -131,13 +131,13 @@
       "client/postcss.config.cjs": "fa650b380adfabb1",
       "client/index.html": "0a52e135952fb9fe",
       "client/src/main.jsx": "6a2fdfd95a3cebca",
-      "client/src/index.css": "3e753e482ac40b1e",
+      "client/src/index.css": "80423bf8513e23d2",
       "client/src/App.jsx": "8d940bedccdd4bdd",
       "client/src/Layout.jsx": "4a9316132b7843df",
       "client/src/api.js": "d041162ca61e1cee",
       "client/src/types.ts": "ef8760e57f4f53d8",
       "client/src/pages/LoginPage.jsx": "dc648fd93e59d651",
-      "client/src/pages/DashboardPage.jsx": "09086932b88aa52f",
+      "client/src/pages/DashboardPage.jsx": "726a7c27c08a08f9",
       "client/src/pages/ProjectsPage.jsx": "b64279c651158d60",
       "client/src/pages/TasksPage.jsx": "e63ff6f1389f1806",
       "client/src/pages/SettingsPage.jsx": "edbc7eaae47155c1",

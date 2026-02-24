@@ -982,9 +982,9 @@ describe('transpile: output structure', () => {
 
   it('relative .html links get target="_blank"', () => {
     const allJsx = getAllJsx('airengine-site');
-    // The airengine-site has a link to ./gallery/dist/index.html
+    // The airengine-site has a link to ./gallery/index.html
     expect(allJsx).toContain('target="_blank"');
-    expect(allJsx).toContain('gallery/dist/index.html');
+    expect(allJsx).toContain('gallery/index.html');
   });
 });
 
@@ -1113,7 +1113,7 @@ describe('section-name-aware styling', () => {
   it('hero section gets centered + larger padding', () => {
     const jsx = getAppJsx('landing');
     expect(jsx).toContain('id="hero"');
-    expect(jsx).toMatch(/id="hero"[^>]*py-24/);
+    expect(jsx).toMatch(/id="hero"[^>]*py-28/);
     expect(jsx).toMatch(/id="hero"[^>]*text-center/);
   });
 
@@ -1126,7 +1126,8 @@ describe('section-name-aware styling', () => {
 
   it('regular sections keep default styling', () => {
     const jsx = getAppJsx('landing');
-    expect(jsx).toMatch(/id="features"[^>]*py-16/);
+    expect(jsx).toMatch(/id="features"[^>]*py-20/);
+    expect(jsx).toMatch(/id="features"[^>]*text-center/);
   });
 });
 
@@ -1151,7 +1152,7 @@ describe('scaffold: code/pre/hr CSS', () => {
     const result = transpileFile('todo');
     const css = result.files.find(f => f.path === 'src/index.css')!.content;
     expect(css).toContain("code { font-family: 'SF Mono'");
-    expect(css).toContain("pre { font-family: 'SF Mono'");
+    expect(css).toContain("font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; margin: 0;");
     expect(css).toContain('hr { border: none; }');
   });
 });

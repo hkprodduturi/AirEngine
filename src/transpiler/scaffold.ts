@@ -214,7 +214,17 @@ body {
   background: var(--bg);
   color: var(--fg);
   line-height: 1.6;
+  min-height: 100vh;
 }
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% -20%, rgba(var(--accent-rgb), 0.12), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+#root { position: relative; z-index: 1; }
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -227,8 +237,8 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
 /* ---- Typography ---- */
-h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2; }
-h2 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.3; }
+h1 { font-size: 2.25rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1.15; }
+h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
 h3 { font-size: 1.125rem; font-weight: 600; line-height: 1.4; }
 
 /* ---- Tables ---- */
@@ -283,20 +293,25 @@ input[type="checkbox"], input[type="radio"] {
 button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 10px 20px; border-radius: var(--radius); font-size: 0.875rem;
-  font-weight: 500; cursor: pointer; transition: all 0.15s ease; border: none;
+  font-weight: 600; cursor: pointer; transition: all 0.2s ease; border: none;
   color: inherit; background: transparent;
 }
-button:hover { opacity: 0.9; }
-button:active { transform: scale(0.98); }
+button:hover { opacity: 0.9; transform: translateY(-1px); }
+button:active { transform: scale(0.98) translateY(0); }
 button:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
 /* ---- Cards ---- */
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 24px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.card:hover { border-color: color-mix(in srgb, var(--border) 80%, var(--accent)); }
+.card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 8px 32px rgba(var(--accent-rgb), 0.08), var(--card-shadow);
+}
 
 /* ---- Empty state ---- */
 .empty-state {
@@ -306,9 +321,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
 /* ---- Code blocks ---- */
 code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
-pre { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; margin: 0; }
+pre {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; margin: 0;
+  background: rgba(var(--accent-rgb), 0.04); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px 24px; overflow-x: auto;
+  text-align: left;
+}
 pre code { background: none; padding: 0; font-size: inherit; }
 hr { border: none; }
+
+/* ---- Links ---- */
+a { transition: all 0.2s ease; }
 
 /* ---- Sidebar base ---- */
 aside { background: var(--surface); }
