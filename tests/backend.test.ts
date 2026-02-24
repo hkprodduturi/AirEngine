@@ -1862,10 +1862,10 @@ describe('Batch 2: security hardening defaults', () => {
     expect(pkg.content).toContain('helmet');
   });
 
-  it('CORS origin defaults to localhost:3000', () => {
+  it('CORS origin defaults to env var or true (reflect origin)', () => {
     const result = transpileFile('fullstack-todo');
     const server = result.files.find(f => f.path === 'server/server.ts')!;
-    expect(server.content).toContain('localhost:3000');
+    expect(server.content).toContain('CORS_ORIGIN || true');
   });
 });
 
@@ -2294,5 +2294,29 @@ describe('Codex finding: MCP transpileReturned tracks first-call correctly', () 
     expect(serverSource).toContain('transpileReturned.has(sourceHash)');
     // Must mark as returned after sending full files
     expect(serverSource).toContain('transpileReturned.add(sourceHash)');
+  });
+});
+
+describe('Optional state null guard in generated JSX', () => {
+  it('emits optional chaining (?.) for dot access on optional state vars', () => {
+    const source = `@app:OptGuard
+  @state{user:?{id:int,name:str,email:str}}
+  @ui(
+    text > #user.name
+    input:#user.email
+  )
+`;
+    const ast = parse(source);
+    const result = transpile(ast);
+    const appFile = result.files.find(f => f.path.endsWith('App.jsx'));
+    expect(appFile).toBeDefined();
+    const content = appFile!.content;
+    // Dot access on optional state should use ?.
+    expect(content).toContain('user?.name');
+    expect(content).toContain('user?.email');
+    // Should NOT contain bare user.name / user.email in value bindings
+    expect(content).not.toMatch(/value=\{user\.email\}/);
+    // Input value should have ?? '' fallback
+    expect(content).toContain("?? ''");
   });
 });

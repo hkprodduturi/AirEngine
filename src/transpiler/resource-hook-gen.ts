@@ -37,7 +37,8 @@ export function generateResourceHooks(ctx: TranspileContext): OutputFile[] {
     const hookName = `use${capitalize(pluralName)}`;
     const routePath = route.path;
 
-    const code = generateHookFile(model.name, hookName, routePath);
+    const hasAuth = ctx.auth !== null;
+    const code = generateHookFile(model.name, hookName, routePath, hasAuth);
     files.push({
       path: `src/hooks/${hookName}.js`,
       content: code,
@@ -55,6 +56,7 @@ function generateHookFile(
   modelName: string,
   hookName: string,
   routePath: string,
+  hasAuth: boolean,
 ): string {
   const lines: string[] = [];
 
@@ -91,7 +93,13 @@ function generateHookFile(
   lines.push('    setError(null);');
   lines.push('    try {');
   lines.push('      const qs = buildQueryString(options);');
-  lines.push(`      const res = await fetch(\`\${API_BASE}${routePath}\${qs}\`, { signal });`);
+  if (hasAuth) {
+    lines.push("      const token = localStorage.getItem('auth_token') || '';");
+    lines.push("      const headers = token ? { Authorization: `Bearer ${token}` } : {};");
+    lines.push(`      const res = await fetch(\`\${API_BASE}${routePath}\${qs}\`, { signal, headers });`);
+  } else {
+    lines.push(`      const res = await fetch(\`\${API_BASE}${routePath}\${qs}\`, { signal });`);
+  }
   lines.push(
     `      if (!res.ok) throw new Error(\`GET ${routePath} failed: \${res.status}\`);`,
   );

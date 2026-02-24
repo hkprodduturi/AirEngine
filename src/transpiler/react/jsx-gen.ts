@@ -20,11 +20,12 @@ import {
   getButtonLabel, extractBaseArrayName,
   findEnumValues, resolveDeepType, findEnumByName,
   analyzePageDependencies, getHookableStateProps,
+  findFirstFormAction,
 } from './helpers.js';
 
 // ---- Root JSX ----
 
-export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis): string[] {
+export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy = false): string[] {
   const rootClasses = 'min-h-screen bg-[var(--bg)] text-[var(--fg)]';
 
   const maxWidth = ctx.style.maxWidth;
@@ -35,11 +36,14 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis): st
   );
 
   // Determine wrapper: explicit maxWidth > sidebar (no wrapper) > default 900px container
+  // Fullstack pages handle their own padding — don't add px/space-y to wrapper
   const wrapperClass = maxWidth
-    ? `max-w-[${maxWidth}px] mx-auto space-y-6`
+    ? (analysis.hasPages
+      ? `max-w-[${maxWidth}px] mx-auto`
+      : `max-w-[${maxWidth}px] mx-auto px-4 sm:px-6 space-y-6`)
     : hasSidebar
       ? ''
-      : 'max-w-[900px] mx-auto px-6 py-8 space-y-6';
+      : 'max-w-[900px] mx-auto px-4 sm:px-6 py-8 space-y-6';
 
   const lines: string[] = [];
   lines.push(`<div className="${rootClasses}">`);
@@ -52,9 +56,20 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis): st
 
   const contentIndent = hasSidebar || wrapperClass ? 4 : 2;
 
-  for (const node of ctx.uiNodes) {
-    const jsx = generateJSX(node, ctx, analysis, ROOT_SCOPE, contentIndent);
-    if (jsx) lines.push(jsx);
+  // Wrap page content in Suspense for lazy-loaded pages
+  if (useLazy && analysis.hasPages) {
+    const suspenseIndent = ' '.repeat(contentIndent);
+    lines.push(`${suspenseIndent}<Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>}>`);
+    for (const node of ctx.uiNodes) {
+      const jsx = generateJSX(node, ctx, analysis, ROOT_SCOPE, contentIndent + 2);
+      if (jsx) lines.push(jsx);
+    }
+    lines.push(`${suspenseIndent}</Suspense>`);
+  } else {
+    for (const node of ctx.uiNodes) {
+      const jsx = generateJSX(node, ctx, analysis, ROOT_SCOPE, contentIndent);
+      if (jsx) lines.push(jsx);
+    }
   }
 
   if (hasSidebar || wrapperClass) {
@@ -192,7 +207,26 @@ export function generateElementJSX(
 
   // Element with children
   if (node.children && node.children.length > 0) {
-    const childScope = node.element === 'form' ? { ...scope, insideForm: true } : scope;
+    // Form: find primary action, set formAction in scope so primary button becomes type="submit"
+    if (node.element === 'form') {
+      const firstAction = findFirstFormAction(node.children);
+      const formScope: Scope = { ...scope, insideForm: true, formAction: firstAction || undefined };
+      const childJsx = node.children.map(c =>
+        generateJSX(c, ctx, analysis, formScope, ind + 2)
+      ).filter(Boolean).join('\n');
+      const onSubmitAttr = firstAction
+        ? ` onSubmit={(e) => { e.preventDefault(); ${firstAction}(e); }}`
+        : '';
+      // Inject auth error alert inside login/register forms
+      const isAuthFormAction = firstAction === 'login' || firstAction === 'register' || firstAction === 'signup';
+      const hasAuthRoutesForm = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
+      const authAlertForm = isAuthFormAction && hasAuthRoutesForm
+        ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{authError}</div>}`
+        : '';
+      return `${pad}<form${classAttr(mapping.className)}${onSubmitAttr}>${authAlertForm}\n${childJsx}\n${pad}</form>`;
+    }
+
+    const childScope = scope;
     const childJsx = node.children.map(c =>
       generateJSX(c, ctx, analysis, childScope, ind + 2)
     ).filter(Boolean).join('\n');
@@ -260,7 +294,7 @@ export function generateScopedJSX(
         case 'hero': return 'py-24 px-6 space-y-6 text-center';
         case 'footer': return 'py-8 px-6 space-y-4 border-t border-[var(--border)] text-center';
         case 'cta': return 'py-20 px-6 space-y-6 text-center';
-        default: return 'py-16 px-6 space-y-6';
+        default: return scope.insideSidebarPage ? 'py-4 space-y-4' : 'py-16 px-6 space-y-6';
       }
     })();
     const childJsx = node.children.map(c =>
@@ -329,6 +363,18 @@ function generatePageComponentRef(
     }
   }
 
+  // Pass authError props for login/register pages
+  const isAuthPage = node.name === 'login' || node.name === 'register' || node.name === 'signup';
+  const hasAuthRoutes = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.includes('/auth/') || r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
+  if (isAuthPage && hasAuthRoutes) {
+    if (!propAssignments.some(p => p.startsWith('authError='))) {
+      propAssignments.push('authError={authError}');
+    }
+    if (!propAssignments.some(p => p.startsWith('setAuthError='))) {
+      propAssignments.push('setAuthError={setAuthError}');
+    }
+  }
+
   const propsStr = propAssignments.length > 0
     ? ' ' + propAssignments.join(' ')
     : '';
@@ -358,7 +404,8 @@ export function generateUnaryJSX(
       // Mutation — render as button with onClick
       const name = extractActionName(node.operand);
       const args = extractActionArgs(node.operand, scope);
-      return `${pad}<button className="bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" onClick={() => ${name}(${args})}>${name}</button>`;
+      const typeAttr = scope.insideForm ? ' type="button"' : '';
+      return `${pad}<button${typeAttr} className="bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" onClick={() => ${name}(${args})}>${name}</button>`;
     }
 
     case '*': {
@@ -470,6 +517,23 @@ export function generateComposeJSX(
     }
   }
 
+  // Check if both sides are inline-level elements → wrap in flex row
+  const leftResolved = tryResolveElement(node.left);
+  const rightResolved = tryResolveElement(node.right);
+  const INLINE_ELEMENTS = new Set(['p', 'text', 'span', 'badge', 'btn', 'button', 'a', 'link', 'icon', 'logo']);
+  const leftInline = leftResolved && INLINE_ELEMENTS.has(leftResolved.element);
+  const rightInline = rightResolved && INLINE_ELEMENTS.has(rightResolved.element);
+
+  // Also treat action (!) and flow chains resolving to inline as inline
+  const leftIsInline = leftInline || (node.left.kind === 'text') || (node.left.kind === 'unary' && node.left.operator === '!');
+  const rightIsInline = rightInline || (node.right.kind === 'text') || (node.right.kind === 'unary' && node.right.operator === '!');
+
+  if (leftIsInline && rightIsInline) {
+    const left = generateJSX(node.left, ctx, analysis, scope, ind + 2);
+    const right = generateJSX(node.right, ctx, analysis, scope, ind + 2);
+    return `${pad}<div className="flex items-center gap-2">\n${left}\n${right}\n${pad}</div>`;
+  }
+
   const left = generateJSX(node.left, ctx, analysis, scope, ind);
   const right = generateJSX(node.right, ctx, analysis, scope, ind);
   return [left, right].filter(Boolean).join('\n');
@@ -510,6 +574,13 @@ export function generateFlowJSX(
     const leftResolved = tryResolveElement(node.left);
     if (leftResolved) {
       const mapping = mapElement(leftResolved.element, leftResolved.modifiers);
+
+      // Nav button → page navigation with active styling
+      if (scope.insideNav && (leftResolved.element === 'btn' || leftResolved.element === 'button')) {
+        const pageName = node.right.text.toLowerCase();
+        return `${pad}<button className={\`w-full text-left px-3 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${currentPage === '${pageName}' ? 'bg-[var(--accent)] text-white' : 'hover:bg-[var(--hover)]'}\`} onClick={() => setCurrentPage('${pageName}')}>${escapeText(node.right.text)}</button>`;
+      }
+
       // img/a: text becomes src/href attribute, not children
       if (mapping.tag === 'img') {
         return `${pad}<img src="${node.right.text}"${classAttr(mapping.className)} alt="${leftResolved.modifiers[0] || 'image'}" />`;
@@ -557,7 +628,7 @@ export function generateFlowJSX(
   if (node.right.kind === 'unary' && node.right.operator === '#') {
     const leftResolved = tryResolveElement(node.left);
     if (leftResolved) {
-      const ref = resolveRef(node.right.operand, scope);
+      const ref = resolveRef(node.right.operand, scope, ctx);
       // For stat elements, extract the label from the bind chain
       if (leftResolved.element === 'stat' && node.left.kind === 'binary' && node.left.operator === ':') {
         const bindInfo = resolveBindChain(node.left);
@@ -616,7 +687,11 @@ export function generateFlowJSX(
   const leftResolved = tryResolveElement(node.left);
   if (leftResolved) {
     const mapping = mapElement(leftResolved.element, leftResolved.modifiers);
-    const childJsx = generateJSX(node.right, ctx, analysis, scope, ind + 2);
+    // Nav with page navigation — pass insideNav scope so child buttons get onClick
+    const childScope = leftResolved.element === 'nav' && analysis.hasPages
+      ? { ...scope, insideNav: true } as Scope
+      : scope;
+    const childJsx = generateJSX(node.right, ctx, analysis, childScope, ind + 2);
     return `${pad}<${mapping.tag}${classAttr(mapping.className)}>\n${childJsx}\n${pad}</${mapping.tag}>`;
   }
 
@@ -696,7 +771,12 @@ export function generateBindJSX(
       } else {
         btnClass = mapping.className;
       }
-      return `${pad}<button className="${btnClass}" onClick={() => ${actionName}(${actionArgs})}>${getButtonLabel(resolved)}</button>`;
+      // Primary form action → type="submit" (form's onSubmit handles the call)
+      if (scope.insideForm && scope.formAction === actionName) {
+        return `${pad}<button type="submit" className="${btnClass}">${getButtonLabel(resolved)}</button>`;
+      }
+      const typeAttr = scope.insideForm ? ' type="button"' : '';
+      return `${pad}<button${typeAttr} className="${btnClass}" onClick={() => ${actionName}(${actionArgs})}>${getButtonLabel(resolved)}</button>`;
     }
     return `${pad}<${mapping.tag} className="${mapping.className}" onClick={() => ${actionName}(${actionArgs})} />`;
   }
@@ -714,12 +794,28 @@ export function generateBindJSX(
     return `${pad}<${mapping.tag} className="${mapping.className}">${escapeText(resolved.label)}</${mapping.tag}>`;
   }
 
-  // Nav with page items — render as navigation buttons
+  // Nav with page items — render as navigation buttons with setCurrentPage
   if (resolved.element === 'nav' && resolved.children && resolved.children.length > 0 && analysis.hasPages) {
-    const navItems = resolved.children.filter(c => c.kind === 'element').map(c => (c as AirUINode & { kind: 'element' }).element);
+    const navItems: { label: string; page: string }[] = [];
+    for (const child of resolved.children) {
+      // btn:ghost>"Dashboard" → flow chain: left=bind(btn:ghost), right=text("Dashboard")
+      if (child.kind === 'binary' && child.operator === '>') {
+        const text = child.right.kind === 'text' ? child.right.text : '';
+        if (text) { navItems.push({ label: text, page: text.toLowerCase() }); continue; }
+      }
+      // Plain element fallback (btn without flow)
+      if (child.kind === 'element') {
+        navItems.push({ label: capitalize(child.element), page: child.element });
+      }
+      // Bind chain: btn:ghost (no text) — use element name
+      const childResolved = tryResolveElement(child);
+      if (childResolved && !navItems.some(n => n.page === childResolved.element)) {
+        navItems.push({ label: capitalize(childResolved.element), page: childResolved.element });
+      }
+    }
     if (navItems.length > 0) {
-      const itemsJsx = navItems.map(name =>
-        `${pad}  <button className={\`w-full text-left px-3 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${currentPage === '${name}' ? 'bg-[var(--accent)] text-white' : 'hover:bg-[var(--hover)]'}\`} onClick={() => setCurrentPage('${name}')}>${capitalize(name)}</button>`
+      const itemsJsx = navItems.map(({ label, page }) =>
+        `${pad}  <button className={\`w-full text-left px-3 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${currentPage === '${page}' ? 'bg-[var(--accent)] text-white' : 'hover:bg-[var(--hover)]'}\`} onClick={() => setCurrentPage('${page}')}>${escapeText(label)}</button>`
       ).join('\n');
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>\n${itemsJsx}\n${pad}</${mapping.tag}>`;
     }
@@ -794,7 +890,7 @@ export function generateDotJSX(
     }
   }
 
-  const expr = resolveDotExpr(node, scope);
+  const expr = resolveDotExpr(node, scope, ctx);
   return `${pad}{${expr}}`;
 }
 
@@ -872,11 +968,13 @@ export function generateBoundElement(
 
   // Input bound to state
   if (mapping.tag === 'input' || resolved.element === 'search') {
-    const ref = resolveRef(binding.kind === 'unary' ? binding.operand : binding, scope);
+    const ref = resolveRef(binding.kind === 'unary' ? binding.operand : binding, scope, ctx);
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    const resolvedFieldName = ref.includes('.') ? ref.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
+    const plainRef = ref.replace(/\?\./, '.');
+    const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
     const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolvedFieldName}"` : '';
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${ref}} onChange={(e) => ${resolveSetterFromRef(ref)}(e.target.value)} placeholder="${capitalize(resolved.modifiers[0] || resolved.element)}..." />`;
+    const valueExpr = ref !== plainRef ? `${ref} ?? ''` : ref;
+    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${capitalize(resolved.modifiers[0] || resolved.element)}..." />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
@@ -968,7 +1066,13 @@ export function generateElementWithAction(
     const childJsx = resolved.children
       ? resolved.children.map(c => generateJSX(c, ctx, analysis, formScope, ind + 2)).filter(Boolean).join('\n')
       : '';
-    return `${pad}<form className="${mapping.className}" onSubmit={(e) => { e.preventDefault(); ${actionName}(${actionArgs}); }}>\n${childJsx}\n${pad}</form>`;
+    // Inject auth error alert inside login/register forms
+    const isAuthForm = actionName === 'login' || actionName === 'register' || actionName === 'signup';
+    const hasAuthRoutes = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
+    const authAlert = isAuthForm && hasAuthRoutes
+      ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{authError}</div>}`
+      : '';
+    return `${pad}<form className="${mapping.className}" onSubmit={(e) => { e.preventDefault(); ${actionName}(${actionArgs}); }}>${authAlert}\n${childJsx}\n${pad}</form>`;
   }
 
   // Button with onClick
@@ -979,7 +1083,12 @@ export function generateElementWithAction(
           return '';
         }).join('')
       : actionName;
-    return `${pad}<button className="${mapping.className}" onClick={() => ${actionName}(${actionArgs})}>${label || actionName}</button>`;
+    // Primary form action → type="submit" (form's onSubmit handles the call)
+    if (scope.insideForm && scope.formAction === actionName) {
+      return `${pad}<button type="submit" className="${mapping.className}">${label || actionName}</button>`;
+    }
+    const typeAttr = scope.insideForm ? ' type="button"' : '';
+    return `${pad}<button${typeAttr} className="${mapping.className}" onClick={() => ${actionName}(${actionArgs})}>${label || actionName}</button>`;
   }
 
   // Input with onKeyDown enter handler + visible action button
@@ -1099,15 +1208,17 @@ export function generateFlowBoundElement(
 ): string {
   const pad = ' '.repeat(ind);
   const mapping = mapElement(resolved.element, resolved.modifiers);
-  const setterExpr = resolveSetterFromRef(stateRef);
+  const plainRef = stateRef.replace(/\?\./g, '.');
+  const setterExpr = resolveSetterFromRef(plainRef);
 
   // Input: value + onChange
   if (mapping.tag === 'input' || resolved.element === 'search') {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
     const placeholder = resolved.modifiers[0] || resolved.element;
-    const resolvedFieldName = stateRef.includes('.') ? stateRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
+    const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
     const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolvedFieldName}"` : '';
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${stateRef}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${capitalize(placeholder)}..." />`;
+    const valueExpr = stateRef !== plainRef ? `${stateRef} ?? ''` : stateRef;
+    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${capitalize(placeholder)}..." />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
@@ -1238,11 +1349,11 @@ export function generateFlowWithDot(
   // Generic: render left with dot expression as child
   if (leftResolved) {
     const mapping = mapElement(leftResolved.element, leftResolved.modifiers);
-    const expr = resolveDotExpr(dot, scope);
+    const expr = resolveDotExpr(dot, scope, ctx);
     return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{${expr}}</${mapping.tag}>`;
   }
 
-  return `${pad}{${resolveDotExpr(dot, scope)}}`;
+  return `${pad}{${resolveDotExpr(dot, scope, ctx)}}`;
 }
 
 export function generateFlowChain(

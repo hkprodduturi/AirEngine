@@ -28,11 +28,11 @@ export function generateServerEntry(ctx: TranspileContext): string {
     lines.push("import { requireAuth } from './auth.js';");
   }
 
-  // Resolve CORS origin from @env or default
-  let corsOrigin = "'http://localhost:3000'";
+  // Resolve CORS origin from @env or default (true = reflect request origin, safe for dev)
+  let corsOrigin = "process.env.CORS_ORIGIN || true";
   if (ctx.env) {
     const originVar = ctx.env.vars.find(v => v.name === 'CORS_ORIGIN' || v.name === 'CLIENT_URL');
-    if (originVar) corsOrigin = `process.env.${originVar.name} || ${corsOrigin}`;
+    if (originVar) corsOrigin = `process.env.${originVar.name} || true`;
   }
 
   lines.push('');

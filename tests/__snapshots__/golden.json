@@ -9,7 +9,7 @@
       "index.html": "de8f38d2651b5420",
       "src/main.jsx": "d2a5622fca5cfbd3",
       "src/index.css": "1f163c1dc1cfc4c1",
-      "src/App.jsx": "38299604b0585654"
+      "src/App.jsx": "ee3b9f1b29d89082"
     }
   },
   "expense-tracker": {
@@ -22,7 +22,7 @@
       "index.html": "fc368be178bc4d6a",
       "src/main.jsx": "6099034bef7a7282",
       "src/index.css": "1ee5c3a903437dc9",
-      "src/App.jsx": "4a020dd9596a27cd"
+      "src/App.jsx": "19ca2dd58ce4bd8a"
     }
   },
   "auth": {
@@ -35,10 +35,10 @@
       "client/index.html": "91b86cbc86134073",
       "client/src/main.jsx": "798afb8cd21838e0",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "299054ec5948bda2",
+      "client/src/App.jsx": "8def1d7af1f0abcb",
       "client/src/api.js": "069926c3c9eb1fd1",
-      "client/src/pages/LoginPage.jsx": "12a3a0c14f30ebae",
-      "client/src/pages/DashboardPage.jsx": "5d4c909e8ba99e34",
+      "client/src/pages/LoginPage.jsx": "7dfa2643243b70e3",
+      "client/src/pages/DashboardPage.jsx": "960e23eeb5fe4c7a",
       "server/package.json": "2d4044e45d76a69c",
       "server/tsconfig.json": "1b6d33775241d6b4",
       "server/.env": "99efd42c4cde3f80",
@@ -46,7 +46,7 @@
       "server/validation.ts": "74f388c58cb98d74",
       "server/api.ts": "6b0a70c7892d1da2",
       "server/middleware.ts": "6d8c516369e59531",
-      "server/server.ts": "a35a7a0ae8640055",
+      "server/server.ts": "04a696438257daa2",
       "README.md": "6611af99e4fc6fa4"
     }
   },
@@ -60,7 +60,7 @@
       "client/index.html": "e8127e98921e1082",
       "client/src/main.jsx": "417c34b98736d2ee",
       "client/src/index.css": "e2892ac2907de48b",
-      "client/src/App.jsx": "de3961317203bdd0",
+      "client/src/App.jsx": "0046f6c64b3871f6",
       "client/src/Layout.jsx": "333f492c81535c0b",
       "client/src/api.js": "c0ad05a0ed0dd8f1",
       "client/src/pages/OverviewPage.jsx": "1a165523211d786d",
@@ -75,7 +75,7 @@
       "server/api.ts": "f7b75697d00782f1",
       "server/auth.ts": "0350389423899b06",
       "server/middleware.ts": "e8d4c0c819939803",
-      "server/server.ts": "bdd63e0c5a72b857",
+      "server/server.ts": "95316a6befc0b473",
       "README.md": "a36b7deb3ba1a70b"
     }
   },
@@ -89,7 +89,7 @@
       "index.html": "6960caefbd92e137",
       "src/main.jsx": "ebd6c45b5da28f33",
       "src/index.css": "acf4b1a6650698ff",
-      "src/App.jsx": "cdef5da9b64cf5b8"
+      "src/App.jsx": "2b772b11b5d389ec"
     }
   },
   "fullstack-todo": {
@@ -102,7 +102,7 @@
       "client/index.html": "09af4aaa46cb6fbc",
       "client/src/main.jsx": "c9e4f45f08db9432",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "70f7f41eca563e7e",
+      "client/src/App.jsx": "728a50e3d01f5d75",
       "client/src/api.js": "1dcd0c0ca1b1b212",
       "client/src/types.ts": "168ea41abdea173d",
       "client/src/components/EmptyState.jsx": "834c8d58e60bd8b7",
@@ -116,7 +116,7 @@
       "server/validation.ts": "798ac66d5419b14c",
       "server/api.ts": "023fff7091336d08",
       "server/middleware.ts": "a58866fbe1cc45d5",
-      "server/server.ts": "570c65a91043346a",
+      "server/server.ts": "463048213695499c",
       "README.md": "e3d6a8470629d67a"
     }
   },
@@ -130,18 +130,18 @@
       "client/index.html": "0a52e135952fb9fe",
       "client/src/main.jsx": "6a2fdfd95a3cebca",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "f93dcc95f8b0a8a5",
+      "client/src/App.jsx": "cbd11ead730c1c7c",
       "client/src/Layout.jsx": "b3ab2edcd0fdb8ed",
-      "client/src/api.js": "fe28d552c2dcb8d7",
+      "client/src/api.js": "d39f81ae572415c9",
       "client/src/types.ts": "ef8760e57f4f53d8",
-      "client/src/pages/LoginPage.jsx": "258dfd1e7a990091",
-      "client/src/pages/DashboardPage.jsx": "1e09a769fca4f716",
-      "client/src/pages/ProjectsPage.jsx": "c06acf6ff7ae970d",
-      "client/src/pages/TasksPage.jsx": "c6426483ced04fd5",
-      "client/src/pages/SettingsPage.jsx": "3f3c9366b1c525c2",
-      "client/src/hooks/useProjects.js": "65b13d77b70f825e",
-      "client/src/hooks/useTasks.js": "bf72ab75491757b6",
-      "client/src/hooks/useComments.js": "65160e8494b683d3",
+      "client/src/pages/LoginPage.jsx": "5917c87f1cadaccb",
+      "client/src/pages/DashboardPage.jsx": "a2ae14c3994aa9f1",
+      "client/src/pages/ProjectsPage.jsx": "4607061a2739076e",
+      "client/src/pages/TasksPage.jsx": "b41cc0b00cce888a",
+      "client/src/pages/SettingsPage.jsx": "b90eb21d48523071",
+      "client/src/hooks/useProjects.js": "4bb917e27b3cdcf3",
+      "client/src/hooks/useTasks.js": "7ddb11b964cf3cc2",
+      "client/src/hooks/useComments.js": "ba5881c947104d29",
       "client/src/components/DataTable.jsx": "9b609e8750ce370f",
       "client/src/components/EmptyState.jsx": "fecb93e77ce0cb06",
       "client/src/components/StatCard.jsx": "101aad3eb2e8b980",
@@ -166,7 +166,7 @@
       "server/queue.ts": "c69a7266cd2adf88",
       "server/templates.ts": "bdf87830f807390f",
       "server/middleware.ts": "ffeba5767ce3d718",
-      "server/server.ts": "911f15958c4bb8d0",
+      "server/server.ts": "adc9f54528beba5a",
       "server/Dockerfile": "f3dbab73608c73c2",
       "server/.dockerignore": "190e9ec0521d46c6",
       "server/.env.example": "74a4bea6d29165ad",

@@ -28,6 +28,9 @@ export interface Scope {
   baseArray?: string;
   insideIter: boolean;
   insideForm?: boolean;
+  formAction?: string;  // primary action name for the enclosing form's onSubmit
+  insideNav?: boolean;  // inside a nav element with page navigation
+  insideSidebarPage?: boolean;  // inside a page with sidebar layout (reduces section padding)
 }
 
 export const ROOT_SCOPE: Scope = { insideIter: false };
@@ -185,22 +188,38 @@ export function wrapFormGroup(inputJsx: string, label: string, pad: string): str
 
 // ---- Expression Resolvers ----
 
-export function resolveRef(node: AirUINode, scope: Scope): string {
+export function resolveRef(node: AirUINode, scope: Scope, ctx?: TranspileContext): string {
   if (node.kind === 'element') {
     // Sanitize element name — strip trailing operators that shouldn't be in JS expressions
     const name = node.element.replace(/[-+*/]+$/, '');
     if (scope.insideIter && scope.iterVar && name === scope.iterVar) {
       return scope.iterVar;
     }
+    // Use optional chaining if root state var is nullable (dot-chained element names like "user.email")
+    if (ctx && name.includes('.') && !scope.insideIter) {
+      const rootVar = name.split('.')[0];
+      const stateField = ctx.state.find(f => f.name === rootVar);
+      if (stateField && stateField.type.kind === 'optional') {
+        return rootVar + '?.' + name.slice(rootVar.length + 1);
+      }
+    }
     return name;
   }
   if (node.kind === 'binary' && node.operator === '.') {
-    const left = resolveRef(node.left, scope);
+    const left = resolveRef(node.left, scope, ctx);
     const right = resolveRef(node.right, scope);
+    // Use optional chaining if root state var is nullable
+    if (ctx) {
+      const rootVar = left.split('.')[0].split('?')[0];
+      const stateField = ctx.state.find(f => f.name === rootVar);
+      if (stateField && stateField.type.kind === 'optional' && !scope.insideIter) {
+        return `${left}?.${right}`;
+      }
+    }
     return `${left}.${right}`;
   }
   if (node.kind === 'unary' && node.operator === '#') {
-    return resolveRef(node.operand, scope);
+    return resolveRef(node.operand, scope, ctx);
   }
   if (node.kind === 'text') {
     return JSON.stringify(node.text);
@@ -231,9 +250,17 @@ export function resolveRefNode(node: AirUINode, scope: Scope): string {
   return resolveRef(node, scope);
 }
 
-export function resolveDotExpr(node: AirUINode & { kind: 'binary' }, scope: Scope): string {
-  const left = resolveRef(node.left, scope);
+export function resolveDotExpr(node: AirUINode & { kind: 'binary' }, scope: Scope, ctx?: TranspileContext): string {
+  const left = resolveRef(node.left, scope, ctx);
   const right = node.right.kind === 'element' ? node.right.element : resolveRef(node.right, scope);
+  // Use optional chaining if root state var is nullable
+  if (ctx) {
+    const rootVar = left.split('.')[0].split('?')[0];
+    const stateField = ctx.state.find(f => f.name === rootVar);
+    if (stateField && stateField.type.kind === 'optional' && !scope.insideIter) {
+      return `${left}?.${right}`;
+    }
+  }
   return `${left}.${right}`;
 }
 
@@ -326,7 +353,7 @@ export function resolvePipeSource(node: AirUINode, ctx: TranspileContext, scope:
   if (node.kind === 'element') return node.element;
   if (node.kind === 'unary' && node.operator === '#') return resolveRef(node.operand, scope);
   if (node.kind === 'unary' && node.operator === '$') return resolvePipeSource(node.operand, ctx, scope);
-  if (node.kind === 'binary' && node.operator === '.') return resolveDotExpr(node as AirUINode & { kind: 'binary' }, scope);
+  if (node.kind === 'binary' && node.operator === '.') return resolveDotExpr(node as AirUINode & { kind: 'binary' }, scope, ctx);
   if (node.kind === 'binary' && node.operator === '|') return resolvePipeExpr(node as AirUINode & { kind: 'binary' }, ctx, scope);
   if (node.kind === 'binary' && node.operator === ':') {
     // Bind chain — extract the binding value
@@ -431,6 +458,17 @@ export function tryResolveElement(node: AirUINode): ResolvedElement | null {
       return { element: resolved.element, modifiers: resolved.modifiers, children: resolved.children };
     }
   }
+  // Flow chain: element > text → extract element from left, merge text as child
+  if (node.kind === 'binary' && node.operator === '>') {
+    const leftResolved = tryResolveElement(node.left);
+    if (leftResolved) {
+      const mergedChildren = [...(leftResolved.children || [])];
+      if (node.right.kind === 'text' || node.right.kind === 'element') {
+        mergedChildren.push(node.right);
+      }
+      return { element: leftResolved.element, modifiers: leftResolved.modifiers, children: mergedChildren };
+    }
+  }
   return null;
 }
 
@@ -447,6 +485,29 @@ export function getButtonLabel(resolved: ResolvedBind): string {
   }
   if (resolved.element === 'btn') return 'Submit';
   return resolved.element;
+}
+
+/** Recursively find the first !action mutation name in a tree of UI nodes. */
+export function findFirstFormAction(nodes: AirUINode[]): string | null {
+  for (const node of nodes) {
+    if (node.kind === 'unary' && node.operator === '!') {
+      return extractActionName(node.operand);
+    }
+    if (node.kind === 'binary') {
+      if (node.right.kind === 'unary' && node.right.operator === '!') {
+        return extractActionName(node.right.operand);
+      }
+      const fromLeft = findFirstFormAction([node.left]);
+      if (fromLeft) return fromLeft;
+      const fromRight = findFirstFormAction([node.right]);
+      if (fromRight) return fromRight;
+    }
+    if ('children' in node && node.children) {
+      const fromChildren = findFirstFormAction(node.children as AirUINode[]);
+      if (fromChildren) return fromChildren;
+    }
+  }
+  return null;
 }
 
 export function extractBaseArrayName(node: AirUINode): string {

@@ -120,6 +120,9 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
 
   const canWireApi = ctx.hasBackend && ctx.apiRoutes.length > 0;
   const expandedRoutes = canWireApi ? ctx.expandedRoutes : [];
+  const hasLoading = ctx.state.some(f => f.name === 'loading');
+  const hasError = ctx.state.some(f => f.name === 'error');
+  const hasAuth = ctx.auth !== null || expandedRoutes.some(r => r.path.includes('/auth/') || r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register'));
 
   for (const mut of analysis.mutations) {
     const name = mut.name;
@@ -188,33 +191,58 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
       if (match) {
         lines.push(`const login = async (e) => {`);
         lines.push(`  e?.preventDefault?.();`);
-        lines.push(`  setLoading(true);`);
-        lines.push(`  setError(null);`);
+        if (hasLoading) lines.push(`  setLoading(true);`);
+        if (hasAuth) lines.push(`  setAuthError(null);`);
+        else if (hasError) lines.push(`  setError(null);`);
         lines.push(`  try {`);
         lines.push(`    const formData = e?.target ? Object.fromEntries(new FormData(e.target)) : {};`);
+        lines.push(`    if (!formData.email || !formData.password) {`);
+        if (hasAuth) lines.push(`      setAuthError('Please enter email and password');`);
+        else if (hasError) lines.push(`      setError('Please enter email and password');`);
+        lines.push(`      return;`);
+        lines.push(`    }`);
         lines.push(`    const result = await api.${match.fnName}(formData);`);
-        lines.push(`    setUser(result);`);
+        if (hasAuth) {
+          lines.push(`    if (result.token) api.setToken(result.token);`);
+          lines.push(`    setUser(result.user || result);`);
+        } else {
+          lines.push(`    setUser(result);`);
+        }
         lines.push(`    setCurrentPage('dashboard');`);
         lines.push(`  } catch (err) {`);
-        lines.push(`    setError(err.message || 'Login failed');`);
+        if (hasAuth) {
+          lines.push(`    const msg = err.message?.includes('401') ? 'Invalid email or password' : (err.message || 'Login failed');`);
+          lines.push(`    setAuthError(msg);`);
+        } else if (hasError) {
+          lines.push(`    setError(err.message || 'Login failed');`);
+        }
+        lines.push(`    console.error('Login failed:', err);`);
         lines.push(`  } finally {`);
-        lines.push(`    setLoading(false);`);
+        if (hasLoading) lines.push(`    setLoading(false);`);
         lines.push(`  }`);
         lines.push('};');
       } else {
         lines.push(`const login = async (e) => {`);
         lines.push(`  e?.preventDefault?.();`);
-        lines.push(`  setLoading(true);`);
-        lines.push(`  setError(null);`);
+        if (hasLoading) lines.push(`  setLoading(true);`);
+        if (hasAuth) lines.push(`  setAuthError(null);`);
+        else if (hasError) lines.push(`  setError(null);`);
         lines.push(`  try {`);
-        lines.push(`    // TODO: Replace with actual API call`);
+        lines.push(`    const formData = e?.target ? Object.fromEntries(new FormData(e.target)) : {};`);
+        lines.push(`    if (!formData.email || !formData.password) {`);
+        if (hasAuth) lines.push(`      setAuthError('Please enter email and password');`);
+        else if (hasError) lines.push(`      setError('Please enter email and password');`);
+        lines.push(`      return;`);
+        lines.push(`    }`);
         lines.push(`    console.log('Login attempted');`);
-        lines.push(`    setUser({ name: 'User', email: 'user@example.com', token: 'mock-token' });`);
+        lines.push(`    setUser({ name: 'User', email: formData.email });`);
         lines.push(`    setCurrentPage('dashboard');`);
         lines.push(`  } catch (err) {`);
-        lines.push(`    setError(err.message || 'Login failed');`);
+        if (hasAuth) lines.push(`    setAuthError(err.message || 'Login failed');`);
+        else if (hasError) lines.push(`    setError(err.message || 'Login failed');`);
+        lines.push(`    console.error('Login failed:', err);`);
         lines.push(`  } finally {`);
-        lines.push(`    setLoading(false);`);
+        if (hasLoading) lines.push(`    setLoading(false);`);
         lines.push(`  }`);
         lines.push('};');
       }
@@ -222,11 +250,13 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
       if (match) {
         lines.push(`const logout = async () => {`);
         lines.push(`  try { await api.${match.fnName}(); } catch (_) {}`);
+        if (hasAuth) lines.push(`  api.clearToken();`);
         lines.push(`  setUser(null);`);
         lines.push(`  setCurrentPage('login');`);
         lines.push('};');
       } else {
         lines.push(`const logout = () => {`);
+        if (hasAuth) lines.push(`  api.clearToken();`);
         lines.push(`  setUser(null);`);
         lines.push(`  setCurrentPage('login');`);
         lines.push('};');
@@ -235,30 +265,47 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
       if (match) {
         lines.push(`const ${name} = async (e) => {`);
         lines.push(`  e?.preventDefault?.();`);
-        lines.push(`  setLoading(true);`);
-        lines.push(`  setError(null);`);
+        if (hasLoading) lines.push(`  setLoading(true);`);
+        if (hasAuth) lines.push(`  setAuthError(null);`);
+        else if (hasError) lines.push(`  setError(null);`);
         lines.push(`  try {`);
         lines.push(`    const formData = e?.target ? Object.fromEntries(new FormData(e.target)) : {};`);
+        lines.push(`    if (!formData.email || !formData.password) {`);
+        if (hasAuth) lines.push(`      setAuthError('Please fill in all required fields');`);
+        else if (hasError) lines.push(`      setError('Please fill in all required fields');`);
+        lines.push(`      return;`);
+        lines.push(`    }`);
         lines.push(`    await api.${match.fnName}(formData);`);
         lines.push(`    setCurrentPage('login');`);
         lines.push(`  } catch (err) {`);
-        lines.push(`    setError(err.message || '${capitalize(name)} failed');`);
+        if (hasAuth) lines.push(`    setAuthError(err.message || '${capitalize(name)} failed');`);
+        else if (hasError) lines.push(`    setError(err.message || '${capitalize(name)} failed');`);
+        lines.push(`    console.error('${capitalize(name)} failed:', err);`);
         lines.push(`  } finally {`);
-        lines.push(`    setLoading(false);`);
+        if (hasLoading) lines.push(`    setLoading(false);`);
         lines.push(`  }`);
         lines.push('};');
       } else {
         lines.push(`const ${name} = async (e) => {`);
         lines.push(`  e?.preventDefault?.();`);
-        lines.push(`  setLoading(true);`);
-        lines.push(`  setError(null);`);
+        if (hasLoading) lines.push(`  setLoading(true);`);
+        if (hasAuth) lines.push(`  setAuthError(null);`);
+        else if (hasError) lines.push(`  setError(null);`);
         lines.push(`  try {`);
+        lines.push(`    const formData = e?.target ? Object.fromEntries(new FormData(e.target)) : {};`);
+        lines.push(`    if (!formData.email || !formData.password) {`);
+        if (hasAuth) lines.push(`      setAuthError('Please fill in all required fields');`);
+        else if (hasError) lines.push(`      setError('Please fill in all required fields');`);
+        lines.push(`      return;`);
+        lines.push(`    }`);
         lines.push(`    console.log('${capitalize(name)} attempted');`);
         lines.push(`    setCurrentPage('login');`);
         lines.push(`  } catch (err) {`);
-        lines.push(`    setError(err.message || '${capitalize(name)} failed');`);
+        if (hasAuth) lines.push(`    setAuthError(err.message || '${capitalize(name)} failed');`);
+        else if (hasError) lines.push(`    setError(err.message || '${capitalize(name)} failed');`);
+        lines.push(`    console.error('${capitalize(name)} failed:', err);`);
         lines.push(`  } finally {`);
-        lines.push(`    setLoading(false);`);
+        if (hasLoading) lines.push(`    setLoading(false);`);
         lines.push(`  }`);
         lines.push('};');
       }

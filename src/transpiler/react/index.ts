@@ -61,10 +61,27 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
   lines.push(...indent(generateStateDecls(ctx), 2));
   lines.push('');
 
+  // Auth error state for login/register feedback
+  const hasAuthMutations = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.includes('/auth/') || r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
+  if (hasAuthMutations) {
+    lines.push('  const [authError, setAuthError] = useState(null);');
+    lines.push('');
+  }
+
   // Page navigation state (if pages exist)
   if (analysis.hasPages) {
     const defaultPage = analysis.pages[0]?.name ?? 'home';
     lines.push(`  const [currentPage, setCurrentPage] = useState('${defaultPage}');`);
+    lines.push('');
+  }
+
+  // Restore auth token on mount
+  if (hasAuthMutations && ctx.hasBackend && ctx.apiRoutes.length > 0) {
+    lines.push('  // Restore auth token from localStorage on mount');
+    lines.push('  useEffect(() => {');
+    lines.push("    const saved = localStorage.getItem('auth_token');");
+    lines.push('    if (saved) api.setToken(saved);');
+    lines.push('  }, []);');
     lines.push('');
   }
 
@@ -98,7 +115,7 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
 
   // JSX return
   lines.push('  return (');
-  lines.push(...indent(generateRootJSX(ctx, analysis), 4));
+  lines.push(...indent(generateRootJSX(ctx, analysis, useLazy), 4));
   lines.push('  );');
   lines.push('}');
   lines.push('');

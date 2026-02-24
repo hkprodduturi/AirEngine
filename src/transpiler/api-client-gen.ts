@@ -12,9 +12,26 @@ import { routeToFunctionName, extractPathParams } from './route-utils.js';
 export function generateApiClient(ctx: TranspileContext): string {
   const routes = ctx.expandedRoutes;
   const lines: string[] = [];
+  const hasAuth = routes.some(r => r.path.includes('/auth/'));
 
   lines.push("const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001/api';");
   lines.push('');
+
+  // Token management for authenticated apps
+  if (hasAuth) {
+    lines.push("let _token = localStorage.getItem('auth_token') || '';");
+    lines.push('');
+    lines.push("export function setToken(t) { _token = t; localStorage.setItem('auth_token', t); }");
+    lines.push("export function getToken() { return _token; }");
+    lines.push("export function clearToken() { _token = ''; localStorage.removeItem('auth_token'); }");
+    lines.push('');
+    lines.push('function authHeaders() {');
+    lines.push("  const headers = { 'Content-Type': 'application/json' };");
+    lines.push("  if (_token) headers['Authorization'] = `Bearer ${_token}`;");
+    lines.push('  return headers;');
+    lines.push('}');
+    lines.push('');
+  }
 
   for (const route of routes) {
     const method = route.method;
@@ -22,6 +39,7 @@ export function generateApiClient(ctx: TranspileContext): string {
     const pathParams = extractPathParams(route.path);
     const hasBody = (method === 'POST' || method === 'PUT') && route.params && route.params.length > 0;
     const isList = method === 'GET' && pathParams.length === 0 && isListHandler(route.handler);
+    const isAuthEndpoint = route.path.includes('/auth/');
 
     // JSDoc
     const modelName = extractModelFromHandler(route.handler);
@@ -59,14 +77,24 @@ export function generateApiClient(ctx: TranspileContext): string {
       lines.push(`  const url = qs ? ${urlExpr} + '?' + qs : ${urlExpr};`);
     }
 
+    // Use authHeaders() for non-auth endpoints, plain headers for auth endpoints
+    const headersExpr = hasAuth && !isAuthEndpoint ? 'authHeaders()' : "{ 'Content-Type': 'application/json' }";
+
     if (method === 'GET' || method === 'DELETE') {
-      const fetchOpts = method === 'DELETE' ? `, { method: 'DELETE' }` : '';
       const fetchUrl = isList ? 'url' : urlExpr;
-      lines.push(`  const res = await fetch(${fetchUrl}${fetchOpts});`);
+      if (hasAuth && !isAuthEndpoint) {
+        const opts = method === 'DELETE'
+          ? `{ method: 'DELETE', headers: authHeaders() }`
+          : '{ headers: authHeaders() }';
+        lines.push(`  const res = await fetch(${fetchUrl}, ${opts});`);
+      } else {
+        const fetchOpts = method === 'DELETE' ? `, { method: 'DELETE' }` : '';
+        lines.push(`  const res = await fetch(${fetchUrl}${fetchOpts});`);
+      }
     } else {
       lines.push(`  const res = await fetch(${urlExpr}, {`);
       lines.push(`    method: '${method}',`);
-      lines.push(`    headers: { 'Content-Type': 'application/json' },`);
+      lines.push(`    headers: ${headersExpr},`);
       if (hasBody) {
         lines.push(`    body: JSON.stringify(data),`);
       }

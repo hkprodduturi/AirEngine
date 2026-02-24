@@ -23,11 +23,11 @@ interface MappingEntry {
 const ELEMENT_MAP: Record<string, MappingEntry> = {
   header: {
     tag: 'header',
-    className: 'flex items-center justify-between pb-4 mb-2 border-b border-[var(--border)]',
+    className: 'flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 mb-2 border-b border-[var(--border)]',
   },
   footer: {
     tag: 'footer',
-    className: 'p-4 text-center text-sm text-[var(--muted)]',
+    className: 'mt-auto p-4 text-center text-sm text-[var(--muted)]',
   },
   main: {
     tag: 'main',
@@ -39,9 +39,9 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   row: {
     tag: 'div',
-    className: 'flex gap-4 items-center',
+    className: 'flex flex-wrap gap-4 items-center',
     modifiers: {
-      center: { className: 'flex gap-4 items-center justify-center' },
+      center: { className: 'flex flex-wrap gap-4 items-center justify-center' },
     },
   },
   grid: {
@@ -49,9 +49,10 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
     className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4',
     modifiers: {
       responsive: { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' },
-      '2': { className: 'grid grid-cols-2 gap-4' },
-      '3': { className: 'grid grid-cols-3 gap-4' },
-      '4': { className: 'grid grid-cols-4 gap-4' },
+      '1': { className: 'grid grid-cols-1 gap-4 max-w-lg mx-auto' },
+      '2': { className: 'grid grid-cols-1 sm:grid-cols-2 gap-4' },
+      '3': { className: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4' },
+      '4': { className: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4' },
     },
   },
   card: {
@@ -215,7 +216,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   nav: {
     tag: 'nav',
-    className: 'flex gap-4',
+    className: 'flex flex-wrap gap-3 sm:gap-4',
     modifiers: {
       vertical: { className: 'flex flex-col gap-2' },
     },
