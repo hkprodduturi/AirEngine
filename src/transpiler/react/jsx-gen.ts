@@ -598,7 +598,8 @@ export function generateFlowJSX(
           const pageName = href.slice(1);
           return `${pad}<a href="#"${classAttr(mapping.className)} onClick={(e) => { e.preventDefault(); setCurrentPage('${pageName}'); }}>${escapeText(textContent)}</a>`;
         }
-        return `${pad}<a href="${href}"${classAttr(mapping.className)}>${escapeText(textContent)}</a>`;
+        const external = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
+        return `${pad}<a href="${href}"${classAttr(mapping.className)}${external}>${escapeText(textContent)}</a>`;
       }
       const textContent = node.right.text.includes('#')
         ? `{${interpolateText(node.right.text, ctx, scope)}}`
@@ -835,12 +836,12 @@ export function generateBindJSX(
 
   // Pre/code:block — join text children as multi-line code block
   if (mapping.tag === 'pre' && resolved.children && resolved.children.length > 0) {
-    const lines: string[] = [];
+    const codeLines: string[] = [];
     for (const c of resolved.children) {
-      if (c.kind === 'text') lines.push((c as any).text ?? (c as any).value ?? '');
-      else if (c.kind === 'element') lines.push(c.element);
+      if (c.kind === 'text') codeLines.push((c as any).text ?? (c as any).value ?? '');
+      else if (c.kind === 'element') codeLines.push(c.element);
     }
-    const joined = lines.join('\n');
+    const joined = codeLines.join('\\n');
     return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{\`${joined.replace(/`/g, '\\`')}\`}</${mapping.tag}>`;
   }
 
@@ -1030,7 +1031,8 @@ export function generateBoundElement(
     const href = binding.kind === 'text' ? binding.text
       : binding.kind === 'element' ? binding.element
       : '#';
-    return `${pad}<a href="${href.startsWith('/') ? '#' + href : href}" className="${mapping.className}">`;
+    const externalLink = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
+    return `${pad}<a href="${href.startsWith('/') ? '#' + href : href}" className="${mapping.className}"${externalLink}>`;
   }
 
   // Generic: render element displaying the binding value

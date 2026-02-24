@@ -9,7 +9,7 @@
       "index.html": "de8f38d2651b5420",
       "src/main.jsx": "d2a5622fca5cfbd3",
       "src/index.css": "1f163c1dc1cfc4c1",
-      "src/App.jsx": "ee3b9f1b29d89082"
+      "src/App.jsx": "efb6ffc75aaf9106"
     }
   },
   "expense-tracker": {
@@ -22,7 +22,7 @@
       "index.html": "fc368be178bc4d6a",
       "src/main.jsx": "6099034bef7a7282",
       "src/index.css": "1ee5c3a903437dc9",
-      "src/App.jsx": "19ca2dd58ce4bd8a"
+      "src/App.jsx": "3d8cfef869e6dd24"
     }
   },
   "auth": {
@@ -38,7 +38,7 @@
       "client/src/App.jsx": "8def1d7af1f0abcb",
       "client/src/api.js": "069926c3c9eb1fd1",
       "client/src/pages/LoginPage.jsx": "7dfa2643243b70e3",
-      "client/src/pages/DashboardPage.jsx": "960e23eeb5fe4c7a",
+      "client/src/pages/DashboardPage.jsx": "db724267f85b4e7b",
       "server/package.json": "2d4044e45d76a69c",
       "server/tsconfig.json": "1b6d33775241d6b4",
       "server/.env": "99efd42c4cde3f80",
@@ -102,7 +102,7 @@
       "client/index.html": "09af4aaa46cb6fbc",
       "client/src/main.jsx": "c9e4f45f08db9432",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "728a50e3d01f5d75",
+      "client/src/App.jsx": "a53541933920447a",
       "client/src/api.js": "1dcd0c0ca1b1b212",
       "client/src/types.ts": "168ea41abdea173d",
       "client/src/components/EmptyState.jsx": "834c8d58e60bd8b7",
@@ -135,10 +135,10 @@
       "client/src/api.js": "d39f81ae572415c9",
       "client/src/types.ts": "ef8760e57f4f53d8",
       "client/src/pages/LoginPage.jsx": "5917c87f1cadaccb",
-      "client/src/pages/DashboardPage.jsx": "a2ae14c3994aa9f1",
-      "client/src/pages/ProjectsPage.jsx": "4607061a2739076e",
-      "client/src/pages/TasksPage.jsx": "b41cc0b00cce888a",
-      "client/src/pages/SettingsPage.jsx": "b90eb21d48523071",
+      "client/src/pages/DashboardPage.jsx": "1a58c72b9070f72b",
+      "client/src/pages/ProjectsPage.jsx": "a542c6987d324af1",
+      "client/src/pages/TasksPage.jsx": "2f246477f6f4c93d",
+      "client/src/pages/SettingsPage.jsx": "442c651ab9201d2d",
       "client/src/hooks/useProjects.js": "4bb917e27b3cdcf3",
       "client/src/hooks/useTasks.js": "7ddb11b964cf3cc2",
       "client/src/hooks/useComments.js": "ba5881c947104d29",

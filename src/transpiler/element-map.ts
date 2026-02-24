@@ -23,7 +23,7 @@ interface MappingEntry {
 const ELEMENT_MAP: Record<string, MappingEntry> = {
   header: {
     tag: 'header',
-    className: 'flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 mb-2 border-b border-[var(--border)]',
+    className: 'flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-2 border-b border-[var(--border)]',
   },
   footer: {
     tag: 'footer',
@@ -109,7 +109,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
       muted: { className: 'text-[var(--muted)]' },
       center: { className: 'text-center' },
       small: { className: 'text-sm text-[var(--muted)]' },
-      lead: { className: 'text-lg text-[var(--muted)] leading-relaxed max-w-2xl mx-auto' },
+      lead: { className: 'text-lg text-[var(--muted)] leading-relaxed max-w-2xl mx-auto text-center' },
     },
   },
   text: {
@@ -251,6 +251,14 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
     tag: 'hr',
     className: 'border-t border-[var(--border)] my-8',
     selfClosing: true,
+  },
+  details: {
+    tag: 'details',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--card-shadow)] space-y-3 [&:not([open])]:pb-0 [&[open]]:pb-5 px-6 group',
+  },
+  summary: {
+    tag: 'summary',
+    className: "cursor-pointer select-none py-4 font-semibold text-lg list-none flex items-center justify-between marker:hidden after:content-['↓_Expand'] after:text-lg after:font-semibold after:text-[var(--muted)] group-open:after:content-['↑_Collapse']",
   },
 };
 

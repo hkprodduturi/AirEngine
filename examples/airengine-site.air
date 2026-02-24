@@ -4,7 +4,7 @@
     /#hero,/#features,/#blocks,/#start,/#cta
   )
   @ui(
-    header(logo>"⚡ AirEngine"+nav(link:ghost:"#stats">"Stats",link:ghost:"#features">"Features",link:ghost:"#blocks">"Blocks",link:ghost:"https://github.com/hkprodduturi/AirEngine">"GitHub"))
+    header(logo>"⚡ AirEngine"+nav(link:ghost:"#stats">"Stats",link:ghost:"#features">"Features",link:ghost:"#blocks">"Blocks",link:ghost:"https://github.com/hkprodduturi/AirEngine">"GitHub",link:ghost:"https://www.npmjs.com/package/airengine">"NPM"))
     @section:hero(
       h1:hero>"The language AI thinks in when it builds software"
       p:lead>"One .air file. Full-stack apps. Instant compilation. 300 lines of AIR replaces 5,000+ lines of React, Express, and Prisma."
@@ -18,10 +18,32 @@
         card(h2>"5000+"+p:muted>"Lines Generated")
       )
     )
+    @section:start(
+      h1>"Get Started in 30 Seconds"
+      p:lead>"Install AirEngine and transpile your first app."
+      code:block("# Install globally","npm install -g airengine","","# Frontend-only app (like the todo above)","air transpile todo.air -o ./my-todo","cd my-todo && npm install && npm run dev")
+    )
     @section:code(
       h1>"See It In Action"
       p:lead>"A complete todo app in 13 lines of AIR"
       code:block("@app:todo","  @state{items:list,filter:all|active|done}","  @style(theme:dark,accent:#6366f1,radius:12)","  @ui(","    header(h1>\"Todo\")","    input:text>#items>!add","    tabs>filter.set","    *items(","      row(check:#item.done+text:#item.text+btn:icon>!del)","    )","  )","  @persist:localStorage(items)")
+    )
+    @section:fullstack(
+      h1>"Full-Stack in One File"
+      p:lead>"Add @db, @api, and @auth — AirEngine generates React + Express + Prisma."
+      code:block("@app:projectflow","  @db(","    User(name:str,email:str,role:admin|member)","    Project(name:str,status:active|archived)","    Task(title:str,done:bool)","    @relation(Project.owner<>User,Task.project<>Project)","  )","  @auth(provider:jwt,model:User,role:role)","  @api(","    /auth: login,register,logout","    /projects: crud(Project)","    /tasks: crud(Task)","  )","  @ui(","    @page:login(form(input:email+input:password+btn>\"Sign In\")>!login)","    @page:dashboard(sidebar+main(header+grid:2(stat+stat)+table))","  )")
+      p:lead>"This generates 50 files — React client, Express API, Prisma schema, JWT auth, seed data, and Docker config."
+      code:block("# Transpile the full-stack app","air transpile projectflow.air -o ./my-app","","# Start the backend","cd my-app/server && npm install","npx prisma db push && node seed.js","npx tsx server.ts","","# Start the frontend (in another terminal)","cd my-app/client && npm install && npm run dev")
+    )
+    @section:examples(
+      h1>"Example Templates"
+      p:lead>"Every example below is a complete app — just transpile and run."
+      details(summary>"Todo App — 12 lines"+p:muted>"Frontend todo with filters and persistence"+code:block("@app:todo","  @state{items:[{id:int,text:str,done:bool}],filter:enum(all,active,done)}","  @style(theme:dark,accent:#6366f1,radius:12,font:sans)","  @ui(","    header>\"Todo App\"+badge:#items.length","    input:text>!add({text:#val,done:false})","    list>items|filter>*item(check:#item.done+text:#item.text+btn:!del(#item.id))","    tabs>filter.set(all,active,done)","    footer>\"#items|!done.length items left\"","  )","  @persist:localStorage(items)"))
+      details(summary>"Expense Tracker — 33 lines"+p:muted>"Track expenses with budgets, charts, and filters"+code:block("@app:expense-tracker","  @state{","    expenses:[{id:int,title:str,amount:float,category:enum(food,transport,entertainment,bills,other),date:date}],","    budget:float(2000),","    filter:enum(all,food,transport,entertainment,bills,other),","    sort:enum(newest,oldest,highest,lowest),","    input:{title:str,amount:float,category:enum}","  }","  @style(theme:dark,accent:#8b5cf6,green:#10b981,red:#ef4444,radius:12,font:mono+sans)","  @ui(","    header>\"Expense Tracker\"+badge:$#expenses|sum(amount)+\"/ $\"+#budget","    progress:bar(value:#expenses|sum(amount),max:#budget,color:?over>#red:#green)","    row(","      input:text>#input.title+input:number>#input.amount+select:category>#input.category+btn:!add(#input)","    )","    row(tabs:filter>#filter+select:sort>#sort)","    grid:responsive>expenses|filter|sort>*expense(","      card(","        row(badge:category:#expense.category+text:date:#expense.date)","        text:title:#expense.title","        text:amount:$#expense.amount","        btn:icon:!del(#expense.id)","      )","    )","    row(","      stat:\"Total\">#expenses|sum(amount)","      stat:\"Average\">#expenses|avg(amount)","      stat:\"Count\">#expenses.length","      stat:\"Remaining\">$#budget-#expenses|sum(amount)","    )","  )","  @persist:localStorage(expenses,budget)"))
+      details(summary>"Auth Flow — 25 lines"+p:muted>"JWT login, signup, and protected routes"+code:block("@app:auth","  @state{user:?{name:str,email:str,token:str},error:?str,loading:bool}","  @api(","    POST:/login(email:str,pass:str)>~jwt.verify>user.set","    POST:/signup(name:str,email:str,pass:str)>~db.users.create>user.set","    POST:/logout>user.clear+token.revoke","  )","  @nav(","    />?user>dashboard:login","    /dashboard>?user>@protected:/>redirect","  )","  @ui(","    @page:login(","      form(input:email+input:password+btn:submit>\"Log In\")>!login","      ?error>alert:error:#error","      ?loading>spinner","      link:/signup>\"Create account\"","    )","    @page:dashboard(","      header>\"Welcome, #user.name\"+btn:!logout","      slot:content","    )","  )","  @persist:cookie(user.token,httpOnly,7d)"))
+      details(summary>"Admin Dashboard — 38 lines"+p:muted>"Stats, charts, user management with role-based auth"+code:block("@app:dashboard","  @state{","    users:[{id:int,name:str,email:str,role:enum(admin,user),active:bool}],","    stats:{total:int,active:int,revenue:float},","    search:str,","    period:enum(7d,30d,90d,1y)","  }","  @api(","    GET:/stats(?period)>~stats.set","    GET:/users(?search,?page)>~users.set","    PUT:/users/:id(role:enum)>~users.update","    DELETE:/users/:id>~users.remove","  )","  @style(theme:dark,accent:#10b981,radius:8,font:mono,density:compact)","  @ui(","    sidebar(","      logo+\"Dashboard\"","      nav:vertical(overview,users,settings)","    )","    main(","      @page:overview(","        row(","          stat:\"Total Users\">#stats.total","          stat:\"Active\">#stats.active","          stat:\"Revenue\">$#stats.revenue","        )","        chart:line(data:#stats.history,x:date,y:revenue)+period.select","      )","      @page:users(","        search:input>#search","        table(data:#users|search,cols:[name,email,role:select,active:toggle],actions:[edit,!del])","        pagination","      )","    )","  )","  @auth(required,role:admin)","  @hook(onMount>~api.stats+~api.users)"))
+      details(summary>"Landing Page — 32 lines"+p:muted>"Marketing page with hero, features, and pricing"+code:block("@app:landing","  @style(theme:light,accent:#7c3aed,radius:16,font:display+sans,maxWidth:1200)","  @nav(/#hero,/#features,/#pricing,/#cta)","  @ui(","    @section:hero(","      h1>\"Build Software Without Code\"","      p>\"AI-native development platform that ships production apps in minutes\"","      row(btn:primary>\"Get Started\"+btn:ghost>\"Watch Demo\")","      img:hero>/assets/hero.png","    )","    @section:features(","      h2>\"Why AirEngine?\"","      grid:3(","        card(icon:zap+\"Fast\"+\"Generate apps 5x faster\")","        card(icon:shield+\"Reliable\"+\"Schema-guaranteed output\")","        card(icon:users+\"Collaborative\"+\"Multi-agent native\")","      )","    )","    @section:pricing(","      h2>\"Simple Pricing\"","      grid:3(","        plan(\"Free\",0,[feat:5_apps,feat:community])+btn:secondary>\"Start Free\"","        plan(\"Pro\",29,[feat:unlimited,feat:priority,feat:api])+btn:primary>\"Go Pro\"+badge:\"Popular\"","        plan(\"Enterprise\",custom,[feat:everything,feat:sla,feat:support])+btn:ghost>\"Contact\"","      )","    )","    @section:cta(","      h2>\"Ready to build?\"","      input:email+btn:primary>\"Join Waitlist\"","    )","  )"))
+      details(summary>"Full-Stack Todo — 21 lines"+p:muted>"Todo with Express API and Prisma database"+code:block("@app:fullstack-todo","  @state{items:[{id:int,text:str,done:bool}],filter:enum(all,active,done)}","  @style(theme:dark,accent:#6366f1,radius:12,font:sans)","  @db{","    Todo{id:int:primary:auto,text:str:required,done:bool:default(false),created_at:datetime:auto}","  }","  @api(","    GET:/todos>~db.Todo.findMany","    POST:/todos(text:str)>~db.Todo.create","    PUT:/todos/:id(done:bool)>~db.Todo.update","    DELETE:/todos/:id>~db.Todo.delete","  )","  @ui(","    header>\"Todo App\"+badge:#items.length","    input:text>!add({text:#val,done:false})","    list>items|filter>*item(check:#item.done+text:#item.text+btn:icon:!del(#item.id))","    tabs>filter.set(all,active,done)","    footer>\"#items|!done.length items left\"","  )","  @persist:localStorage(items)"))
     )
     @section:how(
       h1>"How It Works"
@@ -59,10 +81,6 @@
         card(p>"@hook — Side effects")
         card(p>"@deploy — Deployment config")
       )
-    )
-    @section:start(
-      h1>"Get Started in 30 Seconds"
-      code:block("npm install -g airengine","air transpile app.air -o ./my-app","cd my-app && npm install && npm run dev")
     )
     @section:cta(
       h1>"Ready to Build?"
