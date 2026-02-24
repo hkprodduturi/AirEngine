@@ -1,0 +1,48 @@
+{
+  "generatedBy": "AirEngine",
+  "version": "0.1.7",
+  "sourceHash": "d60166934cb96421",
+  "files": [
+    {
+      "path": "package.json",
+      "hash": "1c30922e8b7765bc",
+      "lines": 23
+    },
+    {
+      "path": "vite.config.js",
+      "hash": "b0d964f47e9ba450",
+      "lines": 8
+    },
+    {
+      "path": "tailwind.config.cjs",
+      "hash": "2e7dbf5c539db45f",
+      "lines": 7
+    },
+    {
+      "path": "postcss.config.cjs",
+      "hash": "fa650b380adfabb1",
+      "lines": 7
+    },
+    {
+      "path": "index.html",
+      "hash": "de8f38d2651b5420",
+      "lines": 14
+    },
+    {
+      "path": "src/main.jsx",
+      "hash": "d2a5622fca5cfbd3",
+      "lines": 12
+    },
+    {
+      "path": "src/index.css",
+      "hash": "1f163c1dc1cfc4c1",
+      "lines": 89
+    },
+    {
+      "path": "src/App.jsx",
+      "hash": "645ca05e1beed189",
+      "lines": 63
+    }
+  ],
+  "timestamp": "2026-02-24T14:54:36.162Z"
+}

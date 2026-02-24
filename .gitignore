@@ -5,3 +5,5 @@ package-lock.json
 *.tsbuildinfo
 *.tgz
 .DS_Store
+output/.air-cache/
+output/server/prisma/dev.db
