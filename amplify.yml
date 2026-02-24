@@ -7,8 +7,13 @@ frontend:
         - npm run build
     build:
       commands:
+        # Build the main site
         - node dist/cli/index.js transpile examples/airengine-site.air -o ./site
         - cd site && npm install && npx vite build
+        # Build the template gallery (108 live previews)
+        - npx tsx scripts/build-gallery.ts
+        # Copy gallery into site output so ./gallery/ links work
+        - cp -r gallery/dist site/dist/gallery
   artifacts:
     baseDirectory: site/dist
     files:
