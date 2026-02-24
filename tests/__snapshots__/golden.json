@@ -45,7 +45,7 @@
       "server/types.ts": "74962f69507ebd83",
       "server/validation.ts": "55ec69844a040b3c",
       "server/api.ts": "a8a0bdf7f95028c7",
-      "server/middleware.ts": "1afa590916b554d8",
+      "server/middleware.ts": "44ffd301340de395",
       "server/server.ts": "32454b78bc663c0f",
       "README.md": "cbf33b433033362f"
     }
@@ -75,7 +75,7 @@
       "server/validation.ts": "f19a683e89bc1007",
       "server/api.ts": "596be7cb504eae41",
       "server/auth.ts": "0350389423899b06",
-      "server/middleware.ts": "bdfdef73264aa9f8",
+      "server/middleware.ts": "87624c22b4f28033",
       "server/server.ts": "23b0782f461c65a4",
       "README.md": "c816adcdcc4b69d8"
     }
@@ -117,7 +117,7 @@
       "server/types.ts": "355f9d4092650f8e",
       "server/validation.ts": "040c91a1c83d8c83",
       "server/api.ts": "fb363b0348876cd4",
-      "server/middleware.ts": "0786f192c0bcad78",
+      "server/middleware.ts": "71af63a0c52369d2",
       "server/server.ts": "2cf253fc811d45d9",
       "README.md": "d21c6c2aae4276ff"
     }
@@ -160,7 +160,7 @@
       "server/cron.ts": "4c27da37f7be7c83",
       "server/queue.ts": "7f9da900cc7fcd7b",
       "server/templates.ts": "1caec2e903f01e79",
-      "server/middleware.ts": "253c87ac68999356",
+      "server/middleware.ts": "674f65b0f8f1d673",
       "server/server.ts": "ce6645aa10a20e90",
       "server/Dockerfile": "697686029d7d84e1",
       "server/.dockerignore": "8919c6124bfd1683",

@@ -181,7 +181,7 @@ export function generateMiddleware(): string {
   lines.push('}');
   lines.push('');
   lines.push('/** Map common error types to HTTP status codes and user-friendly messages */');
-  lines.push('function classifyError(err: Error & { status?: number; code?: string }): { status: number; message: string } {');
+  lines.push('function classifyError(err: Error & { status?: number; code?: string; type?: string }): { status: number; message: string } {');
   lines.push("  if (err.status) return { status: err.status, message: err.message };");
   lines.push('');
   lines.push('  // Prisma known request errors');
