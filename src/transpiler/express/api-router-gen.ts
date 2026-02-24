@@ -9,6 +9,17 @@ import type { TranspileContext } from '../context.js';
 import type { AirRoute, AirDbBlock, AirType } from '../../parser/types.js';
 import { getGeneratedTypeNames } from '../types-gen.js';
 
+/** Pluralize a model name: Property → Properties, Batch → Batches */
+function pluralizeModel(name: string): string {
+  if (name.endsWith('y') && !'aeiou'.includes(name.charAt(name.length - 2).toLowerCase())) {
+    return name.slice(0, -1) + 'ies';
+  }
+  if (name.endsWith('s') || name.endsWith('sh') || name.endsWith('ch') || name.endsWith('x') || name.endsWith('z')) {
+    return name + 'es';
+  }
+  return name + 's';
+}
+
 /** Map AIR type to validation schema type string */
 function airTypeToValidation(type: AirType): string {
   if (type.kind === 'optional') return `optional_${airTypeToValidation(type.of).replace(/^optional_/, '')}`;
@@ -324,7 +335,7 @@ export function generateAggregateHandler(handler: string, db: AirDbBlock): strin
       lines.push(`    const ${camelVal} = await prisma.${modelVar}.count({ where: { status: '${val}' } });`);
     }
     const lcModelName = modelName.charAt(0).toLowerCase() + modelName.slice(1);
-    const totalKey = `total${modelName}s`;
+    const totalKey = `total${pluralizeModel(modelName)}`;
     const resultEntries = [
       `${totalKey}: total`,
       ...values.map(v => {

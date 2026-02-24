@@ -149,7 +149,7 @@
       "server/.env": "6d81cd644dc1f5d9",
       "server/prisma/schema.prisma": "3502ff5f09132e4a",
       "server/prisma.ts": "101cf868c07489b0",
-      "server/seed.ts": "09f566401316e41f",
+      "server/seed.ts": "cdd684ec9fff078a",
       "server/types.ts": "c98e6ae7f29d91fe",
       "server/validation.ts": "794c539e317a0308",
       "server/routes/users.ts": "0a85af1304704c37",

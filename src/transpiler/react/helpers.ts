@@ -381,12 +381,18 @@ export function resolvePipeExprSimple(node: AirUINode & { kind: 'binary' }, scop
  */
 function inferFilterField(source: string, filterName: string, ctx: TranspileContext): string {
   const filterState = ctx.state.find(f => f.name === filterName);
-  if (!filterState || filterState.type.kind !== 'enum') return 'status';
+  if (!filterState || filterState.type.kind !== 'enum') {
+    // Extract field hint from filter name: "categoryFilter" → "category", "priorityFilter" → "priority"
+    const hintMatch = filterName.match(/^(.+?)Filter$/i);
+    return hintMatch ? hintMatch[1] : 'status';
+  }
   const filterValues = (filterState.type as { kind: 'enum'; values: string[] }).values.filter(v => v !== 'all');
 
   if (ctx.db) {
     // Derive model name from source: "tasks" → "Task", "projects" → "Project"
-    const singular = source.endsWith('s') ? source.slice(0, -1) : source;
+    // Handle chained filter expressions: strip .filter(...) suffix to get raw source name
+    const rawSource = source.replace(/\.filter\(.*$/, '');
+    const singular = rawSource.endsWith('s') ? rawSource.slice(0, -1) : rawSource;
     const modelName = singular.charAt(0).toUpperCase() + singular.slice(1);
     const model = ctx.db.models.find(m => m.name === modelName);
     if (model) {
@@ -400,7 +406,9 @@ function inferFilterField(source: string, filterName: string, ctx: TranspileCont
     }
   }
 
-  return 'status';
+  // Extract field hint from filter name: "categoryFilter" → "category", "priorityFilter" → "priority"
+  const hintMatch = filterName.match(/^(.+?)Filter$/i);
+  return hintMatch ? hintMatch[1] : 'status';
 }
 
 export function resolvePipeSource(node: AirUINode, ctx: TranspileContext, scope: Scope): string {
@@ -435,6 +443,9 @@ export function extractDataSource(node: AirUINode, scope: Scope, ctx?: Transpile
       }
       if (fn === 'sort') {
         return `[...${left}].sort((a, b) => sort === 'newest' ? b.id - a.id : sort === 'oldest' ? a.id - b.id : sort === 'highest' ? b.amount - a.amount : a.amount - b.amount)`;
+      }
+      if (fn === 'search') {
+        return `${left}.filter(_item => Object.values(_item).some(v => String(v).toLowerCase().includes(search.toLowerCase())))`;
       }
       // Check if fn is a state enum variable (e.g., taskFilter)
       if (ctx) {

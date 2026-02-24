@@ -794,7 +794,7 @@ describe('D2: backend hardening', () => {
     const result = transpile(ast);
     const seed = result.files.find(f => f.path === 'server/seed.ts')?.content;
     expect(seed).toBeDefined();
-    expect(seed).toContain('alice@example.com');
+    expect(seed).toContain('user1@example.com');
   });
 
   it('api client is .js not .ts (no regression)', () => {

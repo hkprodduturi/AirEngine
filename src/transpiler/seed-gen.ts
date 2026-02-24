@@ -161,19 +161,22 @@ export function generateSeedFile(ctx: TranspileContext): string {
     lines.push('');
   }
 
-  // Many-to-many connect calls
+  // Many-to-many connect calls (skip if either model was skipped)
   if (manyToMany.length > 0) {
-    lines.push('  // Connect many-to-many relations');
-    for (const m of manyToMany) {
-      const varA = m.modelA.charAt(0).toLowerCase() + m.modelA.slice(1);
-      const varB = m.modelB.charAt(0).toLowerCase() + m.modelB.slice(1);
-      const fieldA = m.fieldA;
-      // Connect records: A1↔B1, A2↔B2, A3↔B3, A4↔B4, A5↔B5
-      for (let n = 1; n <= 5; n++) {
-        lines.push(`  await prisma.${varA}.update({ where: { id: ${varA}${n}.id }, data: { ${fieldA}: { connect: { id: ${varB}${n}.id } } } });`);
+    const validM2m = manyToMany.filter(m => !skipModels.has(m.modelA) && !skipModels.has(m.modelB));
+    if (validM2m.length > 0) {
+      lines.push('  // Connect many-to-many relations');
+      for (const m of validM2m) {
+        const varA = m.modelA.charAt(0).toLowerCase() + m.modelA.slice(1);
+        const varB = m.modelB.charAt(0).toLowerCase() + m.modelB.slice(1);
+        const fieldA = m.fieldA;
+        // Connect records: A1↔B1, A2↔B2, A3↔B3, A4↔B4, A5↔B5
+        for (let n = 1; n <= 5; n++) {
+          lines.push(`  await prisma.${varA}.update({ where: { id: ${varA}${n}.id }, data: { ${fieldA}: { connect: { id: ${varB}${n}.id } } } });`);
+        }
       }
+      lines.push('');
     }
-    lines.push('');
   }
 
   lines.push("  console.log('Seeded database');");
@@ -325,24 +328,42 @@ function generateFieldValue(field: AirDbField, modelName: string, n: number): st
   }
 }
 
-const NAMES = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'];
-const EMAILS = ['alice', 'bob', 'charlie', 'diana', 'eve'];
+const PERSON_NAMES = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'];
+const PERSON_MODELS = new Set([
+  'user', 'agent', 'customer', 'contact', 'volunteer', 'donor', 'patient',
+  'doctor', 'student', 'author', 'adopter', 'driver', 'guest', 'responder',
+  'shipper', 'staff', 'member', 'employee', 'owner', 'manager', 'carrier',
+  'instructor', 'therapist', 'client', 'teacher', 'worker', 'inspector',
+  'technician', 'nurse', 'alumnus', 'tutor', 'applicant', 'reviewer',
+  'crewmember', 'player',
+]);
+
+function isPersonModel(modelName: string): boolean {
+  return PERSON_MODELS.has(modelName.toLowerCase());
+}
 
 /** Generate smart string values based on field name heuristics */
 function generateStringValue(fieldName: string, modelName: string, n: number): string {
   const lower = fieldName.toLowerCase();
-  const idx = (n - 1) % NAMES.length;
-  if (lower === 'email') return `'${EMAILS[idx]}@example.com'`;
-  if (lower === 'name') return `'${NAMES[idx]}'`;
-  if (lower === 'slug') return `'sample-${modelName.toLowerCase()}-${n}'`;
+  const idx = (n - 1) % PERSON_NAMES.length;
+  const modelPrefix = modelName.toLowerCase();
+  // Email: prefix with model name to avoid cross-model unique conflicts
+  if (lower === 'email') return `'${modelPrefix}${n}@example.com'`;
+  // Name: use person names for person models, model-based names otherwise
+  if (lower === 'name') {
+    if (isPersonModel(modelName)) return `'${PERSON_NAMES[idx]}'`;
+    return `'${modelName} ${n}'`;
+  }
+  if (lower === 'slug') return `'sample-${modelPrefix}-${n}'`;
   if (lower === 'password') return `'password${n}'`;
   if (lower === 'title') return `'${modelName} ${fieldName} ${n}'`;
+  if (lower === 'subject') return `'${modelName} ${fieldName} ${n}'`;
   if (lower === 'description' || lower === 'bio') return `'${modelName} description for record ${n}.'`;
-  if (lower === 'url' || lower === 'website') return `'https://example.com/${modelName.toLowerCase()}/${n}'`;
-  if (lower === 'avatar' || lower === 'image') return `'https://api.dicebear.com/7.x/initials/svg?seed=${NAMES[idx]}'`;
-  if (lower === 'phone') return `'+1555000100${n}'`;
+  if (lower === 'url' || lower === 'website') return `'https://example.com/${modelPrefix}/${n}'`;
+  if (lower === 'avatar' || lower === 'image') return `'https://api.dicebear.com/7.x/initials/svg?seed=${modelPrefix}${n}'`;
+  if (lower === 'phone') return `'+155500${n}${String(modelPrefix.charCodeAt(0)).slice(-2)}'`;
   if (lower === 'address') return `'${n}00 Main St, City, ST'`;
-  if (lower === 'content' || lower === 'body' || lower === 'text') return `'Sample content for ${modelName.toLowerCase()} ${n}.'`;
+  if (lower === 'content' || lower === 'body' || lower === 'text') return `'Sample content for ${modelPrefix} ${n}.'`;
   return `'${modelName} ${fieldName} ${n}'`;
 }
 
