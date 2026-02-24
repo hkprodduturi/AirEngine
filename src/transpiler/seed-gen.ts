@@ -118,6 +118,11 @@ export function generateSeedFile(ctx: TranspileContext): string {
           return `${f.name}: ${val}`;
         });
 
+        // Inject password for User model when @auth is present
+        if (ctx.auth && model.name === 'User' && !seedableFields.some(f => f.name === 'password')) {
+          fieldValues.push(`password: 'password${n}'`);
+        }
+
         // Add FK field references
         for (const edge of modelFkEdges) {
           if (edge.optional) {

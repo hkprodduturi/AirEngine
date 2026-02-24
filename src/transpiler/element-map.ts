@@ -125,8 +125,8 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
     className: 'space-y-3',
   },
   table: {
-    tag: 'table',
-    className: 'w-full',
+    tag: 'div',
+    className: 'w-full space-y-2',
   },
   tabs: {
     tag: 'div',

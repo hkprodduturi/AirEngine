@@ -960,7 +960,8 @@ describe('resource hooks', () => {
   it('generates hook files for projectflow.air models', () => {
     const result = transpileFile('projectflow');
     const hookFiles = result.files.filter(f => f.path.includes('/hooks/') && f.path.startsWith('client/'));
-    expect(hookFiles.length).toBeGreaterThanOrEqual(3);
+    // useProjects, useTasks (useComments skipped — nested route with :id param)
+    expect(hookFiles.length).toBeGreaterThanOrEqual(2);
   });
 
   it('each hook imports useState/useEffect/useCallback', () => {
@@ -1016,7 +1017,7 @@ describe('resource hooks', () => {
 
   it('stats.hooks reflects hook count', () => {
     const result = transpileFile('projectflow');
-    expect(result.stats.hooks).toBeGreaterThanOrEqual(3);
+    expect(result.stats.hooks).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -1041,10 +1042,11 @@ describe('no dead code', () => {
     // useUsers and useWorkspaces should NOT be generated (state has user/workspace as objects, not arrays)
     expect(hookFiles.find(f => f.path.includes('useUsers'))).toBeUndefined();
     expect(hookFiles.find(f => f.path.includes('useWorkspaces'))).toBeUndefined();
-    // useProjects, useTasks, useComments should exist (matching array state)
+    // useProjects, useTasks should exist (matching array state with non-parameterized routes)
     expect(hookFiles.find(f => f.path.includes('useProjects'))).toBeDefined();
     expect(hookFiles.find(f => f.path.includes('useTasks'))).toBeDefined();
-    expect(hookFiles.find(f => f.path.includes('useComments'))).toBeDefined();
+    // useComments NOT generated — its route /tasks/:id/comments has URL params
+    expect(hookFiles.find(f => f.path.includes('useComments'))).toBeUndefined();
   });
 
   it('stats.deadLines is 0 for projectflow', () => {

@@ -9,7 +9,7 @@ import { resolveBindChain } from '../normalize-ui.js';
 import { mapElement } from '../element-map.js';
 import {
   Scope, ROOT_SCOPE, ICON_EMOJI,
-  capitalize, escapeText, interpolateText, deriveLabel, classAttr,
+  capitalize, escapeText, escapeAttr, interpolateText, deriveLabel, classAttr,
   findStateField, resolveSetterFromRef, nodeToString, deriveEmptyLabel,
   inferModelFieldsFromDataSource,
   setter, wrapFormGroup,
@@ -147,7 +147,7 @@ export function generateElementJSX(
     const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
     if (options.length > 0) {
       return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-        + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+        + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
         + `${pad}</select>`;
     }
   }
@@ -565,7 +565,7 @@ export function generateFlowJSX(
   // Pattern: element > *iter(...) → container with iteration
   if (node.right.kind === 'unary' && node.right.operator === '*') {
     // Check if left is itself a flow chain: list > (items|filter) then this > *iter
-    const dataSource = extractDataSource(node.left, scope);
+    const dataSource = extractDataSource(node.left, scope, ctx);
     return generateContainerWithIteration(node.left, dataSource, node.right, ctx, analysis, scope, ind);
   }
 
@@ -583,7 +583,7 @@ export function generateFlowJSX(
 
       // img/a: text becomes src/href attribute, not children
       if (mapping.tag === 'img') {
-        return `${pad}<img src="${node.right.text}"${classAttr(mapping.className)} alt="${leftResolved.modifiers[0] || 'image'}" />`;
+        return `${pad}<img src="${escapeAttr(node.right.text)}"${classAttr(mapping.className)} alt="${escapeAttr(leftResolved.modifiers[0] || 'image')}" />`;
       }
       if (mapping.tag === 'a') {
         const textContent = node.right.text;
@@ -599,11 +599,15 @@ export function generateFlowJSX(
           return `${pad}<a href="#"${classAttr(mapping.className)} onClick={(e) => { e.preventDefault(); setCurrentPage('${pageName}'); }}>${escapeText(textContent)}</a>`;
         }
         const external = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
-        return `${pad}<a href="${href}"${classAttr(mapping.className)}${external}>${escapeText(textContent)}</a>`;
+        return `${pad}<a href="${escapeAttr(href)}"${classAttr(mapping.className)}${external}>${escapeText(textContent)}</a>`;
       }
       const textContent = node.right.text.includes('#')
         ? `{${interpolateText(node.right.text, ctx, scope)}}`
         : escapeText(node.right.text);
+      // Header with heading child (e.g., header>h1>"Settings"): wrap text in <h1>
+      if (leftResolved.element === 'header' && leftResolved.children?.some(c => c.kind === 'element' && /^h[1-6]$/.test(c.element))) {
+        return `${pad}<${mapping.tag}${classAttr(mapping.className)}>\n${pad}  <h1 className="text-xl font-bold">${textContent}</h1>\n${pad}</${mapping.tag}>`;
+      }
       return `${pad}<${mapping.tag}${classAttr(mapping.className)}>${textContent}</${mapping.tag}>`;
     }
   }
@@ -674,7 +678,7 @@ export function generateFlowJSX(
     const stateField = findStateField(stateVar, ctx);
     const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
     return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-      + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+      + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
       + `${pad}</select>`;
   }
 
@@ -842,7 +846,7 @@ export function generateBindJSX(
       else if (c.kind === 'element') codeLines.push(c.element);
     }
     const joined = codeLines.join('\\n');
-    return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{\`${joined.replace(/`/g, '\\`')}\`}</${mapping.tag}>`;
+    return `${pad}<${mapping.tag}${classAttr(mapping.className)}>{\`${joined.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`}</${mapping.tag}>`;
   }
 
   // Element with children from resolved bind
@@ -856,9 +860,10 @@ export function generateBindJSX(
   // Simple styled element
   if (mapping.selfClosing) {
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
-    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolved.element}"` : '';
+    const resolvedName = resolved.modifiers[0] || mapping.inputType || resolved.element;
+    const nameAttr = scope.insideForm ? ` name="${resolvedName}"` : '';
     const placeholder = mapping.inputType && resolved.element === 'input'
-      ? ` placeholder="${capitalize(mapping.inputType)}..."`
+      ? ` placeholder="${escapeAttr(capitalize(resolvedName))}..."`
       : '';
     return `${pad}<${mapping.tag}${typeAttr}${nameAttr}${classAttr(mapping.className)}${placeholder} />`;
   }
@@ -885,7 +890,7 @@ export function generateDotJSX(
       const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
       if (options.length > 0) {
         return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-          + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+          + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
           + `${pad}</select>`;
       }
     }
@@ -973,9 +978,9 @@ export function generateBoundElement(
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
     const plainRef = ref.replace(/\?\./, '.');
     const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
-    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolvedFieldName}"` : '';
+    const nameAttr = scope.insideForm ? ` name="${resolvedFieldName}"` : '';
     const valueExpr = ref !== plainRef ? `${ref} ?? ''` : ref;
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${capitalize(resolved.modifiers[0] || resolved.element)}..." />`;
+    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)} placeholder="${capitalize(resolvedFieldName)}..." />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
@@ -985,11 +990,27 @@ export function generateBoundElement(
 
   // Select bound to state
   if (resolved.element === 'select') {
-    const ref = resolveRef(binding.kind === 'unary' ? binding.operand : binding, scope);
+    const ref = resolveRef(binding.kind === 'unary' ? binding.operand : binding, scope, ctx);
+    const plainRef = ref.replace(/\?\./g, '.');
     const stateField = findStateField(ref, ctx);
-    const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
-    const optionsJsx = options.map(o => `${pad}    <option value="${o}">${o}</option>`).join('\n');
-    return `${pad}<select className="${mapping.className}" value={${ref}} onChange={(e) => ${resolveSetterFromRef(ref)}(e.target.value)}>\n${optionsJsx}\n${pad}</select>`;
+    let options: string[] = stateField?.type.kind === 'enum' ? stateField.type.values : [];
+    // Fall back to node children as options (e.g. select:#workspace.plan(free,pro,enterprise))
+    if (options.length === 0 && resolved.children && resolved.children.length > 0) {
+      options = resolved.children.map(c => c.kind === 'element' ? c.element : nodeToString(c));
+    }
+    // Also check binding operand children (parser attaches options there)
+    if (options.length === 0) {
+      const operand = binding.kind === 'unary' ? binding.operand : binding;
+      const deepChildren = operand.kind === 'binary' && operand.operator === '.'
+        ? (operand.right as AirUINode & { children?: AirUINode[] }).children
+        : (operand as AirUINode & { children?: AirUINode[] }).children;
+      if (deepChildren && deepChildren.length > 0) {
+        options = deepChildren.map((c: AirUINode) => c.kind === 'element' ? c.element : nodeToString(c));
+      }
+    }
+    const valueExpr = ref !== plainRef ? `${ref} ?? ''` : ref;
+    const optionsJsx = options.map(o => `${pad}    <option value="${o}">${capitalize(o)}</option>`).join('\n');
+    return `${pad}<select className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${resolveSetterFromRef(plainRef)}(e.target.value)}>\n${optionsJsx}\n${pad}</select>`;
   }
 
   // Badge showing value
@@ -1023,7 +1044,7 @@ export function generateBoundElement(
     const src = binding.kind === 'text' ? binding.text
       : binding.kind === 'element' ? binding.element
       : nodeToString(binding);
-    return `${pad}<img src="${src}" alt="${resolved.modifiers[0] || 'image'}" className="${mapping.className}" />`;
+    return `${pad}<img src="${escapeAttr(src)}" alt="${escapeAttr(resolved.modifiers[0] || 'image')}" className="${mapping.className}" />`;
   }
 
   // Link with href
@@ -1032,7 +1053,7 @@ export function generateBoundElement(
       : binding.kind === 'element' ? binding.element
       : '#';
     const externalLink = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
-    return `${pad}<a href="${href.startsWith('/') ? '#' + href : href}" className="${mapping.className}"${externalLink}>`;
+    return `${pad}<a href="${escapeAttr(href.startsWith('/') ? '#' + href : href)}" className="${mapping.className}"${externalLink}>`;
   }
 
   // Generic: render element displaying the binding value
@@ -1138,7 +1159,10 @@ export function generateIterationJSX(
   ).filter(Boolean).join('\n');
 
   const emptyLabel = deriveEmptyLabel(dataExpr);
-  return `${pad}{${dataExpr}.length === 0 ? (\n${pad}  <div className="empty-state">${emptyLabel}</div>\n${pad}) : ${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n${childJsx}\n${pad}  </div>\n${pad}))}`;
+  // Skip styled wrapper when children contain a card element (avoid double-wrapping)
+  const hasCardChild = children.some(c => c.kind === 'element' && c.element === 'card');
+  const iterItemClass = hasCardChild ? '' : ' className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3"';
+  return `${pad}{${dataExpr}.length === 0 ? (\n${pad}  <div className="empty-state">${emptyLabel}</div>\n${pad}) : ${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id}${iterItemClass}>\n${childJsx}\n${pad}  </div>\n${pad}))}`;
 }
 
 export function generateContainerWithIteration(
@@ -1190,11 +1214,13 @@ export function generateContainerWithIteration(
   ).filter(Boolean).join('\n');
 
   const emptyLabel = deriveEmptyLabel(dataSource);
+  const hasCardChild = children.some(c => c.kind === 'element' && c.element === 'card');
+  const iterItemClass = hasCardChild ? '' : ' className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3"';
   return `${pad}<${containerElement}${classAttr(containerClass)}>\n`
     + `${pad}  {${dataSource}.length === 0 ? (\n`
     + `${pad}    <div className="empty-state">${emptyLabel}</div>\n`
     + `${pad}  ) : ${dataSource}.map((${iterVar}) => (\n`
-    + `${pad}    <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n`
+    + `${pad}    <div key={${iterVar}.id}${iterItemClass}>\n`
     + `${childJsx}\n`
     + `${pad}    </div>\n`
     + `${pad}  ))}\n`
@@ -1218,9 +1244,9 @@ export function generateFlowBoundElement(
     const typeAttr = mapping.inputType ? ` type="${mapping.inputType}"` : '';
     const placeholder = resolved.modifiers[0] || resolved.element;
     const resolvedFieldName = plainRef.includes('.') ? plainRef.split('.').pop()! : (resolved.modifiers[0] || resolved.element);
-    const nameAttr = scope.insideForm ? ` name="${mapping.inputType || resolvedFieldName}"` : '';
+    const nameAttr = scope.insideForm ? ` name="${resolvedFieldName}"` : '';
     const valueExpr = stateRef !== plainRef ? `${stateRef} ?? ''` : stateRef;
-    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${capitalize(placeholder)}..." />`;
+    const inputJsx = `${pad}<input${typeAttr}${nameAttr} className="${mapping.className}" value={${valueExpr}} onChange={(e) => ${setterExpr}(e.target.value)} placeholder="${capitalize(resolvedFieldName)}..." />`;
     if (scope.insideForm) {
       const label = deriveLabel(resolvedFieldName);
       return wrapFormGroup(inputJsx, label, pad);
@@ -1231,7 +1257,7 @@ export function generateFlowBoundElement(
   // Select: value + onChange with enum options
   if (resolved.element === 'select') {
     const enumValues = findEnumValues(stateRef, resolved.modifiers, ctx);
-    const optionsJsx = enumValues.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n');
+    const optionsJsx = enumValues.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n');
     return `${pad}<select className="${mapping.className}" value={${stateRef}} onChange={(e) => ${setterExpr}(e.target.value)}>\n${optionsJsx}\n${pad}</select>`;
   }
 
@@ -1242,7 +1268,7 @@ export function generateFlowBoundElement(
       const optionsStr = enumValues.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateRef} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => ${setterExpr}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateRef} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => ${setterExpr}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }
@@ -1282,14 +1308,14 @@ export function generateSetterElement(
     const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
     return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
       + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-      + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+      + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
       + `${pad}  ))}\n`
       + `${pad}</div>`;
   }
 
   if (leftResolved?.element === 'select') {
     return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-      + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+      + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
       + `${pad}</select>`;
   }
 
@@ -1297,7 +1323,7 @@ export function generateSetterElement(
   const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
   return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
     + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-    + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+    + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
     + `${pad}  ))}\n`
     + `${pad}</div>`;
 }
@@ -1322,7 +1348,7 @@ export function generateFlowWithDot(
       const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${stateVar} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(stateVar)}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }
@@ -1331,7 +1357,7 @@ export function generateFlowWithDot(
     if (leftResolved?.element === 'select') {
       const mapping = mapElement('select', []);
       return `${pad}<select className="${mapping.className}" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-        + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+        + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
         + `${pad}</select>`;
     }
   }
@@ -1343,7 +1369,7 @@ export function generateFlowWithDot(
       const stateField = findStateField(stateVar, ctx);
       const options = stateField?.type.kind === 'enum' ? stateField.type.values : [];
       return `${pad}<select className="border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent" value={${stateVar}} onChange={(e) => set${capitalize(stateVar)}(e.target.value)}>\n`
-        + options.map(o => `${pad}  <option value="${o}">${o}</option>`).join('\n') + '\n'
+        + options.map(o => `${pad}  <option value="${o}">${capitalize(o)}</option>`).join('\n') + '\n'
         + `${pad}</select>`;
     }
   }
@@ -1424,11 +1450,13 @@ export function generateFlowChain(
 
     const iterDataExpr = dataExpr || 'items';
     const emptyLabel = deriveEmptyLabel(iterDataExpr);
+    const hasCardChild = children.some(c => c.kind === 'element' && c.element === 'card');
+    const iterItemClass = hasCardChild ? '' : ' className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3"';
     return `${pad}<${containerMapping.tag}${classAttr(containerMapping.className)}>\n`
       + `${pad}  {${iterDataExpr}.length === 0 ? (\n`
       + `${pad}    <div className="empty-state">${emptyLabel}</div>\n`
       + `${pad}  ) : ${iterDataExpr}.map((${iterVar}) => (\n`
-      + `${pad}    <div key={${iterVar}.id} className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3">\n`
+      + `${pad}    <div key={${iterVar}.id}${iterItemClass}>\n`
       + `${childJsx}\n`
       + `${pad}    </div>\n`
       + `${pad}  ))}\n`
@@ -1571,7 +1599,7 @@ export function generateTabsElement(
       const optionsStr = options.map(o => JSON.stringify(o)).join(', ');
       return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">\n`
         + `${pad}  {[${optionsStr}].map((_tab) => (\n`
-        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${filterField.name} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(filterField.name)}(_tab)}>{_tab}</button>\n`
+        + `${pad}    <button key={_tab} className={\`px-4 py-2 rounded-[calc(var(--radius)-4px)] cursor-pointer transition-colors \${${filterField.name} === _tab ? 'bg-[var(--accent)] text-white' : 'bg-transparent text-[var(--muted)] hover:text-[var(--fg)]'}\`} onClick={() => set${capitalize(filterField.name)}(_tab)}>{_tab.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase())}</button>\n`
         + `${pad}  ))}\n`
         + `${pad}</div>`;
     }

@@ -68,7 +68,7 @@ export function generateServer(ctx: TranspileContext): OutputFile[] {
 
   // Prisma schema (only if @db exists)
   if (ctx.db) {
-    files.push({ path: 'server/prisma/schema.prisma', content: generatePrismaSchema(ctx.db) });
+    files.push({ path: 'server/prisma/schema.prisma', content: generatePrismaSchema(ctx.db, { hasAuth: !!ctx.auth }) });
   }
 
   // prisma.ts — PrismaClient singleton (avoids circular imports)

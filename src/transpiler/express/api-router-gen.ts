@@ -15,7 +15,9 @@ function airTypeToValidation(type: AirType): string {
   if (type.kind === 'str' || type.kind === 'date' || type.kind === 'datetime' || type.kind === 'enum') return 'string';
   if (type.kind === 'int' || type.kind === 'float') return 'number';
   if (type.kind === 'bool') return 'boolean';
-  return 'string';
+  if (type.kind === 'array') return 'object'; // arrays are typeof 'object'
+  if (type.kind === 'object') return 'object';
+  return 'string'; // fallback for ref and other types
 }
 
 /** Generate a validateFields schema object literal from route params */
@@ -109,6 +111,11 @@ export function generateApiRouter(ctx: TranspileContext): string {
       const findManyLines = generateFindManyHandler(handler, ctx.db!);
       for (const l of findManyLines) lines.push(l);
     } else {
+    // Check for aggregate handler
+    const aggregateLines = ctx.db ? generateAggregateHandler(handler, ctx.db) : null;
+    if (aggregateLines) {
+      for (const l of aggregateLines) lines.push(l);
+    } else {
     const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
     if (prismaCall) {
       // Add typed destructuring with validation if we have params and a body type
@@ -150,6 +157,7 @@ export function generateApiRouter(ctx: TranspileContext): string {
         lines.push("    res.status(501).json({ error: 'Not implemented' });");
       }
     }
+    } // end aggregate else
     } // end else (non-findMany)
 
     lines.push('  } catch (error) {');
@@ -278,9 +286,59 @@ export function mapHandlerToPrisma(
       return hasIdParam
         ? `await prisma.${modelVar}.delete({ where: { id: ${idExpr} } })`
         : `await prisma.${modelVar}.delete({ where: req.body })`;
+    case 'aggregate':
+      return null; // Handled specially by generateAggregateHandler
     default:
       return null;
   }
+}
+
+/**
+ * Generate aggregate handler lines for ~db.Model.aggregate routes.
+ * Produces per-status counts if the model has a status enum field.
+ */
+export function generateAggregateHandler(handler: string, db: AirDbBlock): string[] | null {
+  const match = handler.match(/^~db\.(\w+)\.aggregate$/);
+  if (!match || !db) return null;
+
+  const [, modelName] = match;
+  const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+  const model = db.models.find(m => m.name === modelName);
+  if (!model) return null;
+
+  const lines: string[] = [];
+  const statusField = model.fields.find(f => {
+    const base = f.type.kind === 'optional' ? (f.type as { of: { kind: string } }).of : f.type;
+    return f.name === 'status' && base.kind === 'enum';
+  });
+
+  if (statusField) {
+    const baseType = statusField.type.kind === 'optional'
+      ? (statusField.type as { of: { kind: 'enum'; values: string[] } }).of
+      : statusField.type as { kind: 'enum'; values: string[] };
+    const values = baseType.values;
+
+    lines.push(`    const total = await prisma.${modelVar}.count();`);
+    for (const val of values) {
+      const camelVal = val.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase());
+      lines.push(`    const ${camelVal} = await prisma.${modelVar}.count({ where: { status: '${val}' } });`);
+    }
+    const lcModelName = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+    const totalKey = `total${modelName}s`;
+    const resultEntries = [
+      `${totalKey}: total`,
+      ...values.map(v => {
+        const camel = v.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase());
+        return `${camel}: ${camel}`;
+      }),
+    ];
+    lines.push(`    res.json({ ${resultEntries.join(', ')} });`);
+  } else {
+    lines.push(`    const total = await prisma.${modelVar}.count();`);
+    lines.push(`    res.json({ total });`);
+  }
+
+  return lines;
 }
 
 /** Check if a model has an integer primary key */
@@ -410,12 +468,18 @@ export function groupRoutesByModel(routes: AirRoute[]): Map<string, AirRoute[]> 
     if (modelMatch) {
       const model = modelMatch[1];
       const key = model.charAt(0).toLowerCase() + model.slice(1) + 's';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(route);
-    } else {
-      if (!groups.has('__misc__')) groups.set('__misc__', []);
-      groups.get('__misc__')!.push(route);
+      // Only group if route path starts with the expected resource prefix
+      // e.g., /tasks routes go with "tasks" key, but /stats with ~db.Task.aggregate goes to __misc__
+      // Also handles nested resources: /tasks/:id/comments → model "Comment" → key "comments"
+      // but path starts with /tasks, not /comments → goes to __misc__
+      if (route.path.startsWith('/' + key)) {
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(route);
+        continue;
+      }
     }
+    if (!groups.has('__misc__')) groups.set('__misc__', []);
+    groups.get('__misc__')!.push(route);
   }
   return groups;
 }
@@ -441,7 +505,21 @@ export function generateResourceRouter(
   if (ctx.db) {
     lines.push("import { prisma } from '../prisma.js';");
   }
-  lines.push("import { assertRequired, assertIntParam } from '../validation.js';");
+
+  // Only import validation helpers if routes actually need them
+  const needsAssertRequired = routes.some(r => r.params && r.params.length > 0 && r.params.some(p => p.type.kind !== 'optional'));
+  const needsAssertIntParam = routes.some(r => {
+    const relPath = findCommonBasePath(routes) ? r.path.replace(findCommonBasePath(routes), '') || '/' : r.path;
+    if (!relPath.includes(':id') || !ctx.db) return false;
+    const m = r.handler.match(/^~db\.(\w+)\./);
+    return m ? hasIntPrimaryKey(m[1], ctx.db) : false;
+  });
+  if (needsAssertRequired || needsAssertIntParam) {
+    const imports: string[] = [];
+    if (needsAssertRequired) imports.push('assertRequired');
+    if (needsAssertIntParam) imports.push('assertIntParam');
+    lines.push(`import { ${imports.join(', ')} } from '../validation.js';`);
+  }
 
   // Import createToken if any route is an auth handler
   const hasAuthRoutes = ctx.auth && routes.some(r => isAuthHandler(r.handler, r.path));
@@ -500,9 +578,13 @@ export function generateResourceRouter(
     }
 
     const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
+    const isAggregate = handler.match(/^~db\.(\w+)\.aggregate$/) && ctx.db;
     if (isFindMany) {
       const findManyLines = generateFindManyHandler(handler, ctx.db!);
       for (const l of findManyLines) lines.push(l);
+    } else if (isAggregate) {
+      const aggLines = generateAggregateHandler(handler, ctx.db!);
+      if (aggLines) for (const l of aggLines) lines.push(l);
     } else {
       const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
       if (prismaCall) {
@@ -632,8 +714,22 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
     const typeNames = getGeneratedTypeNames(ctx);
     for (const route of miscRoutes) {
       const method = route.method.toLowerCase();
+      const handler = route.handler;
+
+      // Validate :id param for integer primary keys
+      const hasIdParam = route.path.includes(':id');
+
       lines.push(`apiRouter.${method}('${route.path}', async (req, res) => {`);
       lines.push('  try {');
+
+      if (hasIdParam && ctx.db) {
+        const modelMatch = handler.match(/^~db\.(\w+)\./);
+        if (modelMatch) {
+          lines.push("    if (isNaN(parseInt(req.params.id))) {");
+          lines.push("      return res.status(400).json({ error: 'Invalid id', details: 'id must be an integer' });");
+          lines.push('    }');
+        }
+      }
 
       let bodyTypeName: string | undefined;
       if (route.params && route.params.length > 0) {
@@ -645,26 +741,64 @@ export function generateMountPointApi(groups: Map<string, AirRoute[]>, ctx: Tran
         }
       }
 
-      const prismaCall = mapHandlerToPrisma(route.handler, route, ctx.db, bodyTypeName);
-      if (prismaCall) {
-        if (bodyTypeName && route.params && route.params.length > 0) {
-          const hasBodyParam = route.params.some(p => p.name === 'body');
-          const bodyVar = hasBodyParam ? '_body' : 'body';
-          lines.push(`    const ${bodyVar} = (req.body ?? {}) as ${bodyTypeName};`);
-          const paramNames = route.params.map(p => p.name).join(', ');
-          lines.push(`    const { ${paramNames} } = ${bodyVar};`);
-        }
-        lines.push(`    const result = ${prismaCall};`);
-        lines.push('    res.json(result);');
-      } else {
-        // Check for auth handler before falling through to 501
-        const authType = ctx.auth ? isAuthHandler(route.handler, route.path) : null;
-        if (authType) {
-          const authLines = generateAuthHandlerLines(authType, route, ctx);
-          for (const l of authLines) lines.push(l);
+      // Detect nested resource routes (e.g., /tasks/:id/comments)
+      const nestedMatch = route.path.match(/^\/(\w+)\/:id\/(\w+)$/);
+      const isFindMany = handler.match(/^~db\.(\w+)\.findMany$/) && ctx.db;
+      const isAggregate = handler.match(/^~db\.(\w+)\.aggregate$/) && ctx.db;
+
+      if (isFindMany && ctx.db) {
+        if (nestedMatch) {
+          // Nested findMany: filter by parent FK (e.g., GET /tasks/:id/comments → where: { task_id })
+          const parentResource = nestedMatch[1];
+          const parentSingular = parentResource.endsWith('s') ? parentResource.slice(0, -1) : parentResource;
+          const modelMatch = handler.match(/^~db\.(\w+)\.findMany$/);
+          const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+          const fkField = `${parentSingular}_id`;
+          lines.push(`    const parentId = parseInt(req.params.id);`);
+          lines.push(`    const result = await prisma.${modelVar}.findMany({ where: { ${fkField}: parentId }, orderBy: { id: 'desc' } });`);
+          lines.push('    res.json(result);');
         } else {
-          lines.push(`    // TODO: implement handler: ${route.handler}`);
-          lines.push("    res.status(501).json({ error: 'Not implemented' });");
+          const findManyLines = generateFindManyHandler(handler, ctx.db);
+          for (const l of findManyLines) lines.push(l);
+        }
+      } else if (isAggregate && ctx.db) {
+        const aggLines = generateAggregateHandler(handler, ctx.db);
+        if (aggLines) for (const l of aggLines) lines.push(l);
+      } else {
+        const prismaCall = mapHandlerToPrisma(handler, route, ctx.db, bodyTypeName);
+        if (prismaCall) {
+          if (bodyTypeName && route.params && route.params.length > 0) {
+            const hasBodyParam = route.params.some(p => p.name === 'body');
+            const bodyVar = hasBodyParam ? '_body' : 'body';
+            lines.push(`    const ${bodyVar} = (req.body ?? {}) as ${bodyTypeName};`);
+            const paramNames = route.params.map(p => p.name).join(', ');
+            lines.push(`    const { ${paramNames} } = ${bodyVar};`);
+          }
+          // For nested create: inject parent FK from URL param
+          if (nestedMatch && route.method === 'POST') {
+            const parentResource = nestedMatch[1];
+            const parentSingular = parentResource.endsWith('s') ? parentResource.slice(0, -1) : parentResource;
+            const fkField = `${parentSingular}_id`;
+            const modelMatch = handler.match(/^~db\.(\w+)\.\w+$/);
+            const modelVar = modelMatch ? modelMatch[1].charAt(0).toLowerCase() + modelMatch[1].slice(1) : 'item';
+            const bodyParams = route.params?.map(p => p.name).join(', ') || '';
+            lines.push(`    const parentId = parseInt(req.params.id);`);
+            lines.push(`    const result = await prisma.${modelVar}.create({ data: { ${bodyParams ? bodyParams + ', ' : ''}${fkField}: parentId } });`);
+            lines.push('    res.status(201).json(result);');
+          } else {
+            lines.push(`    const result = ${prismaCall};`);
+            lines.push('    res.json(result);');
+          }
+        } else {
+          // Check for auth handler before falling through to 501
+          const authType = ctx.auth ? isAuthHandler(handler, route.path) : null;
+          if (authType) {
+            const authLines = generateAuthHandlerLines(authType, route, ctx);
+            for (const l of authLines) lines.push(l);
+          } else {
+            lines.push(`    // TODO: implement handler: ${handler}`);
+            lines.push("    res.status(501).json({ error: 'Not implemented' });");
+          }
         }
       }
 

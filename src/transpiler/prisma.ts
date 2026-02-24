@@ -422,7 +422,7 @@ function generateFieldLine(
 
 // ---- Main generator ----
 
-export function generatePrismaSchema(db: AirDbBlock): string {
+export function generatePrismaSchema(db: AirDbBlock, options?: { hasAuth?: boolean }): string {
   const lines: string[] = [];
 
   // Header
@@ -453,6 +453,11 @@ export function generatePrismaSchema(db: AirDbBlock): string {
     const modelFieldAttrs = fieldAttrs.get(model.name);
     for (const field of model.fields) {
       lines.push(generateFieldLine(field, model, enums, modelFieldAttrs));
+    }
+
+    // Inject password field for auth models if not already declared
+    if (options?.hasAuth && model.name === 'User' && !model.fields.some(f => f.name === 'password')) {
+      lines.push('  password  String');
     }
 
     // Relation fields

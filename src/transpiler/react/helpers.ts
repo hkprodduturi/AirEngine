@@ -53,6 +53,19 @@ export function escapeText(text: string): string {
   });
 }
 
+/** Escape a string for use inside an HTML attribute (double-quoted context) */
+export function escapeAttr(text: string): string {
+  return text.replace(/["&<>]/g, c => {
+    switch (c) {
+      case '"': return '&quot;';
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      default: return c;
+    }
+  });
+}
+
 export function interpolateText(text: string, ctx: TranspileContext, scope: Scope): string {
   // Handle # references inside text strings
   if (text.includes('#')) {
@@ -281,7 +294,8 @@ export function resolvePipeExpr(
         // Check if there's an enum filter state
         const filterField = ctx.state.find(f => f.name === 'filter' && f.type.kind === 'enum');
         if (filterField) {
-          return `${left}.filter(_item => filter === 'all' || _item.category === filter || _item.done === (filter === 'done'))`;
+          const matchField = inferFilterField(left, 'filter', ctx);
+          return `${left}.filter(_item => filter === 'all' || _item.${matchField} === filter)`;
         }
         return `${left}`;
       }
@@ -307,8 +321,20 @@ export function resolvePipeExpr(
       case 'search': {
         return `${left}.filter(_item => Object.values(_item).some(v => String(v).toLowerCase().includes(search.toLowerCase())))`;
       }
-      default:
+      default: {
+        // Check if the pipe name is a state variable with enum type (e.g., taskFilter)
+        const stateFilter = ctx.state.find(f => f.name === fn && f.type.kind === 'enum');
+        if (stateFilter) {
+          const matchField = inferFilterField(left, fn, ctx);
+          return `${left}.filter(_item => ${fn} === 'all' || _item.${matchField} === ${fn})`;
+        }
+        // Literal filter value (e.g., tasks|todo → filter by status === 'todo')
+        if (ctx.db) {
+          const matchField = inferFilterField(left, fn, ctx) || 'status';
+          return `${left}.filter(_item => _item.${matchField} === '${fn}')`;
+        }
         return `${left} /* |${fn} */`;
+      }
     }
   }
 
@@ -349,6 +375,34 @@ export function resolvePipeExprSimple(node: AirUINode & { kind: 'binary' }, scop
   return left;
 }
 
+/**
+ * Infer which model field to filter on, given a source array name and filter state variable.
+ * Checks @db model enum fields for overlap with filter enum values.
+ */
+function inferFilterField(source: string, filterName: string, ctx: TranspileContext): string {
+  const filterState = ctx.state.find(f => f.name === filterName);
+  if (!filterState || filterState.type.kind !== 'enum') return 'status';
+  const filterValues = (filterState.type as { kind: 'enum'; values: string[] }).values.filter(v => v !== 'all');
+
+  if (ctx.db) {
+    // Derive model name from source: "tasks" → "Task", "projects" → "Project"
+    const singular = source.endsWith('s') ? source.slice(0, -1) : source;
+    const modelName = singular.charAt(0).toUpperCase() + singular.slice(1);
+    const model = ctx.db.models.find(m => m.name === modelName);
+    if (model) {
+      for (const f of model.fields) {
+        const baseType = f.type.kind === 'optional' ? (f.type as { of: { kind: string; values?: string[] } }).of : f.type;
+        if (baseType.kind === 'enum' && (baseType as { values: string[] }).values) {
+          const overlap = (baseType as { values: string[] }).values.filter(v => filterValues.includes(v));
+          if (overlap.length > 0) return f.name;
+        }
+      }
+    }
+  }
+
+  return 'status';
+}
+
 export function resolvePipeSource(node: AirUINode, ctx: TranspileContext, scope: Scope): string {
   if (node.kind === 'element') return node.element;
   if (node.kind === 'unary' && node.operator === '#') return resolveRef(node.operand, scope);
@@ -363,23 +417,37 @@ export function resolvePipeSource(node: AirUINode, ctx: TranspileContext, scope:
   return nodeToString(node);
 }
 
-export function extractDataSource(node: AirUINode, scope: Scope): string {
+export function extractDataSource(node: AirUINode, scope: Scope, ctx?: TranspileContext): string {
   // From a flow chain, extract the data expression
   if (node.kind === 'binary' && node.operator === '>') {
     // e.g., list > items|filter → data is from the right side
-    return extractDataSource(node.right, scope);
+    return extractDataSource(node.right, scope, ctx);
   }
   if (node.kind === 'binary' && node.operator === '|') {
     // Pipe chain — recursively resolve left side for chained pipes
-    const left = extractDataSource(node.left, scope);
+    const left = extractDataSource(node.left, scope, ctx);
     const right = node.right;
     if (right.kind === 'element') {
       const fn = right.element;
       if (fn === 'filter') {
-        return `${left}.filter(_item => filter === 'all' || _item.category === filter || _item.done === (filter === 'done'))`;
+        const matchField = ctx ? inferFilterField(left, 'filter', ctx) : 'status';
+        return `${left}.filter(_item => filter === 'all' || _item.${matchField} === filter)`;
       }
       if (fn === 'sort') {
         return `[...${left}].sort((a, b) => sort === 'newest' ? b.id - a.id : sort === 'oldest' ? a.id - b.id : sort === 'highest' ? b.amount - a.amount : a.amount - b.amount)`;
+      }
+      // Check if fn is a state enum variable (e.g., taskFilter)
+      if (ctx) {
+        const stateFilter = ctx.state.find(f => f.name === fn && f.type.kind === 'enum');
+        if (stateFilter) {
+          const matchField = inferFilterField(left, fn, ctx);
+          return `${left}.filter(_item => ${fn} === 'all' || _item.${matchField} === ${fn})`;
+        }
+      }
+      // Literal filter value (e.g., tasks|todo → filter by status === 'todo')
+      if (ctx && ctx.db) {
+        const matchField = inferFilterField(left, fn, ctx) || 'status';
+        return `${left}.filter(_item => _item.${matchField} === '${fn}')`;
       }
       return `${left}`;
     }
@@ -685,6 +753,9 @@ export function getHookableStateProps(ctx: TranspileContext): Map<string, HookMa
       r => r.method === 'GET' && r.handler === `~db.${model.name}.findMany`,
     );
     if (!route) continue;
+
+    // Skip nested routes with URL params (e.g., /tasks/:id/comments)
+    if (route.path.includes(':')) continue;
 
     const modelPlural = pluralize(model.name);
     const hookName = `use${capitalize(modelPlural)}`;

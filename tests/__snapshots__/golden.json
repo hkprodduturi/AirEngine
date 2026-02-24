@@ -9,7 +9,7 @@
       "index.html": "de8f38d2651b5420",
       "src/main.jsx": "d2a5622fca5cfbd3",
       "src/index.css": "1f163c1dc1cfc4c1",
-      "src/App.jsx": "efb6ffc75aaf9106"
+      "src/App.jsx": "645ca05e1beed189"
     }
   },
   "expense-tracker": {
@@ -22,7 +22,7 @@
       "index.html": "fc368be178bc4d6a",
       "src/main.jsx": "6099034bef7a7282",
       "src/index.css": "1ee5c3a903437dc9",
-      "src/App.jsx": "3d8cfef869e6dd24"
+      "src/App.jsx": "0338c2626483321b"
     }
   },
   "auth": {
@@ -102,7 +102,7 @@
       "client/index.html": "09af4aaa46cb6fbc",
       "client/src/main.jsx": "c9e4f45f08db9432",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "a53541933920447a",
+      "client/src/App.jsx": "875d9d6eb3ccbb87",
       "client/src/api.js": "1dcd0c0ca1b1b212",
       "client/src/types.ts": "168ea41abdea173d",
       "client/src/components/EmptyState.jsx": "834c8d58e60bd8b7",
@@ -121,7 +121,7 @@
     }
   },
   "projectflow": {
-    "fileCount": 50,
+    "fileCount": 48,
     "hashes": {
       "client/package.json": "bf43870b93706e50",
       "client/vite.config.js": "3995fed37320e66c",
@@ -130,35 +130,33 @@
       "client/index.html": "0a52e135952fb9fe",
       "client/src/main.jsx": "6a2fdfd95a3cebca",
       "client/src/index.css": "1f163c1dc1cfc4c1",
-      "client/src/App.jsx": "cbd11ead730c1c7c",
+      "client/src/App.jsx": "1dd57b8045e454fd",
       "client/src/Layout.jsx": "b3ab2edcd0fdb8ed",
       "client/src/api.js": "d39f81ae572415c9",
       "client/src/types.ts": "ef8760e57f4f53d8",
       "client/src/pages/LoginPage.jsx": "5917c87f1cadaccb",
-      "client/src/pages/DashboardPage.jsx": "1a58c72b9070f72b",
-      "client/src/pages/ProjectsPage.jsx": "a542c6987d324af1",
-      "client/src/pages/TasksPage.jsx": "2f246477f6f4c93d",
-      "client/src/pages/SettingsPage.jsx": "442c651ab9201d2d",
+      "client/src/pages/DashboardPage.jsx": "289708c05b3ab3de",
+      "client/src/pages/ProjectsPage.jsx": "2df2c336fb3756b3",
+      "client/src/pages/TasksPage.jsx": "94ea257288060ec0",
+      "client/src/pages/SettingsPage.jsx": "eaa5a7c8d0e5906d",
       "client/src/hooks/useProjects.js": "4bb917e27b3cdcf3",
       "client/src/hooks/useTasks.js": "7ddb11b964cf3cc2",
-      "client/src/hooks/useComments.js": "ba5881c947104d29",
       "client/src/components/DataTable.jsx": "9b609e8750ce370f",
       "client/src/components/EmptyState.jsx": "fecb93e77ce0cb06",
       "client/src/components/StatCard.jsx": "101aad3eb2e8b980",
       "server/package.json": "abdabd902adc4a16",
       "server/tsconfig.json": "1b6d33775241d6b4",
       "server/.env": "6d81cd644dc1f5d9",
-      "server/prisma/schema.prisma": "ec68de2eb27a1528",
+      "server/prisma/schema.prisma": "3502ff5f09132e4a",
       "server/prisma.ts": "101cf868c07489b0",
-      "server/seed.ts": "40510cad384d0fd5",
+      "server/seed.ts": "09f566401316e41f",
       "server/types.ts": "c98e6ae7f29d91fe",
       "server/validation.ts": "794c539e317a0308",
       "server/routes/users.ts": "0a85af1304704c37",
-      "server/routes/workspaces.ts": "2ff2704351316855",
+      "server/routes/workspaces.ts": "6abae36cefa28b21",
       "server/routes/projects.ts": "1656b0181e2f2abd",
-      "server/routes/tasks.ts": "50c32cbf979578bb",
-      "server/routes/comments.ts": "4b361ac50f4c2c94",
-      "server/api.ts": "e17fccf62ca845d2",
+      "server/routes/tasks.ts": "e65fbde90e069542",
+      "server/api.ts": "39f723450633c941",
       "server/webhooks.ts": "84aeee1d07c97cb0",
       "server/auth.ts": "78db18e70c091f1a",
       "server/env.ts": "e65d46a4921c96d8",
