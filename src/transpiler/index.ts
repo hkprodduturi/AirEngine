@@ -21,6 +21,7 @@ import { generateClientTypesFile } from './types-gen.js';
 import { generateResourceHooks } from './resource-hook-gen.js';
 import { generateDockerCompose } from './deploy-gen.js';
 import { generateReusableComponents, detectPatterns } from './component-gen.js';
+import { hasAuthRoutes, isAuthPageName } from './react/helpers.js';
 
 export interface TranspileOptions {
   framework?: 'react';
@@ -168,13 +169,22 @@ export function transpile(
       const pageFiles = generatePageComponents(ctx, analysis);
       files.push(...pageFiles.map(f => ({ ...f, path: `client/${f.path}` })));
 
-      // Resource hooks — only for models with matching array state vars
-      const hookFiles = generateResourceHooks(ctx);
-      files.push(...hookFiles.map(f => ({ ...f, path: `client/${f.path}` })));
+      // Auth-gated apps: pages are self-contained (use api directly), skip resource hooks
+      const authGated = hasAuthRoutes(ctx) && analysis.hasPages
+        && analysis.pages.some(p => isAuthPageName(p.name));
+
+      if (!authGated) {
+        // Resource hooks — only for models with matching array state vars
+        const hookFiles = generateResourceHooks(ctx);
+        files.push(...hookFiles.map(f => ({ ...f, path: `client/${f.path}` })));
+      }
 
       // Reusable components (DataTable, EmptyState, StatCard) when patterns detected
-      const componentFiles = generateReusableComponents(ctx, analysis);
-      files.push(...componentFiles.map(f => ({ ...f, path: `client/${f.path}` })));
+      // Auth-gated: pages are self-contained, skip unused shared components
+      if (!authGated) {
+        const componentFiles = generateReusableComponents(ctx, analysis);
+        files.push(...componentFiles.map(f => ({ ...f, path: `client/${f.path}` })));
+      }
     } else {
       // Frontend-only: flat (backward compatible)
       files.push(...scaffoldFiles);

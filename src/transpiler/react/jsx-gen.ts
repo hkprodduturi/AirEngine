@@ -21,11 +21,16 @@ import {
   findEnumValues, resolveDeepType, findEnumByName,
   analyzePageDependencies, getHookableStateProps,
   findFirstFormAction,
+  isAuthPageName, hasAuthRoutes,
 } from './helpers.js';
+
+// Module-level flag set during generateRootJSX — avoids threading through entire recursive tree
+let _hasAuthGating = false;
 
 // ---- Root JSX ----
 
-export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy = false): string[] {
+export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy = false, hasAuthGating = false): string[] {
+  _hasAuthGating = hasAuthGating;
   const rootClasses = 'min-h-screen bg-[var(--bg)] text-[var(--fg)]';
 
   const maxWidth = ctx.style.maxWidth;
@@ -325,6 +330,10 @@ export function pageHasFormContent(node: AirUINode & { kind: 'scoped' }): boolea
 /**
  * Render a page as a component reference: <DashboardPage prop1={val} ... />
  * Computes which props the page needs, excluding hook-covered state vars.
+ *
+ * When _hasAuthGating is true:
+ * - Auth pages get simplified props (login/authError/setCurrentPage)
+ * - Data pages get isAuthed gate + user/logout/currentPage/setCurrentPage
  */
 function generatePageComponentRef(
   node: AirUINode & { kind: 'scoped' },
@@ -334,6 +343,42 @@ function generatePageComponentRef(
 ): string {
   const pad = ' '.repeat(ind);
   const pageName = capitalize(node.name);
+  const isAuth = isAuthPageName(node.name);
+  const ctxHasAuth = hasAuthRoutes(ctx);
+
+  if (_hasAuthGating) {
+    // ---- Auth-gated mode: simplified props ----
+    if (isAuth) {
+      // Auth pages: only auth-related props, no isAuthed gate
+      const propAssignments: string[] = [];
+      // Pass mutation props detected by tree walk
+      const deps = analyzePageDependencies(node.children, ctx, analysis);
+      for (const m of deps.mutationProps) {
+        const safeName = m.replace(/\./g, '_');
+        propAssignments.push(`${safeName}={${safeName}}`);
+      }
+      if (!propAssignments.some(p => p.startsWith('authError='))) {
+        propAssignments.push('authError={authError}');
+      }
+      if (!propAssignments.some(p => p.startsWith('setCurrentPage='))) {
+        propAssignments.push('setCurrentPage={setCurrentPage}');
+      }
+      const propsStr = propAssignments.length > 0 ? ' ' + propAssignments.join(' ') : '';
+      return `${pad}{currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
+    } else {
+      // Data pages: require isAuthed, pass user/logout/nav props
+      const propAssignments = [
+        'user={user}',
+        'logout={logout}',
+        'currentPage={currentPage}',
+        'setCurrentPage={setCurrentPage}',
+      ];
+      const propsStr = ' ' + propAssignments.join(' ');
+      return `${pad}{isAuthed && currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
+    }
+  }
+
+  // ---- Original full-prop mode ----
   const deps = analyzePageDependencies(node.children, ctx, analysis);
   const hookMap = getHookableStateProps(ctx);
 
@@ -364,9 +409,7 @@ function generatePageComponentRef(
   }
 
   // Pass authError props for login/register pages
-  const isAuthPage = node.name === 'login' || node.name === 'register' || node.name === 'signup';
-  const hasAuthRoutes = ctx.auth !== null || (ctx.hasBackend && ctx.expandedRoutes.some(r => r.path.includes('/auth/') || r.path.endsWith('/login') || r.path.endsWith('/signup') || r.path.endsWith('/register')));
-  if (isAuthPage && hasAuthRoutes) {
+  if (isAuth && ctxHasAuth) {
     if (!propAssignments.some(p => p.startsWith('authError='))) {
       propAssignments.push('authError={authError}');
     }
