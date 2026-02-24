@@ -198,7 +198,7 @@ export function parseType(s: TokenStream): AirType {
   // Inline enum shorthand: value1|value2|value3 (identifiers separated by pipe)
   // Triggered when we see an identifier followed by a pipe operator
   if (s.is('identifier')) {
-    const pos = s.pos;
+    const pos = s.save();
     const firstVal = s.advance().value;
     if (s.is('operator', '|')) {
       // It's an inline enum: collect all pipe-separated values
