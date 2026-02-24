@@ -182,7 +182,7 @@ function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]): string
 // ---- Mutation Functions ----
 
 /** Determine the best post-login redirect page from analysis */
-function getPostLoginPage(analysis: UIAnalysis): string {
+export function getPostLoginPage(analysis: UIAnalysis): string {
   if (analysis.pages.length === 0) return 'home';
   // Prefer: dashboard > home > first non-login/signup/register page > first page
   const preferred = ['dashboard', 'home', 'overview', 'main'];
@@ -331,9 +331,12 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`    const result = await api.${match.fnName}(formData);`);
         if (hasAuth) {
           lines.push(`    if (result.token) api.setToken(result.token);`);
-          lines.push(`    setUser(result.user || result);`);
+          lines.push(`    const u = result.user || result;`);
+          lines.push(`    setUser(u);`);
+          lines.push(`    localStorage.setItem('${ctx.appName}_user', JSON.stringify(u));`);
         } else {
           lines.push(`    setUser(result);`);
+          lines.push(`    localStorage.setItem('${ctx.appName}_user', JSON.stringify(result));`);
         }
         lines.push(`    setCurrentPage('${postLoginPage}');`);
         lines.push(`  } catch (err) {`);
@@ -378,12 +381,14 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`const logout = async () => {`);
         lines.push(`  try { await api.${match.fnName}(); } catch (_) {}`);
         if (hasAuth) lines.push(`  api.clearToken();`);
+        lines.push(`  localStorage.removeItem('${ctx.appName}_user');`);
         lines.push(`  setUser(null);`);
         lines.push(`  setCurrentPage('login');`);
         lines.push('};');
       } else {
         lines.push(`const logout = () => {`);
         if (hasAuth) lines.push(`  api.clearToken();`);
+        lines.push(`  localStorage.removeItem('${ctx.appName}_user');`);
         lines.push(`  setUser(null);`);
         lines.push(`  setCurrentPage('login');`);
         lines.push('};');
