@@ -708,20 +708,33 @@ Generate the AIR code now:`;
     {
       source: z.string().describe('AIR source code to process'),
       output_dir: z.string().optional().default('./output').describe('Directory to write generated files'),
-      repair_mode: z.enum(['deterministic', 'none']).optional().default('deterministic')
-        .describe('Repair mode: "deterministic" (A3b rule-based) or "none" (skip repair)'),
+      repair_mode: z.enum(['deterministic', 'claude', 'none']).optional().default('deterministic')
+        .describe('Repair mode: "deterministic" (A3b rule-based), "claude" (LLM-backed via Anthropic API), or "none" (skip repair)'),
       write_artifacts: z.boolean().optional().default(true)
         .describe('Write audit artifacts (.air-artifacts/) to disk'),
       max_repair_attempts: z.number().int().min(1).max(5).optional().default(1)
         .describe('Maximum repair attempts (1=single-pass, >1 enables retry loop with stop conditions)'),
+      repair_model: z.string().optional()
+        .describe('Claude model for repair (only used when repair_mode="claude")'),
+      repair_provider_retries: z.number().int().min(0).max(5).optional()
+        .describe('Provider-level retries for Claude repair (default: 2)'),
+      repair_timeout_ms: z.number().int().min(1000).max(120000).optional()
+        .describe('Timeout in ms for Claude repair requests (default: 30000)'),
     },
-    async ({ source, output_dir, repair_mode, write_artifacts, max_repair_attempts }) => {
+    async ({ source, output_dir, repair_mode, write_artifacts, max_repair_attempts, repair_model, repair_provider_retries, repair_timeout_ms }) => {
       try {
         const { runLoopFromSource } = await import('../cli/loop.js');
         const result = await runLoopFromSource(source, output_dir, {
           repairMode: repair_mode,
           writeArtifacts: write_artifacts,
           maxRepairAttempts: max_repair_attempts,
+          ...(repair_mode === 'claude' ? {
+            claudeRepairOptions: {
+              model: repair_model,
+              maxRetries: repair_provider_retries,
+              timeoutMs: repair_timeout_ms,
+            },
+          } : {}),
         });
 
         // Determine overall success: repair(pass) compensates validate(fail)

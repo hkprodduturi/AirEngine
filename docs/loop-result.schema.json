@@ -170,7 +170,7 @@
             "required": ["rule", "kind", "description"],
             "properties": {
               "rule": { "type": "string" },
-              "kind": { "type": "string", "enum": ["prepend", "append"] },
+              "kind": { "type": "string", "enum": ["prepend", "append", "replace"] },
               "description": { "type": "string" }
             }
           }

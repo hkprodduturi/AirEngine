@@ -14,7 +14,7 @@ import type { Diagnostic } from './diagnostics.js';
 
 export interface RepairAction {
   rule: string;              // diagnostic code, e.g. "AIR-E001"
-  kind: 'prepend' | 'append'; // explicit patch type
+  kind: 'prepend' | 'append' | 'replace'; // explicit patch type
   text: string;              // exact patch text to insert
   description: string;       // human-readable
   applied: boolean;          // true = will be applied
@@ -186,7 +186,7 @@ export interface RepairContext {
  */
 export interface RepairAdapter {
   readonly name: string;
-  repair(source: string, diagnostics: Diagnostic[], context?: RepairContext): RepairResult;
+  repair(source: string, diagnostics: Diagnostic[], context?: RepairContext): RepairResult | Promise<RepairResult>;
 }
 
 /**

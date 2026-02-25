@@ -215,12 +215,34 @@ program
   .description('Run the full agent loop: validate → repair → transpile → smoke → deliver')
   .argument('<file>', 'Path to .air file')
   .option('-o, --output <dir>', 'Output directory', './output')
+  .option('--repair-mode <mode>', 'Repair mode: deterministic, claude, or none', 'deterministic')
+  .option('--max-repair-attempts <n>', 'Maximum repair attempts (1-5)', '1')
+  .option('--claude-model <model>', 'Claude model for repair (only with --repair-mode claude)')
   .action(async (file, options) => {
     console.log(`\n  ⚡ AirEngine Loop\n`);
 
+    const repairMode = options.repairMode as 'deterministic' | 'claude' | 'none';
+    const maxRepairAttempts = Math.max(1, Math.min(5, parseInt(options.maxRepairAttempts, 10) || 1));
+
+    // Early fail if Claude mode without API key
+    if (repairMode === 'claude' && !process.env.ANTHROPIC_API_KEY) {
+      console.error('  ❌ --repair-mode claude requires ANTHROPIC_API_KEY environment variable\n');
+      process.exit(1);
+    }
+
     try {
-      const { runLoop, formatLoopResult } = await import('./loop.js');
-      const result = await runLoop(file, options.output);
+      const { runLoopFromSource, formatLoopResult } = await import('./loop.js');
+      const source = readFileSync(file, 'utf-8');
+      const result = await runLoopFromSource(source, options.output, {
+        file,
+        repairMode,
+        maxRepairAttempts,
+        ...(repairMode === 'claude' ? {
+          claudeRepairOptions: {
+            model: options.claudeModel,
+          },
+        } : {}),
+      });
       console.log(formatLoopResult(result));
 
       // A validate fail is compensated by a repair pass

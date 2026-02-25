@@ -126,19 +126,20 @@ function stageValidate(source: string): { stage: LoopStage; diagnostics: Diagnos
   }
 }
 
-function stageRepair(
+async function stageRepair(
   source: string,
   diagnostics: DiagnosticResult,
   artifactDir: string,
   writeArtifacts: boolean = true,
   adapter?: RepairAdapter,
-): {
+  context?: RepairContext,
+): Promise<{
   stage: LoopStage;
   updatedSource: string;
   updatedAst: ReturnType<typeof parse> | null;
   postRepairDiagnostics: DiagnosticResult | null;
   repairResult: LoopResult['repairResult'];
-} {
+}> {
   const start = performance.now();
   const errorCount = diagnostics.summary.errors;
 
@@ -160,7 +161,7 @@ function stageRepair(
 
   // Run repair engine (use adapter if provided, otherwise raw repair())
   const repairRes = adapter
-    ? adapter.repair(source, diagnostics.diagnostics)
+    ? await adapter.repair(source, diagnostics.diagnostics, context)
     : repair(source, diagnostics.diagnostics);
   const appliedActions = repairRes.actions.filter(a => a.applied);
   const skippedActions = repairRes.actions.filter(a => !a.applied);
@@ -354,14 +355,21 @@ function stageDeterminism(ast: ReturnType<typeof parse>, source: string, firstHa
 // ---- Options ----
 
 export interface LoopOptions {
-  /** Repair mode: 'deterministic' (A3b rules) or 'none' (skip repair) */
-  repairMode?: 'deterministic' | 'none';
+  /** Repair mode: 'deterministic' (A3b rules), 'claude' (LLM-backed), or 'none' (skip repair) */
+  repairMode?: 'deterministic' | 'claude' | 'none';
   /** Whether to write artifacts to disk (default: true) */
   writeArtifacts?: boolean;
   /** Maximum repair attempts (default: 1). >1 enables retry loop with adapter. */
   maxRepairAttempts?: number;
   /** Override repair adapter (takes precedence over repairMode) */
   repairAdapter?: RepairAdapter;
+  /** Claude repair adapter options (used when repairMode='claude') */
+  claudeRepairOptions?: {
+    apiKey?: string;
+    model?: string;
+    maxRetries?: number;
+    timeoutMs?: number;
+  };
 }
 
 // ---- Main Loop (source-based) ----
@@ -381,10 +389,24 @@ export async function runLoopFromSource(
   const maxRepairAttempts = opts?.maxRepairAttempts ?? 1;
 
   // Resolve adapter from options
-  const adapter: RepairAdapter | undefined = opts?.repairAdapter
-    ?? (repairMode === 'none' ? undefined
-      : maxRepairAttempts > 1 ? createDeterministicAdapter()
-      : undefined);
+  let adapter: RepairAdapter | undefined = opts?.repairAdapter;
+  if (!adapter) {
+    if (repairMode === 'none') {
+      adapter = undefined;
+    } else if (repairMode === 'claude') {
+      const apiKey = opts?.claudeRepairOptions?.apiKey ?? process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) throw new Error('Claude repair mode requires ANTHROPIC_API_KEY (set env or pass claudeRepairOptions.apiKey)');
+      const { createClaudeRepairAdapter } = await import('../repair-claude.js');
+      adapter = createClaudeRepairAdapter({
+        apiKey,
+        model: opts?.claudeRepairOptions?.model,
+        maxRetries: opts?.claudeRepairOptions?.maxRetries,
+        timeoutMs: opts?.claudeRepairOptions?.timeoutMs,
+      });
+    } else if (maxRepairAttempts > 1) {
+      adapter = createDeterministicAdapter();
+    }
+  }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const artifactDir = join('.air-artifacts', timestamp);
@@ -443,7 +465,7 @@ export async function runLoopFromSource(
         updatedAst,
         postRepairDiagnostics,
         repairResult: rp,
-      } = stageRepair(currentSource, currentDiagnostics, attemptDir, writeArtifacts, adapter);
+      } = await stageRepair(currentSource, currentDiagnostics, attemptDir, writeArtifacts, adapter, context);
 
       lastRepairPayload = rp;
       const attemptDurationMs = Math.round(performance.now() - attemptStart);
@@ -545,7 +567,7 @@ export async function runLoopFromSource(
       updatedAst,
       postRepairDiagnostics,
       repairResult: rp,
-    } = stageRepair(source, diagnostics, artifactDir, writeArtifacts, adapter);
+    } = await stageRepair(source, diagnostics, artifactDir, writeArtifacts, adapter);
     stages.push(repairStage);
     repairPayload = rp;
 
