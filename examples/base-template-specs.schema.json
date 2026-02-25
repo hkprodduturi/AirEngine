@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/base-template-specs.schema.json",
+  "title": "AirEngine Base Template Specifications",
+  "description": "Schema for the 20 structurally distinct base templates in the AirEngine template library",
+  "type": "array",
+  "minItems": 20,
+  "maxItems": 20,
+  "items": {
+    "$ref": "#/$defs/BaseTemplate"
+  },
+  "uniqueItems": true,
+  "$defs": {
+    "NavFamily": {
+      "type": "string",
+      "enum": [
+        "sidebar",
+        "top-tabs",
+        "top-bar",
+        "bottom-tabs",
+        "toolbar",
+        "dropdown-header",
+        "step-indicator",
+        "search-bar",
+        "date-controls",
+        "none"
+      ]
+    },
+    "SurfaceFamily": {
+      "type": "string",
+      "enum": [
+        "data-table",
+        "card-grid",
+        "stat-dashboard",
+        "chart-grid",
+        "column-layout",
+        "list-pane",
+        "content-canvas",
+        "centered-form",
+        "tile-wall",
+        "date-grid",
+        "card-feed",
+        "split-panels",
+        "mixed-sections",
+        "tab-panels",
+        "action-primary",
+        "progress-rows"
+      ]
+    },
+    "FlowFamily": {
+      "type": "string",
+      "enum": [
+        "list-detail",
+        "tab-switch",
+        "filter-driven",
+        "sequential",
+        "board-centric",
+        "search-browse",
+        "browse-checkout",
+        "select-edit",
+        "calendar-drill",
+        "section-browse",
+        "action-confirm",
+        "three-pane-drill",
+        "single-screen",
+        "split-view"
+      ]
+    },
+    "InteractionFamily": {
+      "type": "string",
+      "enum": [
+        "crud-forms",
+        "monitor-ack",
+        "filter-drill",
+        "compose-react",
+        "move-organize",
+        "navigate-consume",
+        "step-submit",
+        "transact-checkout",
+        "select-act",
+        "scan-confirm",
+        "switch-edit",
+        "toolbar-edit"
+      ]
+    },
+    "MobileFamily": {
+      "type": "string",
+      "enum": [
+        "collapse-nav",
+        "stack-vertical",
+        "screen-drill",
+        "simplify-view",
+        "native-mobile",
+        "scroll-horizontal"
+      ]
+    },
+    "AirRiskLevel": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "CapabilityStatus": {
+      "type": "string",
+      "enum": ["native", "workaround", "unsupported"]
+    },
+    "CapabilityTranslation": {
+      "type": "object",
+      "properties": {
+        "concept": {
+          "type": "string",
+          "description": "The UI/UX concept being translated to .air syntax"
+        },
+        "air_pattern": {
+          "type": "string",
+          "description": "The .air syntax pattern that implements or approximates this concept"
+        },
+        "status": {
+          "$ref": "#/$defs/CapabilityStatus"
+        },
+        "limitation": {
+          "type": "string",
+          "description": "What limitation exists (required for workaround/unsupported status)"
+        },
+        "fallback": {
+          "type": "string",
+          "description": "How the limitation is addressed (required for workaround/unsupported status)"
+        }
+      },
+      "required": ["concept", "air_pattern", "status"],
+      "if": {
+        "properties": {
+          "status": { "enum": ["workaround", "unsupported"] }
+        }
+      },
+      "then": {
+        "required": ["concept", "air_pattern", "status", "limitation", "fallback"]
+      },
+      "additionalProperties": false
+    },
+    "BaseTemplate": {
+      "type": "object",
+      "properties": {
+        "template_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
+          "description": "Kebab-case unique identifier"
+        },
+        "template_name": {
+          "type": "string",
+          "description": "Human-readable display name"
+        },
+        "app_type": {
+          "type": "string",
+          "description": "Brief description of the application type"
+        },
+        "canonical": {
+          "type": "object",
+          "properties": {
+            "nav_family": { "$ref": "#/$defs/NavFamily" },
+            "surface_family": { "$ref": "#/$defs/SurfaceFamily" },
+            "flow_family": { "$ref": "#/$defs/FlowFamily" },
+            "interaction_family": { "$ref": "#/$defs/InteractionFamily" },
+            "mobile_family": { "$ref": "#/$defs/MobileFamily" }
+          },
+          "required": ["nav_family", "surface_family", "flow_family", "interaction_family", "mobile_family"],
+          "additionalProperties": false
+        },
+        "layout_signature": {
+          "type": "string",
+          "pattern": "^nav:[a-z-]+\\|surface:[a-z-]+\\|flow:[a-z-]+\\|interact:[a-z-]+\\|mobile:[a-z-]+$",
+          "description": "Auto-generated from canonical fields"
+        },
+        "core_pages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "description": "Primary pages/screens in the template"
+        },
+        "key_interactions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "description": "Key user interactions"
+        },
+        "air_risk_level": {
+          "$ref": "#/$defs/AirRiskLevel"
+        },
+        "capability_translation": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CapabilityTranslation" },
+          "minItems": 3,
+          "description": "How UI concepts map to .air syntax"
+        },
+        "required_states": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["empty", "loading", "error", "success"] },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "Must be exactly [empty, loading, error, success]"
+        },
+        "phase3_priority": {
+          "type": "boolean",
+          "description": "true for the 5 highest-risk bases targeted for Phase 3"
+        },
+        "why_different": {
+          "type": "string",
+          "description": "Explanation of what makes this template structurally unique"
+        }
+      },
+      "required": [
+        "template_id",
+        "template_name",
+        "app_type",
+        "canonical",
+        "layout_signature",
+        "core_pages",
+        "key_interactions",
+        "air_risk_level",
+        "capability_translation",
+        "required_states",
+        "phase3_priority",
+        "why_different"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

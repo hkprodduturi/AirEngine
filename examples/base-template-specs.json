@@ -1,0 +1,1067 @@
+[
+  {
+    "template_id": "command-center",
+    "template_name": "Command Center",
+    "app_type": "Real-time operations dashboard",
+    "canonical": {
+      "nav_family": "top-tabs",
+      "surface_family": "stat-dashboard",
+      "flow_family": "tab-switch",
+      "interaction_family": "monitor-ack",
+      "mobile_family": "stack-vertical"
+    },
+    "layout_signature": "nav:top-tabs|surface:stat-dashboard|flow:tab-switch|interact:monitor-ack|mobile:stack-vertical",
+    "core_pages": ["Login", "Overview", "Systems", "Alerts", "Logs", "Settings"],
+    "key_interactions": [
+      "Acknowledge alert",
+      "Filter by severity",
+      "Stat drill-down",
+      "Cron refresh"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Stat widget grid",
+        "air_pattern": "grid:4(stat, stat, stat, stat)",
+        "status": "native"
+      },
+      {
+        "concept": "Line/bar charts",
+        "air_pattern": "chart:line, chart:bar",
+        "status": "native"
+      },
+      {
+        "concept": "Severity filter",
+        "air_pattern": "tabs>severityFilter.set(...)",
+        "status": "native"
+      },
+      {
+        "concept": "Alert table",
+        "air_pattern": "table>alerts>*alert(...)",
+        "status": "native"
+      },
+      {
+        "concept": "Acknowledge action",
+        "air_pattern": "btn:ghost>\"Ack\">!ack(#alert.id)",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Top-tab nav + stat widget grid primary. No sidebar. Charts and stat cards dominate."
+  },
+  {
+    "template_id": "crud-admin",
+    "template_name": "CRUD Admin",
+    "app_type": "Generic data management panel",
+    "canonical": {
+      "nav_family": "sidebar",
+      "surface_family": "data-table",
+      "flow_family": "list-detail",
+      "interaction_family": "crud-forms",
+      "mobile_family": "collapse-nav"
+    },
+    "layout_signature": "nav:sidebar|surface:data-table|flow:list-detail|interact:crud-forms|mobile:collapse-nav",
+    "core_pages": ["Login", "Dashboard", "Entities", "Entity Detail", "Create", "Settings"],
+    "key_interactions": [
+      "Table row expand",
+      "Search/filter",
+      "Bulk delete",
+      "Inline edit"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Sidebar nav",
+        "air_pattern": "sidebar(nav:vertical(...))",
+        "status": "native"
+      },
+      {
+        "concept": "Data table",
+        "air_pattern": "table>entities>*e(...)",
+        "status": "native"
+      },
+      {
+        "concept": "Search + filter",
+        "air_pattern": "input:search>#search + pipe |search",
+        "status": "native"
+      },
+      {
+        "concept": "CRUD forms",
+        "air_pattern": "form(input:text+btn:primary>\"Create\")",
+        "status": "native"
+      },
+      {
+        "concept": "Pagination",
+        "air_pattern": "pagination",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Canonical sidebar + table pattern. Every other sidebar base uses a different primary surface."
+  },
+  {
+    "template_id": "kanban",
+    "template_name": "Kanban Board",
+    "app_type": "Visual task/workflow management",
+    "canonical": {
+      "nav_family": "dropdown-header",
+      "surface_family": "column-layout",
+      "flow_family": "board-centric",
+      "interaction_family": "move-organize",
+      "mobile_family": "stack-vertical"
+    },
+    "layout_signature": "nav:dropdown-header|surface:column-layout|flow:board-centric|interact:move-organize|mobile:stack-vertical",
+    "core_pages": ["Login", "Board", "Board List", "Settings"],
+    "key_interactions": [
+      "Move card between columns",
+      "Add card inline",
+      "Label/assignee badges"
+    ],
+    "air_risk_level": "medium",
+    "capability_translation": [
+      {
+        "concept": "Multi-column swimlanes",
+        "air_pattern": "grid:4>columns>*col(@section...)",
+        "status": "native"
+      },
+      {
+        "concept": "Card list per column",
+        "air_pattern": "list>cards|col>*card(card(...))",
+        "status": "native"
+      },
+      {
+        "concept": "Drag-and-drop",
+        "air_pattern": "btn:ghost>\"Move\">!moveCard(#card.id)",
+        "status": "workaround",
+        "limitation": "No native drag-drop in .air",
+        "fallback": "Button-based move action per card"
+      },
+      {
+        "concept": "Card expand/detail",
+        "air_pattern": "details(summary>title + card(...))",
+        "status": "workaround",
+        "limitation": "Not a modal — inline expand",
+        "fallback": "Use details/summary for inline expand instead of modal overlay"
+      },
+      {
+        "concept": "Inline add card",
+        "air_pattern": "btn:ghost>\"Add Card\">!addCard(#col.id)",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": true,
+    "why_different": "Horizontal column layout. Content flows in parallel columns (grid:4 with nested lists). No sidebar, no table."
+  },
+  {
+    "template_id": "inbox",
+    "template_name": "Inbox",
+    "app_type": "Email / message client",
+    "canonical": {
+      "nav_family": "sidebar",
+      "surface_family": "list-pane",
+      "flow_family": "three-pane-drill",
+      "interaction_family": "select-act",
+      "mobile_family": "screen-drill"
+    },
+    "layout_signature": "nav:sidebar|surface:list-pane|flow:three-pane-drill|interact:select-act|mobile:screen-drill",
+    "core_pages": ["Login", "Mail", "Compose", "Search"],
+    "key_interactions": [
+      "Thread select → detail loads",
+      "Mark read/unread",
+      "Archive",
+      "Star",
+      "Compose"
+    ],
+    "air_risk_level": "high",
+    "capability_translation": [
+      {
+        "concept": "Three-pane layout",
+        "air_pattern": "sidebar(folders)+main(row(list-div+detail-div))",
+        "status": "workaround",
+        "limitation": "No native 3-column",
+        "fallback": "Simulate with sidebar + row of two flex children"
+      },
+      {
+        "concept": "Folder nav with counts",
+        "air_pattern": "sidebar(list>folders>*f(btn:ghost>#f.name+badge:#f.count))",
+        "status": "native"
+      },
+      {
+        "concept": "Thread list (middle)",
+        "air_pattern": "list>threads|folder>*thread(card(...))",
+        "status": "native"
+      },
+      {
+        "concept": "Message detail (right)",
+        "air_pattern": "?activeThread>card(h2>#msg.subject+p>#msg.body)",
+        "status": "native"
+      },
+      {
+        "concept": "Reply form",
+        "air_pattern": "form(input:text>#reply+btn:primary>\"Reply\")",
+        "status": "native"
+      },
+      {
+        "concept": "Read/unread indicator",
+        "air_pattern": "badge:#thread.read",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": true,
+    "why_different": "Only three-pane layout. Three distinct vertical panels visible simultaneously."
+  },
+  {
+    "template_id": "scheduler",
+    "template_name": "Scheduler",
+    "app_type": "Calendar / appointment booking",
+    "canonical": {
+      "nav_family": "date-controls",
+      "surface_family": "date-grid",
+      "flow_family": "calendar-drill",
+      "interaction_family": "step-submit",
+      "mobile_family": "simplify-view"
+    },
+    "layout_signature": "nav:date-controls|surface:date-grid|flow:calendar-drill|interact:step-submit|mobile:simplify-view",
+    "core_pages": ["Login", "Calendar", "Event Detail", "New Event", "My Events"],
+    "key_interactions": [
+      "Click date → create event",
+      "Event badges on grid",
+      "Day/week/month toggle"
+    ],
+    "air_risk_level": "high",
+    "capability_translation": [
+      {
+        "concept": "7-column calendar grid",
+        "air_pattern": "table with 7 headers (Mon-Sun)",
+        "status": "workaround",
+        "limitation": "grid:7 not supported",
+        "fallback": "Use table element with 7 columns"
+      },
+      {
+        "concept": "Month navigation",
+        "air_pattern": "row(btn:ghost>\"←\"+h2>\"February 2026\"+btn:ghost>\"→\")",
+        "status": "native"
+      },
+      {
+        "concept": "Day/Week/Month toggle",
+        "air_pattern": "tabs>viewMode.set(day,week,month)",
+        "status": "native"
+      },
+      {
+        "concept": "Event badges on cells",
+        "air_pattern": "badge inside table cells",
+        "status": "native"
+      },
+      {
+        "concept": "Date input",
+        "air_pattern": "input:date",
+        "status": "native"
+      },
+      {
+        "concept": "Event sidebar",
+        "air_pattern": "sidebar or conditional ?selectedDate>card(...)",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": true,
+    "why_different": "Date-based table layout. Content is temporal, not entity-oriented."
+  },
+  {
+    "template_id": "gantt",
+    "template_name": "Gantt Planner",
+    "app_type": "Project timeline tracker",
+    "canonical": {
+      "nav_family": "top-tabs",
+      "surface_family": "progress-rows",
+      "flow_family": "split-view",
+      "interaction_family": "move-organize",
+      "mobile_family": "simplify-view"
+    },
+    "layout_signature": "nav:top-tabs|surface:progress-rows|flow:split-view|interact:move-organize|mobile:simplify-view",
+    "core_pages": ["Login", "Timeline", "Tasks", "Milestones", "Team"],
+    "key_interactions": [
+      "Progress update per task",
+      "Milestone markers",
+      "Task reorder",
+      "Expand/collapse"
+    ],
+    "air_risk_level": "medium",
+    "capability_translation": [
+      {
+        "concept": "Timeline bars",
+        "air_pattern": "row(text>#task.name+progress:bar(value:#task.pct))",
+        "status": "native"
+      },
+      {
+        "concept": "Split task/timeline",
+        "air_pattern": "sidebar(list>tasks)+main(list>*task(row(...)))",
+        "status": "native"
+      },
+      {
+        "concept": "Milestones",
+        "air_pattern": "badge>#milestone.date",
+        "status": "native"
+      },
+      {
+        "concept": "Dependency arrows",
+        "air_pattern": "—",
+        "status": "unsupported",
+        "limitation": "No SVG/lines in .air",
+        "fallback": "Document as limitation"
+      },
+      {
+        "concept": "Expand/collapse groups",
+        "air_pattern": "details(summary>#group.name+list>tasks)",
+        "status": "workaround",
+        "limitation": "Not a tree — inline expand",
+        "fallback": "Use details/summary for flat expand/collapse per group"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Progress bars as primary content in horizontal rows. Split layout (list | bars) is unique."
+  },
+  {
+    "template_id": "analytics",
+    "template_name": "Analytics Studio",
+    "app_type": "Data visualization / reporting",
+    "canonical": {
+      "nav_family": "toolbar",
+      "surface_family": "chart-grid",
+      "flow_family": "filter-driven",
+      "interaction_family": "filter-drill",
+      "mobile_family": "stack-vertical"
+    },
+    "layout_signature": "nav:toolbar|surface:chart-grid|flow:filter-driven|interact:filter-drill|mobile:stack-vertical",
+    "core_pages": ["Login", "Dashboard", "Reports", "Funnels", "Export", "Settings"],
+    "key_interactions": [
+      "Date range filter",
+      "Report tab switch",
+      "Chart type toggle",
+      "Export action"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "2x2 chart grid",
+        "air_pattern": "grid:2(chart:line, chart:bar, chart:bar, chart:line)",
+        "status": "native"
+      },
+      {
+        "concept": "Date range selector",
+        "air_pattern": "select>#dateRange or row(input:date+input:date)",
+        "status": "native"
+      },
+      {
+        "concept": "Report tabs",
+        "air_pattern": "tabs>reportType.set(traffic,revenue,users)",
+        "status": "native"
+      },
+      {
+        "concept": "Summary stats row",
+        "air_pattern": "row(stat:\"Total\",stat:\"Avg\",stat:\"Peak\")",
+        "status": "native"
+      },
+      {
+        "concept": "Export button",
+        "air_pattern": "btn:ghost>\"Export\">!exportReport",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Chart-dominant layout. chart:line/chart:bar in a 2x2 grid is the primary surface. Filter toolbar above, not in sidebar."
+  },
+  {
+    "template_id": "noc",
+    "template_name": "Monitoring NOC",
+    "app_type": "Network operations / status wall",
+    "canonical": {
+      "nav_family": "none",
+      "surface_family": "tile-wall",
+      "flow_family": "single-screen",
+      "interaction_family": "monitor-ack",
+      "mobile_family": "stack-vertical"
+    },
+    "layout_signature": "nav:none|surface:tile-wall|flow:single-screen|interact:monitor-ack|mobile:stack-vertical",
+    "core_pages": ["Login", "Status Wall"],
+    "key_interactions": [
+      "Tile status color (healthy/degraded/down)",
+      "Click tile → expand",
+      "Alert feed"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Status tiles",
+        "air_pattern": "grid:3>servers>*s(card(h2>#s.name+badge:#s.status+stat:\"CPU\">#s.cpu))",
+        "status": "native"
+      },
+      {
+        "concept": "Color-coded status",
+        "air_pattern": "badge:#server.status (healthy/degraded/down)",
+        "status": "native"
+      },
+      {
+        "concept": "Tile expand",
+        "air_pattern": "details(summary>#s.name+card(...))",
+        "status": "workaround",
+        "limitation": "No native modal/popover for tile expand",
+        "fallback": "Use details/summary for inline tile expansion"
+      },
+      {
+        "concept": "Alert feed",
+        "air_pattern": "list>alerts>*a(row(badge:#a.severity+text>#a.message))",
+        "status": "native"
+      },
+      {
+        "concept": "Fullscreen layout",
+        "air_pattern": "Single @page:wall with no sidebar/nav",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "No navigation. Fullscreen status wall. Two pages total (login + wall)."
+  },
+  {
+    "template_id": "doc-editor",
+    "template_name": "Document Editor",
+    "app_type": "Notes / wiki / content editor",
+    "canonical": {
+      "nav_family": "toolbar",
+      "surface_family": "content-canvas",
+      "flow_family": "select-edit",
+      "interaction_family": "toolbar-edit",
+      "mobile_family": "collapse-nav"
+    },
+    "layout_signature": "nav:toolbar|surface:content-canvas|flow:select-edit|interact:toolbar-edit|mobile:collapse-nav",
+    "core_pages": ["Login", "Editor", "Documents", "Preview"],
+    "key_interactions": [
+      "Document select",
+      "Toolbar format buttons",
+      "Code/pre blocks",
+      "Save/preview"
+    ],
+    "air_risk_level": "medium",
+    "capability_translation": [
+      {
+        "concept": "Format toolbar",
+        "air_pattern": "row(btn:ghost>\"B\"+btn:ghost>\"I\"+btn:ghost>\"H1\"+btn:ghost>\"Code\"+btn:primary>\"Save\")",
+        "status": "native"
+      },
+      {
+        "concept": "Content canvas",
+        "air_pattern": "h1, h2, p, code, pre blocks",
+        "status": "native"
+      },
+      {
+        "concept": "Rich text editing",
+        "air_pattern": "—",
+        "status": "unsupported",
+        "limitation": "No contenteditable in .air",
+        "fallback": "Display content + input forms for editing"
+      },
+      {
+        "concept": "Document sidebar",
+        "air_pattern": "sidebar(list>docs>*d(btn:ghost>#d.title))",
+        "status": "native"
+      },
+      {
+        "concept": "Preview toggle",
+        "air_pattern": "?previewMode>div(content) conditional render",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Toolbar-driven interaction. Row of action buttons at top controlling main content. Text-heavy, not data-heavy."
+  },
+  {
+    "template_id": "marketplace",
+    "template_name": "Marketplace Search",
+    "app_type": "Search-first discovery platform",
+    "canonical": {
+      "nav_family": "search-bar",
+      "surface_family": "card-grid",
+      "flow_family": "search-browse",
+      "interaction_family": "filter-drill",
+      "mobile_family": "collapse-nav"
+    },
+    "layout_signature": "nav:search-bar|surface:card-grid|flow:search-browse|interact:filter-drill|mobile:collapse-nav",
+    "core_pages": ["Explore", "Detail", "Saved", "Categories"],
+    "key_interactions": [
+      "Search live-filters",
+      "Category tag chips",
+      "Sort",
+      "Pagination"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Hero search bar",
+        "air_pattern": "input:search>#search (prominent, above grid)",
+        "status": "native"
+      },
+      {
+        "concept": "Faceted filters",
+        "air_pattern": "sidebar(tabs>category.set(...)+select>#priceRange)",
+        "status": "native"
+      },
+      {
+        "concept": "Card grid + pagination",
+        "air_pattern": "grid:3>items|search>*item(card(...))+pagination",
+        "status": "native"
+      },
+      {
+        "concept": "Tag chips",
+        "air_pattern": "badge:#item.category",
+        "status": "native"
+      },
+      {
+        "concept": "Sort dropdown",
+        "air_pattern": "select>#sortBy",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Search-first interface. Search input is the hero element. No dashboard, no admin — pure consumer discovery."
+  },
+  {
+    "template_id": "wizard",
+    "template_name": "Onboarding Wizard",
+    "app_type": "Multi-step registration / setup flow",
+    "canonical": {
+      "nav_family": "step-indicator",
+      "surface_family": "centered-form",
+      "flow_family": "sequential",
+      "interaction_family": "step-submit",
+      "mobile_family": "native-mobile"
+    },
+    "layout_signature": "nav:step-indicator|surface:centered-form|flow:sequential|interact:step-submit|mobile:native-mobile",
+    "core_pages": ["Step 1: Account", "Step 2: Profile", "Step 3: Preferences", "Step 4: Review", "Confirmation"],
+    "key_interactions": [
+      "Back/Next navigation",
+      "Per-step validation",
+      "Progress bar",
+      "Review-before-submit"
+    ],
+    "air_risk_level": "medium",
+    "capability_translation": [
+      {
+        "concept": "Step progress indicator",
+        "air_pattern": "progress:bar(value:#currentStep,max:4)",
+        "status": "native"
+      },
+      {
+        "concept": "Step number badges",
+        "air_pattern": "row(badge:\"1\"+divider+badge:\"2\"+divider+badge:\"3\"+badge:\"4\")",
+        "status": "workaround",
+        "limitation": "No native stepper element",
+        "fallback": "Row of badge elements with dividers to simulate step indicator"
+      },
+      {
+        "concept": "Conditional step content",
+        "air_pattern": "?currentStep==1>@section:step1(form(...))",
+        "status": "native"
+      },
+      {
+        "concept": "Back/Next buttons",
+        "air_pattern": "row(btn:ghost>\"← Back\">!prevStep+btn:primary>\"Next →\">!nextStep)",
+        "status": "native"
+      },
+      {
+        "concept": "Review summary",
+        "air_pattern": "?currentStep==4>card(h2>\"Review\"+text>#profile.name+...)",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Sequential stepped flow. Linear progression. No table, no grid, no sidebar."
+  },
+  {
+    "template_id": "pos",
+    "template_name": "POS Terminal",
+    "app_type": "Point-of-sale checkout",
+    "canonical": {
+      "nav_family": "none",
+      "surface_family": "split-panels",
+      "flow_family": "single-screen",
+      "interaction_family": "transact-checkout",
+      "mobile_family": "simplify-view"
+    },
+    "layout_signature": "nav:none|surface:split-panels|flow:single-screen|interact:transact-checkout|mobile:simplify-view",
+    "core_pages": ["Login", "Terminal", "History"],
+    "key_interactions": [
+      "Tap product → add to receipt",
+      "Quantity adjust",
+      "Total auto-calc",
+      "Checkout"
+    ],
+    "air_risk_level": "medium",
+    "capability_translation": [
+      {
+        "concept": "60/40 split screen",
+        "air_pattern": "main(grid:3>products)+sidebar(receipt)",
+        "status": "workaround",
+        "limitation": "No native ratio split",
+        "fallback": "Use sidebar (fixed 40%) for receipt, main for products"
+      },
+      {
+        "concept": "Product grid",
+        "air_pattern": "grid:3>products|category>*p(card(h3>#p.name+text:amount>#p.price+btn:primary>\"Add\"))",
+        "status": "native"
+      },
+      {
+        "concept": "Category tabs",
+        "air_pattern": "tabs>category.set(food,drink,other)",
+        "status": "native"
+      },
+      {
+        "concept": "Live receipt list",
+        "air_pattern": "list>cart>*item(row(text>#item.name+text:amount>#item.price+btn:icon:!del))",
+        "status": "native"
+      },
+      {
+        "concept": "Running total",
+        "air_pattern": "stat:\"Total\">#cartTotal",
+        "status": "native"
+      },
+      {
+        "concept": "Checkout action",
+        "air_pattern": "btn:primary>\"Checkout\">!checkout",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": true,
+    "why_different": "Persistent split screen with live receipt. 60/40 split where right panel continuously updates. No page navigation."
+  },
+  {
+    "template_id": "feed",
+    "template_name": "Community Feed",
+    "app_type": "Social feed / discussion forum",
+    "canonical": {
+      "nav_family": "bottom-tabs",
+      "surface_family": "card-feed",
+      "flow_family": "tab-switch",
+      "interaction_family": "compose-react",
+      "mobile_family": "native-mobile"
+    },
+    "layout_signature": "nav:bottom-tabs|surface:card-feed|flow:tab-switch|interact:compose-react|mobile:native-mobile",
+    "core_pages": ["Feed", "Trending", "Profile", "Notifications", "Compose", "Thread"],
+    "key_interactions": [
+      "Post compose",
+      "Like/react buttons",
+      "Comment thread",
+      "Follow",
+      "Notification badge"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Bottom tab bar",
+        "air_pattern": "footer(nav(btn:ghost>\"Feed\"+btn:ghost>\"Trending\"+btn:ghost>\"Profile\"+btn:ghost>\"Notifs\"))",
+        "status": "native"
+      },
+      {
+        "concept": "Vertical card feed",
+        "air_pattern": "list>posts>*post(card(text>#post.author+p>#post.content+row(btn:ghost>\"♡\"+badge:#post.likes)))",
+        "status": "native"
+      },
+      {
+        "concept": "Compose box",
+        "air_pattern": "form(input:text>#newPost+btn:primary>\"Post\">!createPost)",
+        "status": "native"
+      },
+      {
+        "concept": "Like/react",
+        "air_pattern": "btn:ghost>\"♡ \"+#post.likes>!like(#post.id)",
+        "status": "native"
+      },
+      {
+        "concept": "Notification badge",
+        "air_pattern": "badge:#notifications.length",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Bottom tab navigation + vertical card feed. Mobile-first layout with infinite-scroll-style content."
+  },
+  {
+    "template_id": "ai-chat",
+    "template_name": "AI Workspace",
+    "app_type": "Chat interface with context panel",
+    "canonical": {
+      "nav_family": "sidebar",
+      "surface_family": "list-pane",
+      "flow_family": "select-edit",
+      "interaction_family": "compose-react",
+      "mobile_family": "collapse-nav"
+    },
+    "layout_signature": "nav:sidebar|surface:list-pane|flow:select-edit|interact:compose-react|mobile:collapse-nav",
+    "core_pages": ["Login", "Chat"],
+    "key_interactions": [
+      "Send message",
+      "Switch conversations",
+      "New chat",
+      "Role indicators (user/assistant)"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Conversation sidebar",
+        "air_pattern": "sidebar(list>conversations>*c(btn:ghost>#c.title))",
+        "status": "native"
+      },
+      {
+        "concept": "Message stream",
+        "air_pattern": "list>messages>*msg(row(badge:#msg.role+p>#msg.content))",
+        "status": "native"
+      },
+      {
+        "concept": "Pinned input footer",
+        "air_pattern": "footer(row(input:text>#newMessage+btn:primary>\"Send\">!send))",
+        "status": "native"
+      },
+      {
+        "concept": "Role indicators",
+        "air_pattern": "badge:#msg.role (user/assistant)",
+        "status": "native"
+      },
+      {
+        "concept": "New chat button",
+        "air_pattern": "btn:primary>\"+ New Chat\">!newChat",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Chat stream with pinned footer input. Messages with role badges. Different from Inbox (three-pane) and Feed (compose at top)."
+  },
+  {
+    "template_id": "storefront",
+    "template_name": "Ecommerce Storefront",
+    "app_type": "Public-facing online store",
+    "canonical": {
+      "nav_family": "top-bar",
+      "surface_family": "card-grid",
+      "flow_family": "browse-checkout",
+      "interaction_family": "navigate-consume",
+      "mobile_family": "collapse-nav"
+    },
+    "layout_signature": "nav:top-bar|surface:card-grid|flow:browse-checkout|interact:navigate-consume|mobile:collapse-nav",
+    "core_pages": ["Shop", "Cart", "Checkout", "Orders", "Product Detail"],
+    "key_interactions": [
+      "Browse without login",
+      "Add to cart (localStorage)",
+      "Category tabs",
+      "Cart badge"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Top category nav",
+        "air_pattern": "header(nav(btn:ghost>\"All\"+btn:ghost>\"Electronics\"+...)+badge:#cart.length)",
+        "status": "native"
+      },
+      {
+        "concept": "Hero banner",
+        "air_pattern": "@section:hero(h1>\"Summer Sale\"+btn:primary>\"Shop Now\")",
+        "status": "native"
+      },
+      {
+        "concept": "Product grid",
+        "air_pattern": "grid:3>products|category>*p(card(h2>#p.name+text:amount>#p.price+btn:primary>\"Add to Cart\"))",
+        "status": "native"
+      },
+      {
+        "concept": "Cart (localStorage)",
+        "air_pattern": "@persist:localStorage(cart)",
+        "status": "native"
+      },
+      {
+        "concept": "Public routes",
+        "air_pattern": "@nav(/shop>shop, /cart>?user>cart:login)",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Public-first with top category nav. Most pages require no auth. Category-based nav, not page-based."
+  },
+  {
+    "template_id": "patient-chart",
+    "template_name": "Patient Chart",
+    "app_type": "Medical record viewer / editor",
+    "canonical": {
+      "nav_family": "top-tabs",
+      "surface_family": "tab-panels",
+      "flow_family": "tab-switch",
+      "interaction_family": "switch-edit",
+      "mobile_family": "scroll-horizontal"
+    },
+    "layout_signature": "nav:top-tabs|surface:tab-panels|flow:tab-switch|interact:switch-edit|mobile:scroll-horizontal",
+    "core_pages": ["Login", "Patient Search", "Chart (Vitals, History, Medications, Notes, Labs)"],
+    "key_interactions": [
+      "Tab switch replaces entire content",
+      "Inline readings",
+      "Alert badges",
+      "Add note"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Patient header bar",
+        "air_pattern": "header(h2>#patient.name+text:\"muted\">#patient.dob+badge:#patient.id)",
+        "status": "native"
+      },
+      {
+        "concept": "Tab panel switching",
+        "air_pattern": "tabs>activeTab.set(vitals,history,medications,notes)",
+        "status": "native"
+      },
+      {
+        "concept": "Vitals panel",
+        "air_pattern": "?activeTab==vitals>grid:4(stat:\"BP\",stat:\"HR\",stat:\"Temp\",stat:\"O2\")",
+        "status": "native"
+      },
+      {
+        "concept": "History table",
+        "air_pattern": "?activeTab==history>table>history>*h(...)",
+        "status": "native"
+      },
+      {
+        "concept": "Medication list",
+        "air_pattern": "?activeTab==medications>list>meds>*m(card(...))",
+        "status": "native"
+      },
+      {
+        "concept": "Add note form",
+        "air_pattern": "?activeTab==notes>form(input:text>#note+btn:primary>\"Add Note\")",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Tab panels without sidebar. Horizontal tabs switch ENTIRE main content area. Fixed patient header persists."
+  },
+  {
+    "template_id": "learning",
+    "template_name": "Learning Platform",
+    "app_type": "Course / lesson viewer",
+    "canonical": {
+      "nav_family": "sidebar",
+      "surface_family": "content-canvas",
+      "flow_family": "sequential",
+      "interaction_family": "step-submit",
+      "mobile_family": "collapse-nav"
+    },
+    "layout_signature": "nav:sidebar|surface:content-canvas|flow:sequential|interact:step-submit|mobile:collapse-nav",
+    "core_pages": ["Login", "Course List", "Lesson", "Quiz", "Certificate"],
+    "key_interactions": [
+      "Mark lesson complete",
+      "Progress bar advances",
+      "Quiz submit",
+      "Next lesson"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Lesson outline sidebar",
+        "air_pattern": "sidebar(list>lessons>*l(row(check:#l.done+text>#l.title)))",
+        "status": "native"
+      },
+      {
+        "concept": "Course progress bar",
+        "air_pattern": "progress:bar(value:#completedCount,max:#totalLessons)",
+        "status": "native"
+      },
+      {
+        "concept": "Lesson content",
+        "air_pattern": "h1>#lesson.title+h2+p+code+pre (text blocks)",
+        "status": "native"
+      },
+      {
+        "concept": "Quiz form",
+        "air_pattern": "form(p>#q.text+input:text>#answer+btn:primary>\"Submit\")",
+        "status": "native"
+      },
+      {
+        "concept": "Mark complete",
+        "air_pattern": "btn:primary>\"Mark Complete\">!complete(#lesson.id)",
+        "status": "native"
+      },
+      {
+        "concept": "Next lesson",
+        "air_pattern": "btn:primary>\"Next →\">!nextLesson",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Sequential sidebar. Sidebar is an ordered, progressable list. Progress bar tracks completion."
+  },
+  {
+    "template_id": "ledger",
+    "template_name": "Finance Ledger",
+    "app_type": "Double-entry bookkeeping / transactions",
+    "canonical": {
+      "nav_family": "top-bar",
+      "surface_family": "data-table",
+      "flow_family": "filter-driven",
+      "interaction_family": "crud-forms",
+      "mobile_family": "scroll-horizontal"
+    },
+    "layout_signature": "nav:top-bar|surface:data-table|flow:filter-driven|interact:crud-forms|mobile:scroll-horizontal",
+    "core_pages": ["Login", "Ledger", "Accounts", "Reconcile", "Reports"],
+    "key_interactions": [
+      "Inline transaction entry",
+      "Filter by account/date",
+      "Running balance",
+      "Reconciliation"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Full-width ledger table",
+        "air_pattern": "table>transactions|account|date>*t(text>#t.date+text>#t.desc+text:amount>#t.debit+text:amount>#t.credit+text:amount>#t.balance)",
+        "status": "native"
+      },
+      {
+        "concept": "Account filter tabs",
+        "air_pattern": "tabs>accountFilter.set(all,assets,liabilities,revenue,expenses)",
+        "status": "native"
+      },
+      {
+        "concept": "Date range selector",
+        "air_pattern": "row(input:date>#startDate+input:date>#endDate)",
+        "status": "native"
+      },
+      {
+        "concept": "Summary footer row",
+        "air_pattern": "footer(row(stat:\"Total Debits\">#totalDebits+stat:\"Total Credits\">#totalCredits+stat:\"Balance\">#balance))",
+        "status": "native"
+      },
+      {
+        "concept": "Inline entry form",
+        "air_pattern": "form(row(input:text+input:number+input:number+btn:primary>\"Add\"))",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Table-dominant with summary footer. Full-width table IS the entire interface. No cards, no grid, no charts."
+  },
+  {
+    "template_id": "portal",
+    "template_name": "Customer Portal",
+    "app_type": "Self-service support / knowledge base",
+    "canonical": {
+      "nav_family": "top-bar",
+      "surface_family": "mixed-sections",
+      "flow_family": "section-browse",
+      "interaction_family": "navigate-consume",
+      "mobile_family": "stack-vertical"
+    },
+    "layout_signature": "nav:top-bar|surface:mixed-sections|flow:section-browse|interact:navigate-consume|mobile:stack-vertical",
+    "core_pages": ["Home", "Support", "Knowledge Base", "FAQ", "Account", "Submit Ticket"],
+    "key_interactions": [
+      "FAQ expand/collapse (details/summary)",
+      "Submit ticket form",
+      "Search"
+    ],
+    "air_risk_level": "low",
+    "capability_translation": [
+      {
+        "concept": "Top horizontal nav",
+        "air_pattern": "header(nav(btn:ghost>\"Home\"+btn:ghost>\"Support\"+btn:ghost>\"Docs\"+btn:ghost>\"Account\"))",
+        "status": "native"
+      },
+      {
+        "concept": "Hero banner",
+        "air_pattern": "@section:hero(h1>\"Welcome to Support\"+input:search>#search)",
+        "status": "native"
+      },
+      {
+        "concept": "Feature card grid",
+        "air_pattern": "grid:3(card(icon+h3+\"Quick Start\"), card(icon+h3+\"API Docs\"), card(icon+h3+\"FAQ\"))",
+        "status": "native"
+      },
+      {
+        "concept": "FAQ accordion",
+        "air_pattern": "details(summary>\"How do I reset my password?\"+p>\"Answer text...\")",
+        "status": "native"
+      },
+      {
+        "concept": "Support ticket form",
+        "air_pattern": "form(input:text>#subject+input:text>#description+btn:primary>\"Submit Ticket\")",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": false,
+    "why_different": "Mixed content sections with FAQ accordion. Hero + card grid + collapsible FAQ + form. End-user facing, not admin."
+  },
+  {
+    "template_id": "warehouse",
+    "template_name": "Warehouse Mobile",
+    "app_type": "Mobile-first warehouse / inventory scanner",
+    "canonical": {
+      "nav_family": "bottom-tabs",
+      "surface_family": "action-primary",
+      "flow_family": "action-confirm",
+      "interaction_family": "scan-confirm",
+      "mobile_family": "native-mobile"
+    },
+    "layout_signature": "nav:bottom-tabs|surface:action-primary|flow:action-confirm|interact:scan-confirm|mobile:native-mobile",
+    "core_pages": ["Scan", "Pick Orders", "Inventory Search", "Profile"],
+    "key_interactions": [
+      "Large scan button",
+      "Quick-confirm",
+      "Search inventory",
+      "Badge counts"
+    ],
+    "air_risk_level": "medium",
+    "capability_translation": [
+      {
+        "concept": "Bottom tab bar",
+        "air_pattern": "footer(nav(btn:ghost>\"Scan\"+btn:ghost>\"Pick\"+btn:ghost>\"Inventory\"+btn:ghost>\"Profile\"))",
+        "status": "native"
+      },
+      {
+        "concept": "Large scan button",
+        "air_pattern": "btn:primary>\"SCAN BARCODE\" (centered in main)",
+        "status": "workaround",
+        "limitation": "No native oversized targets",
+        "fallback": "Use btn:primary with centered layout — Tailwind handles padding"
+      },
+      {
+        "concept": "Recent scan cards",
+        "air_pattern": "list>scans>*s(card(row(text>#s.sku+text>#s.name+badge:#s.bin)))",
+        "status": "native"
+      },
+      {
+        "concept": "Quick confirm",
+        "air_pattern": "alert:success>\"Scanned!\"+btn:primary>\"Confirm\">!confirmScan",
+        "status": "native"
+      },
+      {
+        "concept": "Inventory search",
+        "air_pattern": "input:search>#search + list>items|search>*item(...)",
+        "status": "native"
+      }
+    ],
+    "required_states": ["empty", "loading", "error", "success"],
+    "phase3_priority": true,
+    "why_different": "Mobile-first with oversized targets. Large centered action button, bottom tabs, single-column. Opposite of desktop-first templates."
+  }
+]
