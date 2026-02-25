@@ -9,7 +9,7 @@
       "index.html": "de8f38d2651b5420",
       "src/main.jsx": "d2a5622fca5cfbd3",
       "src/index.css": "80423bf8513e23d2",
-      "src/App.jsx": "6335b9fed9bc70ed"
+      "src/App.jsx": "dab13c533aaf5d22"
     }
   },
   "expense-tracker": {
@@ -103,7 +103,7 @@
       "client/index.html": "09af4aaa46cb6fbc",
       "client/src/main.jsx": "c9e4f45f08db9432",
       "client/src/index.css": "80423bf8513e23d2",
-      "client/src/App.jsx": "5404a0e3c0599b69",
+      "client/src/App.jsx": "c2a4296349280579",
       "client/src/api.js": "8702d9b891d7b30e",
       "client/src/types.ts": "168ea41abdea173d",
       "client/src/components/EmptyState.jsx": "2ecd1120175fe3a0",

@@ -683,16 +683,30 @@ describe('mutation wiring (fullstack)', () => {
     expect(app).toContain('api.deleteTodo(id)');
   });
 
-  it('fullstack-todo mutations refetch with api.getTodos', () => {
+  it('fullstack-todo mutations refetch with api.getTodos and unwrap .data', () => {
     const app = getClientApp('fullstack-todo');
     expect(app).toContain('api.getTodos()');
-    expect(app).toContain('setItems(updated)');
+    expect(app).toContain('setItems(updated.data ?? updated)');
+    // Must NOT use the old broken pattern that sets paginated envelope as state
+    expect(app).not.toMatch(/setItems\(updated\)[\s;]/);
   });
 
   it('fullstack-todo add mutation is async with try/catch', () => {
     const app = getClientApp('fullstack-todo');
     expect(app).toContain('const add = async (data)');
     expect(app).toContain("console.error('add failed:'");
+  });
+
+  it('all refetch setters unwrap paginated response with .data ??', () => {
+    // Regression: API returns {data: [], meta: {...}} — setter must unwrap
+    const app = getClientApp('fullstack-todo');
+    // Every setItems(updated...) call must use .data ?? pattern
+    const refetchLines = app.split('\n').filter((l: string) => l.includes('(updated'));
+    for (const line of refetchLines) {
+      if (line.includes('setItems(updated')) {
+        expect(line).toContain('.data ?? updated');
+      }
+    }
   });
 
   it('frontend-only todo has no api calls in mutations', () => {

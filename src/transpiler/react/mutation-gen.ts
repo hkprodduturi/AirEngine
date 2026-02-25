@@ -277,7 +277,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`    await api.${match.fnName}(data);`);
         if (match.refetchFnName && match.refetchSetter) {
           lines.push(`    const updated = await api.${match.refetchFnName}();`);
-          lines.push(`    ${match.refetchSetter}(updated);`);
+          lines.push(`    ${match.refetchSetter}(updated.data ?? updated);`);
         }
         lines.push(`  } catch (err) {`);
         lines.push(`    console.error('${name} failed:', err);`);
@@ -315,7 +315,9 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
             const getRoute = expandedRoutes.find(r => r.method === 'GET' && r.path === basePath);
             if (getRoute) {
               const getFn = routeToFunctionName('GET', getRoute.path);
-              lines.push(`      ${setter(plural)}(await api.${getFn}());`);
+              const _refetchVar = `_updated${capitalize(plural)}`;
+              lines.push(`      const ${_refetchVar} = await api.${getFn}();`);
+              lines.push(`      ${setter(plural)}(${_refetchVar}.data ?? ${_refetchVar});`);
             }
             first = false;
           }
@@ -331,7 +333,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`    await api.${match.fnName}(id);`);
         if (match.refetchFnName && match.refetchSetter) {
           lines.push(`    const updated = await api.${match.refetchFnName}();`);
-          lines.push(`    ${match.refetchSetter}(updated);`);
+          lines.push(`    ${match.refetchSetter}(updated.data ?? updated);`);
         }
         lines.push(`  } catch (err) {`);
         lines.push(`    console.error('${name} failed:', err);`);
@@ -362,7 +364,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         }
         if (match.refetchFnName && match.refetchSetter) {
           lines.push(`    const updated = await api.${match.refetchFnName}();`);
-          lines.push(`    ${match.refetchSetter}(updated);`);
+          lines.push(`    ${match.refetchSetter}(updated.data ?? updated);`);
         }
         lines.push(`  } catch (err) {`);
         lines.push(`    console.error('toggle failed:', err);`);
@@ -606,7 +608,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`    await api.${match.fnName}(id, data);`);
         if (match.refetchFnName && match.refetchSetter) {
           lines.push(`    const updated = await api.${match.refetchFnName}();`);
-          lines.push(`    ${match.refetchSetter}(updated);`);
+          lines.push(`    ${match.refetchSetter}(updated.data ?? updated);`);
         }
         lines.push(`  } catch (err) {`);
         lines.push(`    console.error('${name} failed:', err);`);
@@ -654,7 +656,7 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`    await api.${match.fnName}(id, { ${updatePayload} });`);
         if (match.refetchFnName && match.refetchSetter) {
           lines.push(`    const updated = await api.${match.refetchFnName}();`);
-          lines.push(`    ${match.refetchSetter}(updated);`);
+          lines.push(`    ${match.refetchSetter}(updated.data ?? updated);`);
         }
         lines.push(`  } catch (err) {`);
         lines.push(`    console.error('${name} failed:', err);`);
@@ -701,7 +703,8 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
                 ? 'set' + capitalize(ctx.state.find(f => f.type.kind === 'array')!.name)
                 : null);
             if (refetchSetter) {
-              lines.push(`    ${refetchSetter}(await api.${getFn}());`);
+              lines.push(`    const _refetched = await api.${getFn}();`);
+              lines.push(`    ${refetchSetter}(_refetched.data ?? _refetched);`);
             }
           }
           lines.push(`    return result;`);

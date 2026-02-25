@@ -1550,10 +1550,11 @@ describe('T1.6: Cancel button recognition', () => {
 // ---- Regression: filter field inference (codegen polish) ----
 
 describe('filter field inference', () => {
-  it('todo.air filters on _item.done (bool field), NOT _item.status', () => {
+  it('todo.air filters on _item.done with bool-to-string comparison', () => {
     const jsx = getAppJsx('todo');
-    // The filter expression should reference the "done" field from @state items
-    expect(jsx).toContain('_item.done');
+    // Bool field must compare as: _item.done === (filter === 'done')
+    // NOT: _item.done === filter (bool vs string — always false)
+    expect(jsx).toContain("_item.done === (filter === 'done')");
     expect(jsx).not.toContain('_item.status');
   });
 

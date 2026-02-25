@@ -341,8 +341,8 @@ export function resolvePipeExpr(
         // Check if there's an enum filter state
         const filterField = ctx.state.find(f => f.name === 'filter' && f.type.kind === 'enum');
         if (filterField) {
-          const matchField = inferFilterField(left, 'filter', ctx);
-          return `${left}.filter(_item => filter === 'all' || _item.${matchField} === filter)`;
+          const match = inferFilterField(left, 'filter', ctx);
+          return `${left}.filter(_item => filter === 'all' || ${buildFilterExpr(match, 'filter')})`;
         }
         return `${left}`;
       }
@@ -372,13 +372,13 @@ export function resolvePipeExpr(
         // Check if the pipe name is a state variable with enum type (e.g., taskFilter)
         const stateFilter = ctx.state.find(f => f.name === fn && f.type.kind === 'enum');
         if (stateFilter) {
-          const matchField = inferFilterField(left, fn, ctx);
-          return `${left}.filter(_item => ${fn} === 'all' || _item.${matchField} === ${fn})`;
+          const match = inferFilterField(left, fn, ctx);
+          return `${left}.filter(_item => ${fn} === 'all' || ${buildFilterExpr(match, fn)})`;
         }
         // Literal filter value (e.g., tasks|todo → filter by status === 'todo')
         if (ctx.db) {
-          const matchField = inferFilterField(left, fn, ctx) || 'status';
-          return `${left}.filter(_item => _item.${matchField} === '${fn}')`;
+          const match = inferFilterField(left, fn, ctx);
+          return `${left}.filter(_item => _item.${match.field || 'status'} === '${fn}')`;
         }
         return `${left} /* |${fn} */`;
       }
@@ -422,16 +422,21 @@ export function resolvePipeExprSimple(node: AirUINode & { kind: 'binary' }, scop
   return left;
 }
 
+interface FilterFieldResult {
+  field: string;
+  isBool: boolean;
+}
+
 /**
  * Infer which model field to filter on, given a source array name and filter state variable.
  * Checks @db model enum fields, then @state array item fields, for overlap with filter enum values.
  */
-function inferFilterField(source: string, filterName: string, ctx: TranspileContext): string {
+function inferFilterField(source: string, filterName: string, ctx: TranspileContext): FilterFieldResult {
   const filterState = ctx.state.find(f => f.name === filterName);
   if (!filterState || filterState.type.kind !== 'enum') {
     // Extract field hint from filter name: "categoryFilter" → "category", "priorityFilter" → "priority"
     const hintMatch = filterName.match(/^(.+?)Filter$/i);
-    return hintMatch ? hintMatch[1] : 'status';
+    return { field: hintMatch ? hintMatch[1] : 'status', isBool: false };
   }
   const filterValues = (filterState.type as { kind: 'enum'; values: string[] }).values.filter(v => v !== 'all');
 
@@ -447,7 +452,7 @@ function inferFilterField(source: string, filterName: string, ctx: TranspileCont
         const baseType = f.type.kind === 'optional' ? (f.type as { of: { kind: string; values?: string[] } }).of : f.type;
         if (baseType.kind === 'enum' && (baseType as { values: string[] }).values) {
           const overlap = (baseType as { values: string[] }).values.filter(v => filterValues.includes(v));
-          if (overlap.length > 0) return f.name;
+          if (overlap.length > 0) return { field: f.name, isBool: false };
         }
       }
     }
@@ -463,13 +468,13 @@ function inferFilterField(source: string, filterName: string, ctx: TranspileCont
       for (const f of itemType.fields) {
         if (f.type.kind === 'enum' && (f.type as { values: string[] }).values) {
           const overlap = (f.type as { values: string[] }).values.filter(v => filterValues.includes(v));
-          if (overlap.length > 0) return f.name;
+          if (overlap.length > 0) return { field: f.name, isBool: false };
         }
       }
       // Check bool fields: if a filter value matches a bool field name (e.g., filter "done" + field "done:bool")
       for (const f of itemType.fields) {
         if (f.type.kind === 'bool' && filterValues.includes(f.name)) {
-          return f.name;
+          return { field: f.name, isBool: true };
         }
       }
     }
@@ -477,7 +482,19 @@ function inferFilterField(source: string, filterName: string, ctx: TranspileCont
 
   // Extract field hint from filter name: "categoryFilter" → "category", "priorityFilter" → "priority"
   const hintMatch = filterName.match(/^(.+?)Filter$/i);
-  return hintMatch ? hintMatch[1] : 'status';
+  return { field: hintMatch ? hintMatch[1] : 'status', isBool: false };
+}
+
+/**
+ * Build the filter comparison expression for a given field.
+ * Boolean fields: `_item.done === (filter === 'done')` — maps string enum to bool.
+ * Enum/string fields: `_item.category === filter` — direct string comparison.
+ */
+function buildFilterExpr(fieldResult: FilterFieldResult, filterVar: string): string {
+  if (fieldResult.isBool) {
+    return `_item.${fieldResult.field} === (${filterVar} === '${fieldResult.field}')`;
+  }
+  return `_item.${fieldResult.field} === ${filterVar}`;
 }
 
 export function resolvePipeSource(node: AirUINode, ctx: TranspileContext, scope: Scope): string {
@@ -507,8 +524,11 @@ export function extractDataSource(node: AirUINode, scope: Scope, ctx?: Transpile
     if (right.kind === 'element') {
       const fn = right.element;
       if (fn === 'filter') {
-        const matchField = ctx ? inferFilterField(left, 'filter', ctx) : 'status';
-        return `${left}.filter(_item => filter === 'all' || _item.${matchField} === filter)`;
+        if (ctx) {
+          const match = inferFilterField(left, 'filter', ctx);
+          return `${left}.filter(_item => filter === 'all' || ${buildFilterExpr(match, 'filter')})`;
+        }
+        return `${left}.filter(_item => filter === 'all' || _item.status === filter)`;
       }
       if (fn === 'sort') {
         return `[...${left}].sort((a, b) => sort === 'newest' ? b.id - a.id : sort === 'oldest' ? a.id - b.id : sort === 'highest' ? b.amount - a.amount : a.amount - b.amount)`;
@@ -520,14 +540,14 @@ export function extractDataSource(node: AirUINode, scope: Scope, ctx?: Transpile
       if (ctx) {
         const stateFilter = ctx.state.find(f => f.name === fn && f.type.kind === 'enum');
         if (stateFilter) {
-          const matchField = inferFilterField(left, fn, ctx);
-          return `${left}.filter(_item => ${fn} === 'all' || _item.${matchField} === ${fn})`;
+          const match = inferFilterField(left, fn, ctx);
+          return `${left}.filter(_item => ${fn} === 'all' || ${buildFilterExpr(match, fn)})`;
         }
       }
       // Literal filter value (e.g., tasks|todo → filter by status === 'todo')
       if (ctx && ctx.db) {
-        const matchField = inferFilterField(left, fn, ctx) || 'status';
-        return `${left}.filter(_item => _item.${matchField} === '${fn}')`;
+        const match = inferFilterField(left, fn, ctx);
+        return `${left}.filter(_item => _item.${match.field || 'status'} === '${fn}')`;
       }
       return `${left}`;
     }
