@@ -20,7 +20,7 @@ import { join } from 'path';
 import { parse } from '../src/parser/index.js';
 import { diagnose } from '../src/validator/index.js';
 import { buildResult, hashSource } from '../src/diagnostics.js';
-import { runLoop } from '../src/cli/loop.js';
+import { runLoop, runLoopFromSource } from '../src/cli/loop.js';
 
 // ---- Types ----
 
@@ -110,148 +110,8 @@ function runShellStep(name: string, command: string): StepResult {
   }
 }
 
-// ---- Mini JSON Schema Validator ----
-
-/**
- * Recursive JSON Schema validator (subset: type, required, properties, enum,
- * const, pattern, minimum, additionalProperties, items, oneOf, $ref, $defs).
- * Returns an array of error strings; empty = valid.
- */
-function validateJsonSchema(
-  value: unknown,
-  schema: Record<string, unknown>,
-  rootSchema: Record<string, unknown>,
-  path: string = '$',
-): string[] {
-  const errors: string[] = [];
-
-  // Resolve $ref
-  if (schema.$ref) {
-    const refPath = (schema.$ref as string).replace('#/$defs/', '');
-    const defs = (rootSchema.$defs ?? {}) as Record<string, Record<string, unknown>>;
-    const resolved = defs[refPath];
-    if (!resolved) {
-      errors.push(`${path}: unresolvable $ref "${schema.$ref}"`);
-      return errors;
-    }
-    return validateJsonSchema(value, resolved, rootSchema, path);
-  }
-
-  // oneOf
-  if (schema.oneOf) {
-    const branches = schema.oneOf as Record<string, unknown>[];
-    const branchValid = branches.some(
-      branch => validateJsonSchema(value, branch, rootSchema, path).length === 0,
-    );
-    if (!branchValid) {
-      errors.push(`${path}: value does not match any oneOf branch`);
-    }
-    return errors;
-  }
-
-  // null check
-  if (value === null || value === undefined) {
-    if (schema.type === 'null') return errors;
-    errors.push(`${path}: expected type "${schema.type}" but got null/undefined`);
-    return errors;
-  }
-
-  // type check
-  if (schema.type) {
-    const sType = schema.type as string;
-    let typeOk = false;
-    if (sType === 'object') typeOk = typeof value === 'object' && !Array.isArray(value);
-    else if (sType === 'array') typeOk = Array.isArray(value);
-    else if (sType === 'string') typeOk = typeof value === 'string';
-    else if (sType === 'number') typeOk = typeof value === 'number';
-    else if (sType === 'integer') typeOk = typeof value === 'number' && Number.isInteger(value);
-    else if (sType === 'boolean') typeOk = typeof value === 'boolean';
-    else if (sType === 'null') typeOk = value === null;
-    if (!typeOk) {
-      errors.push(`${path}: expected type "${sType}" but got ${typeof value}${Array.isArray(value) ? '(array)' : ''}`);
-      return errors;
-    }
-  }
-
-  // const
-  if ('const' in schema) {
-    if (value !== schema.const) {
-      errors.push(`${path}: expected const ${JSON.stringify(schema.const)} but got ${JSON.stringify(value)}`);
-    }
-  }
-
-  // enum
-  if (schema.enum) {
-    if (!(schema.enum as unknown[]).includes(value)) {
-      errors.push(`${path}: value ${JSON.stringify(value)} not in enum ${JSON.stringify(schema.enum)}`);
-    }
-  }
-
-  // pattern (strings)
-  if (schema.pattern && typeof value === 'string') {
-    if (!new RegExp(schema.pattern as string).test(value)) {
-      errors.push(`${path}: "${value}" does not match pattern ${schema.pattern}`);
-    }
-  }
-
-  // minimum (numbers)
-  if (typeof schema.minimum === 'number' && typeof value === 'number') {
-    if (value < (schema.minimum as number)) {
-      errors.push(`${path}: ${value} < minimum ${schema.minimum}`);
-    }
-  }
-
-  // object: required + properties + additionalProperties
-  if (typeof value === 'object' && !Array.isArray(value) && value !== null) {
-    const obj = value as Record<string, unknown>;
-
-    if (schema.required) {
-      for (const field of schema.required as string[]) {
-        if (!(field in obj)) {
-          errors.push(`${path}: missing required field "${field}"`);
-        }
-      }
-    }
-
-    if (schema.properties) {
-      const props = schema.properties as Record<string, Record<string, unknown>>;
-      for (const [key, propSchema] of Object.entries(props)) {
-        if (key in obj) {
-          errors.push(...validateJsonSchema(obj[key], propSchema, rootSchema, `${path}.${key}`));
-        }
-      }
-    }
-
-    // additionalProperties: false — check for unexpected keys
-    if (schema.additionalProperties === false && schema.properties) {
-      const allowed = new Set(Object.keys(schema.properties as object));
-      for (const key of Object.keys(obj)) {
-        if (!allowed.has(key)) {
-          errors.push(`${path}: unexpected field "${key}" (additionalProperties=false)`);
-        }
-      }
-    }
-
-    // additionalProperties as schema (for Maps like outputHashes)
-    if (typeof schema.additionalProperties === 'object' && schema.additionalProperties !== null) {
-      const valSchema = schema.additionalProperties as Record<string, unknown>;
-      for (const [key, val] of Object.entries(obj)) {
-        if (schema.properties && key in (schema.properties as object)) continue;
-        errors.push(...validateJsonSchema(val, valSchema, rootSchema, `${path}.${key}`));
-      }
-    }
-  }
-
-  // array: items
-  if (Array.isArray(value) && schema.items) {
-    const itemSchema = schema.items as Record<string, unknown>;
-    for (let i = 0; i < value.length; i++) {
-      errors.push(...validateJsonSchema(value[i], itemSchema, rootSchema, `${path}[${i}]`));
-    }
-  }
-
-  return errors;
-}
+// Shared recursive JSON Schema validator
+import { validateJsonSchema } from '../tests/schema-validator.js';
 
 // ---- Schema sanity step ----
 
@@ -339,6 +199,67 @@ async function runSchemaSanity(): Promise<StepResult> {
     details['loop_live'] = 'failed';
   } finally {
     try { rmSync(tmpOut, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+
+  // 4. Live validation: multi-attempt loop with repair_attempts — exercises snake_case mapping
+  const tmpOutRepair = join(tmpdir(), `foundation-loop-repair-${Date.now()}`);
+  try {
+    mkdirSync(tmpOutRepair, { recursive: true });
+
+    // Repairable source (triggers E001/E002) with maxRepairAttempts=2 to produce repair_attempts
+    const repairSource = '@state{x:int}';
+    const repairResult = await runLoopFromSource(repairSource, tmpOutRepair, {
+      maxRepairAttempts: 2,
+      writeArtifacts: false,
+    });
+
+    // Build MCP-style response with snake_case repair_attempts mapping (same as server.ts)
+    const repairStage2 = repairResult.stages.find(s => s.name === 'repair');
+    const success2 = !repairResult.stages.some(s => {
+      if (s.name === 'validate' && repairStage2?.status === 'pass') return false;
+      return s.status === 'fail';
+    });
+    const repairResponse: Record<string, unknown> = {
+      schema_version: '1.0',
+      success: success2,
+      stages: repairResult.stages,
+      diagnostics: repairResult.repairResult?.afterDiagnostics ?? repairResult.diagnostics,
+      determinism: repairResult.determinismCheck,
+    };
+    if (repairResult.repairAttempts) {
+      repairResponse.repair_attempts = repairResult.repairAttempts.map(a => ({
+        attempt: a.attemptNumber,
+        errors_before: a.errorsBefore,
+        errors_after: a.errorsAfter,
+        source_hash: a.sourceHash,
+        duration_ms: a.durationMs,
+        ...(a.stopReason ? { stop_reason: a.stopReason } : {}),
+      }));
+    }
+
+    const loopSchema2 = schemas['docs/loop-result.schema.json'];
+    if (loopSchema2) {
+      const schemaErrors = validateJsonSchema(repairResponse, loopSchema2, loopSchema2);
+      if (schemaErrors.length > 0) {
+        for (const e of schemaErrors) failures.push(`LoopResult (repair_attempts): ${e}`);
+        details['loop_repair_attempts'] = { status: 'invalid', errors: schemaErrors };
+      } else {
+        details['loop_repair_attempts'] = 'validated';
+      }
+    }
+
+    // Also verify repair_attempts was actually populated
+    if (!repairResult.repairAttempts || repairResult.repairAttempts.length === 0) {
+      failures.push('LoopResult (repair_attempts): expected non-empty repair_attempts for maxRepairAttempts=2');
+      details['loop_repair_attempts_populated'] = false;
+    } else {
+      details['loop_repair_attempts_populated'] = true;
+    }
+  } catch (err: any) {
+    failures.push(`LoopResult (repair_attempts) live validation: ${err.message}`);
+    details['loop_repair_attempts'] = 'failed';
+  } finally {
+    try { rmSync(tmpOutRepair, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 
   const durationMs = Math.round(performance.now() - start);

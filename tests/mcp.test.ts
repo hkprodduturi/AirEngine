@@ -17,6 +17,7 @@ import { AirParseError, AirLexError } from '../src/parser/errors.js';
 import { wrapParseError, buildResult, hashSource } from '../src/diagnostics.js';
 import { runLoopFromSource } from '../src/cli/loop.js';
 import type { AirAST } from '../src/parser/types.js';
+import { validateJsonSchema } from './schema-validator.js';
 
 // ---- Helpers (same as MCP server) ----
 
@@ -774,5 +775,136 @@ describe('air_loop tool logic', () => {
     }
     // Last attempt should have a stop_reason
     expect(attempts[attempts.length - 1].stop_reason).toBeDefined();
+  });
+});
+
+// ---- Schema conformance (CH-2: real JSON Schema validation) ----
+
+describe('Schema conformance', () => {
+  const loopSchema = JSON.parse(readFileSync('docs/loop-result.schema.json', 'utf-8'));
+  const diagSchema = JSON.parse(readFileSync('docs/diagnostics.schema.json', 'utf-8'));
+
+  // Helper: build MCP-style response from runLoopFromSource result
+  function buildMcpResponse(result: Awaited<ReturnType<typeof runLoopFromSource>>): Record<string, unknown> {
+    const repairStage = result.stages.find(s => s.name === 'repair');
+    const success = !result.stages.some(s => {
+      if (s.name === 'validate' && repairStage?.status === 'pass') return false;
+      return s.status === 'fail';
+    });
+
+    const response: Record<string, unknown> = {
+      schema_version: '1.0',
+      success,
+      stages: result.stages,
+      diagnostics: result.repairResult?.afterDiagnostics ?? result.diagnostics,
+      determinism: result.determinismCheck,
+    };
+
+    if (result.repairAttempts) {
+      response.repair_attempts = result.repairAttempts.map(a => ({
+        attempt: a.attemptNumber,
+        errors_before: a.errorsBefore,
+        errors_after: a.errorsAfter,
+        source_hash: a.sourceHash,
+        duration_ms: a.durationMs,
+        ...(a.stopReason ? { stop_reason: a.stopReason } : {}),
+      }));
+    }
+
+    if (result.repairResult) {
+      response.repair_result = {
+        status: result.repairResult.status,
+        attempted: result.repairResult.attempted,
+        source_changed: result.repairResult.sourceChanged,
+        applied_count: result.repairResult.appliedActions.length,
+        skipped_count: result.repairResult.skippedActions.length,
+        applied_actions: result.repairResult.appliedActions.map(a => ({
+          rule: a.rule, kind: a.kind, description: a.description,
+        })),
+        skipped_actions: result.repairResult.skippedActions.map(a => ({
+          rule: a.rule, description: a.description, reason: a.reason,
+        })),
+      };
+    }
+
+    if (result.transpileResult) {
+      response.transpile_summary = {
+        file_count: result.transpileResult.files.length,
+        output_lines: result.transpileResult.stats.outputLines,
+        compression_ratio: result.transpileResult.stats.compressionRatio,
+      };
+    }
+
+    const smokeStage = result.stages.find(s => s.name === 'smoke');
+    if (smokeStage) {
+      response.smoke_summary = { status: smokeStage.status, checks: smokeStage.details };
+    }
+
+    response.output_dir = result.outputDir;
+    return response;
+  }
+
+  it('valid source response conforms to loop-result.schema.json', async () => {
+    const source = readExample('todo');
+    const result = await runLoopFromSource(source, '.eval-tmp/schema-valid', {
+      writeArtifacts: false,
+    });
+    const response = buildMcpResponse(result);
+    const errors = validateJsonSchema(response, loopSchema, loopSchema);
+    expect(errors).toEqual([]);
+  });
+
+  it('repairable source with max_repair_attempts=2 conforms to loop-result.schema.json', async () => {
+    const source = '@state{x:int}';
+    const result = await runLoopFromSource(source, '.eval-tmp/schema-repair', {
+      maxRepairAttempts: 2,
+      writeArtifacts: false,
+    });
+    const response = buildMcpResponse(result);
+    const errors = validateJsonSchema(response, loopSchema, loopSchema);
+    expect(errors).toEqual([]);
+    // Verify repair_attempts is actually present and validated
+    expect(response.repair_attempts).toBeDefined();
+    expect((response.repair_attempts as any[]).length).toBeGreaterThan(0);
+  });
+
+  it('unrepairable source response conforms to loop-result.schema.json', async () => {
+    const source = '@app:test\n@state{"unterminated';
+    const result = await runLoopFromSource(source, '.eval-tmp/schema-unrepairable', {
+      writeArtifacts: false,
+    });
+    const response = buildMcpResponse(result);
+    const errors = validateJsonSchema(response, loopSchema, loopSchema);
+    expect(errors).toEqual([]);
+  });
+
+  it('repair_mode=none response conforms to loop-result.schema.json', async () => {
+    const source = '@state{x:int}';
+    const result = await runLoopFromSource(source, '.eval-tmp/schema-norepair', {
+      repairMode: 'none',
+      writeArtifacts: false,
+    });
+    const response = buildMcpResponse(result);
+    const errors = validateJsonSchema(response, loopSchema, loopSchema);
+    expect(errors).toEqual([]);
+  });
+
+  it('DiagnosticResult conforms to diagnostics.schema.json', () => {
+    const source = readFileSync('examples/todo.air', 'utf-8');
+    const ast = parse(source);
+    const diags = diagnose(ast);
+    const result = buildResult(diags, hashSource(source));
+    const errors = validateJsonSchema(result, diagSchema, diagSchema);
+    expect(errors).toEqual([]);
+  });
+
+  it('DiagnosticResult with errors conforms to diagnostics.schema.json', () => {
+    // Parse a valid source then diagnose — triggers validation warnings/errors
+    const source = readFileSync('examples/fullstack-todo.air', 'utf-8');
+    const ast = parse(source);
+    const diags = diagnose(ast);
+    const result = buildResult(diags, hashSource(source));
+    const errors = validateJsonSchema(result, diagSchema, diagSchema);
+    expect(errors).toEqual([]);
   });
 });
