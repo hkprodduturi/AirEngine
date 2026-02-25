@@ -98,3 +98,115 @@ npm run demo-live-canonical -- --adapter replay             → PASS
 
 Detailed results: `docs/a8-prep-stability-sweep-report.md`
 Issue triage: `docs/a8-prep-issues.md`
+
+## A8-final — Live Claude Rehearsal
+
+_Status: PENDING — awaiting ANTHROPIC_API_KEY_
+
+### Pre-flight (offline, verified green)
+
+```
+npx tsc --noEmit                                           → exit 0
+npx vitest run                                             → 916 passed, 4 skipped (920 total, 18 files)
+npm run doctor                                             → PASS (21 pass, 0 fail, 1 warn)
+npm run quality-gate -- --mode offline                      → PASS (3/3)
+npm run release-rehearsal -- --mode offline                 → GO
+npm run stability-sweep                                    → 12/12 PASS
+```
+
+### Live Rehearsal Command
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+npm run release-rehearsal -- --mode full --online-limit 3 --verbose
+```
+
+Expected stages:
+1. doctor — PASS (environment ready)
+2. offline-gates — PASS (foundation + eval-local + benchmark)
+3. canonical-demo — PASS (replay path)
+4. online-eval — Claude generates 3 prompts → loop pipeline (limited to 3 for cost control)
+5. online-compare — compares against stub baseline (stub has 0 cases, so all metrics are "new")
+6. baseline-freeze — SKIP (stub baseline is schema-valid; manual freeze required)
+
+### Baseline Freeze Procedure (manual)
+
+The auto-freeze skips because the stub baseline is schema-valid. After a successful live run:
+
+```bash
+# 1. Verify online-eval report was generated
+cat artifacts/eval/online-eval-report.json | python3 -m json.tool | head -5
+
+# 2. Copy eval report to baseline, adding provenance
+node --import tsx -e "
+import { readFileSync, writeFileSync } from 'fs';
+const report = JSON.parse(readFileSync('artifacts/eval/online-eval-report.json', 'utf-8'));
+report._provenance = {
+  frozen_at: new Date().toISOString(),
+  git_commit: require('child_process').execSync('git rev-parse --short HEAD', {encoding:'utf-8'}).trim(),
+  source_report: 'artifacts/eval/online-eval-report.json',
+  notes: 'First real baseline — replaces stub. A8-final live rehearsal.'
+};
+writeFileSync('benchmarks/online-eval-baseline-alpha.json', JSON.stringify(report, null, 2));
+console.log('Baseline frozen.');
+"
+
+# 3. Verify baseline is valid
+npm run release-rehearsal -- --mode offline
+```
+
+### Live Rehearsal Results
+
+_To be filled after running with API key:_
+
+| Stage | Status | Duration | Details |
+|-------|--------|----------|---------|
+| doctor | — | — | — |
+| offline-gates | — | — | — |
+| canonical-demo | — | — | — |
+| online-eval | — | — | model: —, cases: —, north-star: — |
+| online-compare | — | — | — |
+| baseline-freeze | — | — | — |
+
+### Online Eval Metrics
+
+_To be filled:_
+
+| Metric | Value |
+|--------|-------|
+| Total cases | — |
+| Success count | — |
+| Prompt→AIR rate | — |
+| Prompt→Running App rate (north-star) | — |
+| Avg total time | — |
+| Avg generation time | — |
+
+### Baseline Freeze
+
+| Field | Value |
+|-------|-------|
+| File | `benchmarks/online-eval-baseline-alpha.json` |
+| Status | STUB (awaiting replacement) |
+| Source report | — |
+| Frozen at | — |
+| Git commit | — |
+
+### Final Verdict
+
+| Check | Status |
+|-------|--------|
+| Offline rehearsal | GO |
+| Stability sweep (12/12) | PASS |
+| Live rehearsal | PENDING |
+| Baseline frozen (real) | PENDING |
+| **Go / No-Go** | **PENDING** |
+
+### Post-Baseline Verification Checklist
+
+```bash
+npx tsc --noEmit
+npx vitest run
+npm run doctor
+npm run quality-gate -- --mode offline
+npm run release-rehearsal -- --mode offline
+```
