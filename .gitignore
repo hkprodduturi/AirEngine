@@ -14,7 +14,9 @@ gallery/node_modules/
 gallery/previews/
 gallery/src/
 gallery/dist/
+gallery/index.html
 gallery/*.air
 gallery/package.json
 gallery/*.js
 gallery/*.cjs
+site/
