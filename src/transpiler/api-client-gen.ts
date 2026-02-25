@@ -149,6 +149,40 @@ export function generateApiClient(ctx: TranspileContext): string {
     lines.push('');
   }
 
+  // C1/G3: Auto-generate singular fetch functions for models with nested child routes
+  // E.g., GET /tickets/:id/replies exists → generate getTicket(id)
+  if (ctx.db) {
+    const nestedParents = new Set<string>();
+    for (const route of routes) {
+      const nestedMatch = route.path.match(/^\/(\w+)\/:id\/(\w+)$/);
+      if (nestedMatch && route.method === 'GET') {
+        nestedParents.add(nestedMatch[1]);
+      }
+    }
+    for (const parentPlural of nestedParents) {
+      const parentSingular = parentPlural.endsWith('s') ? parentPlural.slice(0, -1) : parentPlural;
+      const fnName = `get${parentSingular.charAt(0).toUpperCase() + parentSingular.slice(1)}`;
+      if (usedFnNames.has(fnName)) continue;
+      usedFnNames.add(fnName);
+
+      // Find the model for JSDoc
+      const model = ctx.db.models.find(m => m.name.toLowerCase() === parentSingular.toLowerCase());
+      if (model) {
+        lines.push(`/** @returns {Promise<import('./types').${model.name}>} */`);
+      }
+      const headersExpr = hasAuth ? 'authHeaders()' : "{ 'Content-Type': 'application/json' }";
+      lines.push(`export async function ${fnName}(id) {`);
+      if (hasAuth) {
+        lines.push(`  const res = await fetch(\`\${API_BASE}/${parentPlural}/\${id}\`, { headers: ${headersExpr} });`);
+      } else {
+        lines.push(`  const res = await fetch(\`\${API_BASE}/${parentPlural}/\${id}\`);`);
+      }
+      lines.push('  return handleResponse(res);');
+      lines.push('}');
+      lines.push('');
+    }
+  }
+
   return lines.join('\n');
 }
 

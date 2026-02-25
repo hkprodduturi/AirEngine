@@ -230,7 +230,7 @@ export function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]):
   );
   if (putIdRoute) {
     // Only match if the action name plausibly targets an update
-    const actionVerbs = ['approve', 'reject', 'cancel', 'confirm', 'publish', 'unpublish', 'activate', 'deactivate', 'complete', 'close', 'reopen', 'assign', 'unassign', 'move', 'pin', 'unpin', 'star', 'unstar', 'archive', 'restore', 'block', 'unblock', 'mark', 'flag', 'enroll', 'book'];
+    const actionVerbs = ['approve', 'reject', 'cancel', 'confirm', 'publish', 'unpublish', 'activate', 'deactivate', 'complete', 'close', 'reopen', 'resolve', 'assign', 'unassign', 'move', 'pin', 'unpin', 'star', 'unstar', 'archive', 'restore', 'block', 'unblock', 'mark', 'flag', 'enroll', 'book'];
     if (actionVerbs.includes(name.toLowerCase())) {
       return { fnName: routeToFunctionName(putIdRoute.method, putIdRoute.path), method: 'PUT' };
     }

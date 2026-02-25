@@ -435,7 +435,27 @@ function generatePageComponentRef(
         'setCurrentPage={setCurrentPage}',
       ];
       const propsStr = ' ' + propAssignments.join(' ');
-      return `${pad}{isAuthed && currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
+      let result = `${pad}{isAuthed && currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
+
+      // C1/G3: Check if this page's model has nested routes → add detail page conditional
+      if (ctx.db) {
+        const pageNameLower = node.name.toLowerCase();
+        for (const model of ctx.db.models) {
+          const modelPlural = model.name.toLowerCase().endsWith('s') ? model.name.toLowerCase() : model.name.toLowerCase() + 's';
+          if (pageNameLower === modelPlural || pageNameLower.includes(model.name.toLowerCase())) {
+            // Check for nested child routes
+            const hasNestedRoutes = ctx.expandedRoutes.some(r => {
+              const nestedMatch = r.path.match(/^\/(\w+)\/:id\/(\w+)$/);
+              return nestedMatch && nestedMatch[1] === modelPlural && r.method === 'GET';
+            });
+            if (hasNestedRoutes) {
+              const detailProps = `${model.name.charAt(0).toLowerCase() + model.name.slice(1)}Id={selected${model.name}Id} onBack={() => setSelected${model.name}Id(null)} user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}`;
+              result += `\n${pad}{isAuthed && currentPage === '${node.name}' && selected${model.name}Id && (\n${pad}  <${model.name}DetailPage ${detailProps} />\n${pad})}`;
+            }
+          }
+        }
+      }
+      return result;
     }
   }
 
@@ -744,7 +764,12 @@ export function generateFlowJSX(
         const bindInfo = resolveBindChain(node.left);
         if (bindInfo?.label) {
           const mapping = mapElement('stat', []);
-          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
+          // C1/G2: Format numeric stat values with toFixed when referencing float/numeric fields
+          const refStr = String(ref);
+          const isNumericRef = refStr.includes('avg') || refStr.includes('Avg') || refStr.includes('rate') || refStr.includes('Rate') ||
+            refStr.includes('time') || refStr.includes('Time') || refStr.includes('duration') || refStr.includes('Duration');
+          const displayRef = isNumericRef ? `typeof (${ref}) === 'number' ? (${ref}).toFixed(1) : (${ref})` : ref;
+          return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(bindInfo.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${displayRef}}</div>\n${pad}</div>`;
         }
       }
       return generateFlowBoundElement(leftResolved, ref, ctx, scope, ind);
@@ -1165,7 +1190,12 @@ export function generateBoundElement(
   // Stat element with label and value
   if (resolved.element === 'stat' && resolved.label !== undefined) {
     const ref = resolveRefNode(binding, scope);
-    return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${ref}}</div>\n${pad}</div>`;
+    // C1/G2: Format numeric stat values with toFixed when referencing float/numeric fields
+    const refStr = String(ref);
+    const isNumericRef = refStr.includes('avg') || refStr.includes('Avg') || refStr.includes('rate') || refStr.includes('Rate') ||
+      refStr.includes('time') || refStr.includes('Time') || refStr.includes('duration') || refStr.includes('Duration');
+    const displayRef = isNumericRef ? `typeof (${ref}) === 'number' ? (${ref}).toFixed(1) : (${ref})` : ref;
+    return `${pad}<div className="${mapping.className}">\n${pad}  <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">${escapeText(resolved.label)}</div>\n${pad}  <div className="text-2xl font-bold">{${displayRef}}</div>\n${pad}</div>`;
   }
 
   // Image with src

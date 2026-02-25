@@ -14,10 +14,11 @@ import { generateMutations } from './mutation-gen.js';
 import { getPostLoginPage } from './mutation-gen.js';
 import { generateHookEffects } from './hook-gen.js';
 import { generateRootJSX } from './jsx-gen.js';
+import { detectDetailPageModels } from './page-gen.js';
 
 // Re-exports
 export { generateLayout } from './layout-gen.js';
-export { generatePageComponents } from './page-gen.js';
+export { generatePageComponents, detectDetailPageModels } from './page-gen.js';
 
 // ---- Main entry ----
 
@@ -42,16 +43,25 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
     lines.push("import * as api from './api.js';");
   }
   // Import page components for fullstack apps with pages
+  const detailPages = ctx.db && hasAuthGating ? detectDetailPageModels(ctx) : [];
   if (ctx.hasBackend && analysis.hasPages) {
     if (useLazy) {
       for (const page of analysis.pages) {
         const pageName = capitalize(page.name);
         lines.push(`const ${pageName}Page = lazy(() => import('./pages/${pageName}Page.jsx'));`);
       }
+      // C1/G3: Import detail page components
+      for (const detail of detailPages) {
+        lines.push(`const ${detail.modelName}DetailPage = lazy(() => import('./pages/${detail.modelName}DetailPage.jsx'));`);
+      }
     } else {
       for (const page of analysis.pages) {
         const pageName = capitalize(page.name);
         lines.push(`import ${pageName}Page from './pages/${pageName}Page.jsx';`);
+      }
+      // C1/G3: Import detail page components
+      for (const detail of detailPages) {
+        lines.push(`import ${detail.modelName}DetailPage from './pages/${detail.modelName}DetailPage.jsx';`);
       }
     }
   }
@@ -84,6 +94,11 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
     const hasError = ctx.state.some(f => f.name === 'error');
     if (hasLoading) lines.push('  const [loading, setLoading] = useState(false);');
     if (hasError) lines.push('  const [error, setError] = useState(null);');
+    // C1/G3: Detail page state for models with nested child routes
+    for (const detail of detailPages) {
+      const singular = detail.modelName.charAt(0).toLowerCase() + detail.modelName.slice(1);
+      lines.push(`  const [selected${detail.modelName}Id, setSelected${detail.modelName}Id] = useState(null);`);
+    }
     lines.push('');
 
     // Restore BOTH token AND user from localStorage

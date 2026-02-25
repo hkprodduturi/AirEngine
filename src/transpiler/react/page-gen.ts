@@ -236,7 +236,262 @@ export function generatePageComponents(
     }
   }
 
+  // C1/G3: Generate detail pages for models with nested child routes
+  if (ctx.db && hasAuthGating) {
+    const detailPages = detectDetailPageModels(ctx);
+    for (const detail of detailPages) {
+      files.push({
+        path: `src/pages/${detail.modelName}DetailPage.jsx`,
+        content: generateDetailPage(detail, ctx, hasLayout),
+      });
+    }
+  }
+
   return files;
+}
+
+// ---- C1/G3: Detail Page Detection and Generation ----
+
+interface DetailPageInfo {
+  modelName: string;         // e.g. 'Ticket'
+  modelPlural: string;       // e.g. 'tickets'
+  getRoute: AirRoute | null; // GET /tickets (list)
+  putRoute: AirRoute | null; // PUT /tickets/:id (update)
+  childResources: {
+    name: string;            // e.g. 'replies'
+    modelName: string;       // e.g. 'TicketReply'
+    getRoute: AirRoute;      // GET /tickets/:id/replies
+    postRoute: AirRoute | null; // POST /tickets/:id/replies
+    formFields: FormFieldInfo[];
+  }[];
+}
+
+/**
+ * Detect models that need detail pages — those with nested child routes.
+ * E.g., GET /tickets/:id/replies → Ticket needs a detail page.
+ */
+export function detectDetailPageModels(ctx: TranspileContext): DetailPageInfo[] {
+  if (!ctx.db) return [];
+  const routes = ctx.expandedRoutes;
+  const details: DetailPageInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const route of routes) {
+    // Match nested routes: /parent/:id/child
+    const nestedMatch = route.path.match(/^\/(\w+)\/:id\/(\w+)$/);
+    if (!nestedMatch || route.method !== 'GET') continue;
+
+    const [, parentPlural, childResource] = nestedMatch;
+    if (seen.has(parentPlural)) continue;
+
+    // Find parent model
+    const parentSingular = parentPlural.endsWith('s') ? parentPlural.slice(0, -1) : parentPlural;
+    const parentModel = ctx.db.models.find(m =>
+      m.name.toLowerCase() === parentSingular.toLowerCase()
+    );
+    if (!parentModel) continue;
+
+    seen.add(parentPlural);
+
+    // Find CRUD routes for parent
+    const getRoute = routes.find(r =>
+      r.method === 'GET' && r.handler === `~db.${parentModel.name}.findMany`
+    ) || null;
+    const putRoute = routes.find(r =>
+      r.method === 'PUT' && r.handler === `~db.${parentModel.name}.update`
+    ) || null;
+
+    // Find child routes
+    const childGetRoute = routes.find(r =>
+      r.method === 'GET' && r.path === `/${parentPlural}/:id/${childResource}`
+    );
+    const childPostRoute = routes.find(r =>
+      r.method === 'POST' && r.path === `/${parentPlural}/:id/${childResource}`
+    ) || null;
+
+    if (!childGetRoute) continue;
+
+    // Find child model for form fields
+    const childModelMatch = childGetRoute.handler.match(/^~db\.(\w+)\.findMany$/);
+    const childModelName = childModelMatch?.[1] || capitalize(childResource);
+    const childModel = ctx.db.models.find(m => m.name === childModelName);
+    const childFormFields = childModel ? buildFormFields(childModel) : [];
+
+    details.push({
+      modelName: parentModel.name,
+      modelPlural: parentPlural,
+      getRoute,
+      putRoute,
+      childResources: [{
+        name: childResource,
+        modelName: childModelName,
+        getRoute: childGetRoute,
+        postRoute: childPostRoute,
+        formFields: childFormFields,
+      }],
+    });
+  }
+
+  return details;
+}
+
+/**
+ * Generate a detail page component for a model with nested child resources.
+ * E.g., TicketDetailPage with reply thread and reply form.
+ */
+function generateDetailPage(
+  detail: DetailPageInfo,
+  ctx: TranspileContext,
+  hasLayout: boolean,
+): string {
+  const { modelName, modelPlural } = detail;
+  const modelLabel = camelToLabel(modelName);
+  const lines: string[] = [];
+
+  lines.push("import { useState, useEffect } from 'react';");
+  lines.push("import * as api from '../api.js';");
+  if (hasLayout) lines.push("import Layout from '../Layout.jsx';");
+  lines.push('');
+  lines.push(`export default function ${modelName}DetailPage({ ${modelPlural.slice(0, -1)}Id, onBack, user, logout, currentPage, setCurrentPage }) {`);
+  lines.push(`  const [${modelPlural.slice(0, -1)}, set${capitalize(modelPlural.slice(0, -1))}] = useState(null);`);
+  lines.push('  const [loading, setLoading] = useState(true);');
+  lines.push('  const [error, setError] = useState(null);');
+
+  // Child resource state
+  for (const child of detail.childResources) {
+    lines.push(`  const [${child.name}, set${capitalize(child.name)}] = useState([]);`);
+    if (child.postRoute) {
+      lines.push(`  const [replyBody, setReplyBody] = useState('');`);
+      lines.push(`  const [submitting, setSubmitting] = useState(false);`);
+    }
+  }
+  lines.push('');
+
+  // Singular fetch — getTicket(id) via the list route filtered client-side,
+  // or a direct API call if available
+  const singularVar = modelPlural.slice(0, -1);
+  const singularFnName = `get${capitalize(singularVar)}`;
+  lines.push(`  useEffect(() => {`);
+  lines.push(`    const loadDetail = async () => {`);
+  lines.push(`      try {`);
+  lines.push(`        const data = await api.${singularFnName}(${singularVar}Id);`);
+  lines.push(`        set${capitalize(singularVar)}(data);`);
+
+  // Load child resources
+  for (const child of detail.childResources) {
+    const childFnName = routeToFunctionName('GET', `/${modelPlural}/:id/${child.name}`);
+    lines.push(`        const ${child.name}Data = await api.${childFnName}(${singularVar}Id);`);
+    lines.push(`        set${capitalize(child.name)}(${child.name}Data.data ?? ${child.name}Data);`);
+  }
+
+  lines.push(`      } catch (err) {`);
+  lines.push(`        setError(err.message || 'Failed to load ${modelLabel.toLowerCase()}');`);
+  lines.push(`      } finally {`);
+  lines.push(`        setLoading(false);`);
+  lines.push(`      }`);
+  lines.push(`    };`);
+  lines.push(`    loadDetail();`);
+  lines.push(`  }, [${singularVar}Id]);`);
+  lines.push('');
+
+  // Reply form handler
+  for (const child of detail.childResources) {
+    if (!child.postRoute) continue;
+    const createFnName = routeToFunctionName('POST', `/${modelPlural}/:id/${child.name}`);
+    const refreshFnName = routeToFunctionName('GET', `/${modelPlural}/:id/${child.name}`);
+    lines.push(`  const handleReply = async (e) => {`);
+    lines.push(`    e.preventDefault();`);
+    lines.push(`    if (!replyBody.trim()) return;`);
+    lines.push(`    setSubmitting(true);`);
+    lines.push(`    try {`);
+    lines.push(`      await api.${createFnName}(${singularVar}Id, { body: replyBody });`);
+    lines.push(`      setReplyBody('');`);
+    lines.push(`      const updated = await api.${refreshFnName}(${singularVar}Id);`);
+    lines.push(`      set${capitalize(child.name)}(updated.data ?? updated);`);
+    lines.push(`    } catch (err) {`);
+    lines.push(`      setError(err.message || 'Failed to add reply');`);
+    lines.push(`    } finally {`);
+    lines.push(`      setSubmitting(false);`);
+    lines.push(`    }`);
+    lines.push(`  };`);
+    lines.push('');
+  }
+
+  // Render
+  lines.push('  return (');
+  const WrapOpen = hasLayout
+    ? '    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>'
+    : '    <div className="min-h-screen p-6" style={{ background: "var(--bg)", color: "var(--fg)" }}>';
+  const WrapClose = hasLayout ? '    </Layout>' : '    </div>';
+  lines.push(WrapOpen);
+
+  // Back button
+  lines.push(`      <div className="space-y-6 animate-fade-in">`);
+  lines.push(`        <button onClick={onBack} className="text-sm text-[var(--accent)] hover:underline cursor-pointer">&larr; Back to ${modelPlural}</button>`);
+
+  // Error
+  lines.push('        {error && <div className="rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{error}</div>}');
+
+  // Loading
+  lines.push('        {loading ? (');
+  lines.push('          <div className="animate-pulse space-y-4">');
+  lines.push('            <div className="h-8 w-64 bg-[var(--hover)] rounded" />');
+  lines.push('            <div className="h-32 bg-[var(--hover)] rounded-[var(--radius)]" />');
+  lines.push('          </div>');
+  lines.push(`        ) : ${singularVar} ? (`);
+  lines.push('          <div className="space-y-6">');
+
+  // Detail header
+  const model = ctx.db?.models.find(m => m.name === modelName);
+  const displayFields = model?.fields
+    .filter(f => !(f.primary && f.auto) && !f.auto && !f.name.endsWith('_id'))
+    .slice(0, 6) || [];
+
+  lines.push(`            <div className="border border-[var(--border)] rounded-[var(--radius)] bg-[var(--surface)] p-6 space-y-3">`);
+  for (const f of displayFields) {
+    const label = f.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+    lines.push(`              <div><span className="text-sm text-[var(--muted)]">${label}:</span> <span className="font-medium">{${singularVar}.${f.name}}</span></div>`);
+  }
+  lines.push(`            </div>`);
+
+  // Child resources (reply thread)
+  for (const child of detail.childResources) {
+    const childLabel = child.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+    lines.push('');
+    lines.push(`            <div className="space-y-4">`);
+    lines.push(`              <h2 className="text-lg font-semibold">${childLabel}</h2>`);
+    lines.push(`              {${child.name}.length === 0 ? (`);
+    lines.push(`                <p className="text-sm text-[var(--muted)]">No ${child.name} yet.</p>`);
+    lines.push(`              ) : (`);
+    lines.push(`                <div className="space-y-3">`);
+    lines.push(`                  {${child.name}.map(reply => (`);
+    lines.push(`                    <div key={reply.id} className="border border-[var(--border)] rounded-[var(--radius)] p-4 bg-[var(--surface)]">`);
+    lines.push(`                      <p className="text-sm">{reply.body}</p>`);
+    lines.push(`                      <p className="text-xs text-[var(--muted)] mt-2">{reply.created_at || reply.createdAt}</p>`);
+    lines.push(`                    </div>`);
+    lines.push(`                  ))}`);
+    lines.push(`                </div>`);
+    lines.push(`              )}`);
+
+    // Reply form
+    if (child.postRoute) {
+      lines.push(`              <form onSubmit={handleReply} className="flex gap-2">`);
+      lines.push(`                <input type="text" value={replyBody} onChange={(e) => setReplyBody(e.target.value)} placeholder="Write a reply..." className="flex-1 border border-[var(--border-input)] rounded-[var(--radius)] px-3 py-2 bg-transparent text-sm" />`);
+      lines.push(`                <button type="submit" disabled={submitting} className="px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius)] text-sm font-medium hover:opacity-90 disabled:opacity-50">{submitting ? 'Sending...' : 'Reply'}</button>`);
+      lines.push(`              </form>`);
+    }
+    lines.push(`            </div>`);
+  }
+
+  lines.push('          </div>');
+  lines.push(`        ) : <p className="text-[var(--muted)]">${modelLabel} not found.</p>}`);
+  lines.push('      </div>');
+  lines.push(WrapClose);
+  lines.push('  );');
+  lines.push('}');
+  lines.push('');
+
+  return lines.join('\n');
 }
 
 // ---- Path A: Auth pages + original behavior ----
@@ -519,6 +774,12 @@ function generateCrudPage(
   if (putFnName) declaredVars.add('handleUpdate');
   if (deleteFnName) declaredVars.add('handleDelete');
 
+  // C1/G1: Detect status enum field for workflow mutations
+  const statusField = binding.model?.fields.find(f => {
+    const base = f.type.kind === 'optional' ? (f.type as { of: { kind: string } }).of : f.type;
+    return f.name === 'status' && base.kind === 'enum';
+  });
+
   lines.push('');
 
   // Load function
@@ -608,6 +869,20 @@ function generateCrudPage(
     lines.push('');
   }
 
+  // C1/G1: Status workflow handler — handleStatusChange(id, newStatus)
+  if (statusField && putFnName && getFnName) {
+    lines.push(`  const handleStatusChange = async (id, newStatus) => {`);
+    lines.push('    try {');
+    lines.push(`      await api.${putFnName}(id, { status: newStatus });`);
+    lines.push('      load();');
+    lines.push('    } catch (err) {');
+    lines.push("      setError(err.message || 'Status update failed');");
+    lines.push('    }');
+    lines.push('  };');
+    lines.push('');
+    declaredVars.add('handleStatusChange');
+  }
+
   // T1.5/A2c: Generate custom page-level mutations (e.g., resolveTicket, closeTicket)
   // Extract mutations from page children, skip standard CRUD names, wire to API routes
   const standardMutNames = new Set(['add', 'addItem', 'del', 'delItem', 'remove', 'update', 'save', 'toggle', 'handleCreate', 'handleUpdate', 'handleDelete']);
@@ -618,6 +893,35 @@ function generateCrudPage(
     const genericMatch = findGenericRouteMatch(mut.name, expandedRoutes);
     if (genericMatch) {
       declaredVars.add(mut.name);
+
+      // C1/G1: Specialize status-related mutations when model has status enum
+      if (mut.name === 'assign' && statusField && genericMatch.method === 'PUT') {
+        // assign takes (id, agent_id) — explicitly sends { agent_id } payload
+        lines.push(`  const assign = async (id, agent_id) => {`);
+        lines.push('    try {');
+        lines.push(`      await api.${genericMatch.fnName}(id, { agent_id });`);
+        if (getFnName) lines.push('      load();');
+        lines.push('    } catch (err) {');
+        lines.push("      setError(err.message || 'assign failed');");
+        lines.push('    }');
+        lines.push('  };');
+        lines.push('');
+        continue;
+      }
+      if (mut.name === 'resolve' && statusField && genericMatch.method === 'PUT') {
+        // resolve sets { status: 'resolved' }
+        lines.push(`  const resolve = async (id) => {`);
+        lines.push('    try {');
+        lines.push(`      await api.${genericMatch.fnName}(id, { status: 'resolved' });`);
+        if (getFnName) lines.push('      load();');
+        lines.push('    } catch (err) {');
+        lines.push("      setError(err.message || 'resolve failed');");
+        lines.push('    }');
+        lines.push('  };');
+        lines.push('');
+        continue;
+      }
+
       if (genericMatch.method === 'PUT') {
         lines.push(`  const ${mut.name} = async (id, data) => {`);
         lines.push('    try {');

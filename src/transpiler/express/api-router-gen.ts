@@ -192,6 +192,47 @@ export function generateApiRouter(ctx: TranspileContext): string {
           lines.push("    if (_errors.length > 0) return res.status(400).json({ error: 'Validation error', details: _errors });");
         }
       }
+      // C1/G1: Status transition validation for PUT routes with status enum
+      if (method === 'put' && ctx.db && route.path.includes(':id')) {
+        const modelMatch = handler.match(/^~db\.(\w+)\.update$/);
+        if (modelMatch) {
+          const modelName = modelMatch[1];
+          const model = ctx.db.models.find(m => m.name === modelName);
+          const statusEnumField = model?.fields.find(f => {
+            const base = f.type.kind === 'optional' ? (f.type as { of: { kind: string } }).of : f.type;
+            return f.name === 'status' && base.kind === 'enum';
+          });
+          if (statusEnumField) {
+            const baseType = statusEnumField.type.kind === 'optional'
+              ? (statusEnumField.type as { of: { kind: 'enum'; values: string[] } }).of
+              : statusEnumField.type as { kind: 'enum'; values: string[] };
+            const values = baseType.values;
+            // Build allowed transitions map: each status can transition to its neighbors + itself
+            const transitionMap: Record<string, string[]> = {};
+            for (let i = 0; i < values.length; i++) {
+              const targets = new Set<string>();
+              // Allow forward transitions (current + all after)
+              for (let j = i; j < values.length; j++) targets.add(values[j]);
+              // Allow one step back
+              if (i > 0) targets.add(values[i - 1]);
+              transitionMap[values[i]] = Array.from(targets);
+            }
+            const mapStr = Object.entries(transitionMap)
+              .map(([k, v]) => `'${k}': [${v.map(x => `'${x}'`).join(', ')}]`)
+              .join(', ');
+            lines.push(`    // Status transition validation`);
+            lines.push(`    if (status !== undefined) {`);
+            lines.push(`      const allowedTransitions: Record<string, string[]> = { ${mapStr} };`);
+            const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+            const idExpr = hasIntPrimaryKey(modelName, ctx.db) ? 'parseInt(req.params.id)' : 'req.params.id';
+            lines.push(`      const current = await prisma.${modelVar}.findUnique({ where: { id: ${idExpr} } });`);
+            lines.push(`      if (current && allowedTransitions[current.status] && !allowedTransitions[current.status].includes(status)) {`);
+            lines.push("        return res.status(400).json({ error: 'Invalid status transition', details: `Cannot transition from ${current.status} to ${status}` });");
+            lines.push('      }');
+            lines.push('    }');
+          }
+        }
+      }
       // For nested POST: inject parent FK from URL param
       if (nestedMatch && method === 'post' && ctx.db) {
         const parentSingular = nestedMatch[1].endsWith('s') ? nestedMatch[1].slice(0, -1) : nestedMatch[1];
@@ -495,6 +536,19 @@ export function generateAggregateHandler(handler: string, db: AirDbBlock): strin
       const camelVal = val.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase());
       lines.push(`    const ${camelVal} = await prisma.${modelVar}.count({ where: { status: '${val}' } });`);
     }
+    // C1/G2: Compute avgResponseTime from resolved/closed tickets
+    const hasCreatedAt = model.fields.some(f => f.name === 'created_at');
+    const hasUpdatedAt = model.fields.some(f => f.name === 'updated_at');
+    const timeField = hasCreatedAt ? 'created_at' : 'createdAt';
+    lines.push(`    // Compute average response time (hours) from resolved/closed tickets`);
+    lines.push(`    const resolvedItems = await prisma.${modelVar}.findMany({`);
+    lines.push(`      where: { status: { in: ['resolved', 'closed'] } },`);
+    lines.push(`      select: { ${timeField}: true },`);
+    lines.push('    });');
+    lines.push(`    const avgResponseTime = resolvedItems.length > 0`);
+    lines.push(`      ? resolvedItems.reduce((sum, item) => sum + (Date.now() - new Date(item.${timeField}).getTime()) / 3600000, 0) / resolvedItems.length`);
+    lines.push(`      : 0;`);
+
     const lcModelName = modelName.charAt(0).toLowerCase() + modelName.slice(1);
     const totalKey = `total${pluralizeModel(modelName)}`;
     const resultEntries = [
@@ -503,6 +557,7 @@ export function generateAggregateHandler(handler: string, db: AirDbBlock): strin
         const camel = v.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase());
         return `${camel}: ${camel}`;
       }),
+      'avgResponseTime',
     ];
     lines.push(`    res.json({ ${resultEntries.join(', ')} });`);
   } else {
@@ -819,6 +874,42 @@ export function generateResourceRouter(
   // Compute base path shared by all routes in this group
   const basePath = findCommonBasePath(routes);
 
+  // C1/G3: Auto-generate GET /:id findUnique route when nested child routes exist
+  // E.g., GET /tickets/:id/replies → also generate GET /tickets/:id (singular fetch)
+  if (ctx.db) {
+    const hasNestedChild = routes.some(r => {
+      const relPath = basePath ? r.path.replace(basePath, '') || '/' : r.path;
+      return relPath.match(/^\/:id\/\w+$/);
+    });
+    const hasExistingGetById = routes.some(r => {
+      const relPath = basePath ? r.path.replace(basePath, '') || '/' : r.path;
+      return r.method === 'GET' && relPath === '/:id';
+    });
+    if (hasNestedChild && !hasExistingGetById) {
+      // Find the parent model from other routes in this group
+      const modelMatch = routes[0]?.handler.match(/^~db\.(\w+)\./);
+      if (modelMatch) {
+        const modelName = modelMatch[1];
+        const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+        const isInt = hasIntPrimaryKey(modelName, ctx.db);
+        lines.push(`// Auto-generated: singular fetch for detail page`);
+        lines.push(`${resourceKey}Router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {`);
+        lines.push('  try {');
+        if (isInt) {
+          lines.push("    const id = assertIntParam(req.params.id);");
+          lines.push(`    const result = await prisma.${modelVar}.findUnique({ where: { id } });`);
+        } else {
+          lines.push(`    const result = await prisma.${modelVar}.findUnique({ where: { id: req.params.id } });`);
+        }
+        lines.push("    if (!result) return res.status(404).json({ error: 'Not found' });");
+        lines.push('    res.json(result);');
+        pushCatchBlock(lines);
+        lines.push('});');
+        lines.push('');
+      }
+    }
+  }
+
   for (const route of routes) {
     const method = route.method.toLowerCase();
     // Strip the common base path from route paths
@@ -884,6 +975,45 @@ export function generateResourceRouter(
           if (requiredParams.length > 0) {
             const names = requiredParams.map(p => `'${p.name}'`).join(', ');
             lines.push(`    assertRequired(${bodyVar} as Record<string, unknown>, [${names}]);`);
+          }
+        }
+        // C1/G1: Status transition validation for PUT resource routes with status enum
+        if (method === 'put' && ctx.db && hasIdParam) {
+          const updateModelMatch = handler.match(/^~db\.(\w+)\.update$/);
+          if (updateModelMatch) {
+            const modelName = updateModelMatch[1];
+            const model = ctx.db.models.find(m => m.name === modelName);
+            const statusEnumField = model?.fields.find(f => {
+              const base = f.type.kind === 'optional' ? (f.type as { of: { kind: string } }).of : f.type;
+              return f.name === 'status' && base.kind === 'enum';
+            });
+            if (statusEnumField) {
+              const baseType = statusEnumField.type.kind === 'optional'
+                ? (statusEnumField.type as { of: { kind: 'enum'; values: string[] } }).of
+                : statusEnumField.type as { kind: 'enum'; values: string[] };
+              const values = baseType.values;
+              // Build allowed transitions map
+              const transitionMap: Record<string, string[]> = {};
+              for (let i = 0; i < values.length; i++) {
+                const targets = new Set<string>();
+                for (let j = i; j < values.length; j++) targets.add(values[j]);
+                if (i > 0) targets.add(values[i - 1]);
+                transitionMap[values[i]] = Array.from(targets);
+              }
+              const mapStr = Object.entries(transitionMap)
+                .map(([k, v]) => `'${k}': [${v.map(x => `'${x}'`).join(', ')}]`)
+                .join(', ');
+              const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+              const idVar = hasAssertedId ? 'id' : 'parseInt(req.params.id)';
+              lines.push(`    // Status transition validation`);
+              lines.push(`    if (status !== undefined) {`);
+              lines.push(`      const allowedTransitions: Record<string, string[]> = { ${mapStr} };`);
+              lines.push(`      const current = await prisma.${modelVar}.findUnique({ where: { id: ${idVar} } });`);
+              lines.push(`      if (current && allowedTransitions[current.status] && !allowedTransitions[current.status].includes(status)) {`);
+              lines.push("        return res.status(400).json({ error: 'Invalid status transition', details: `Cannot transition from ${current.status} to ${status}` });");
+              lines.push('      }');
+              lines.push('    }');
+            }
           }
         }
         // For nested POST: inject parent FK from URL param
