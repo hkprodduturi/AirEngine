@@ -1,0 +1,19 @@
+{
+  "demo_id": "canonical-fullstack-todo",
+  "schema_version": "1.0",
+  "prompt": "Build a fullstack todo app with a database for tasks. Each task has a title, completed status, and created date. Users can add new tasks, toggle completion, and delete tasks. Show a count of remaining tasks at the top.",
+  "goal": "Demonstrate the complete AirEngine pipeline: natural-language prompt to running fullstack app with database, CRUD operations, and reactive UI.",
+  "expected_capabilities": [
+    "database model with fields",
+    "CRUD API endpoints",
+    "reactive frontend with state management",
+    "task completion toggle",
+    "delete functionality",
+    "remaining count display"
+  ],
+  "recommended_defaults": {
+    "adapter": "replay",
+    "repair_mode": "deterministic",
+    "max_repair_attempts": 1
+  }
+}

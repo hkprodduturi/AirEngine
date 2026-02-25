@@ -31,7 +31,8 @@
     "demo-prompt-replay": "node --import tsx scripts/demo-prompt-replay.ts",
     "eval-online": "node --import tsx scripts/eval-online.ts",
     "eval-online-compare": "node --import tsx scripts/eval-online-compare.ts",
-    "quality-gate": "node --import tsx scripts/quality-gate.ts"
+    "quality-gate": "node --import tsx scripts/quality-gate.ts",
+    "demo-live-canonical": "node --import tsx scripts/demo-live-canonical.ts"
   },
   "keywords": [
     "ai",

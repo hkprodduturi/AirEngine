@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/canonical-live-demo-result.schema.json",
+  "title": "CanonicalLiveDemoResult",
+  "description": "Schema for AirEngine canonical live demo pipeline results.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "run_metadata",
+    "prompt",
+    "generator",
+    "loop",
+    "outcome",
+    "success",
+    "total_duration_ms",
+    "artifact_paths"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "run_metadata": { "$ref": "#/$defs/runMetadata" },
+    "prompt": { "$ref": "#/$defs/promptMetadata" },
+    "generator": { "$ref": "#/$defs/generatorMetadata" },
+    "loop": {
+      "oneOf": [
+        { "$ref": "#/$defs/loopSummary" },
+        { "type": "null" }
+      ]
+    },
+    "outcome": { "$ref": "#/$defs/demoOutcome" },
+    "success": { "type": "boolean" },
+    "total_duration_ms": { "type": "number", "minimum": 0 },
+    "artifact_paths": { "$ref": "#/$defs/artifactPaths" },
+    "error": { "type": "string" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "runMetadata": {
+      "type": "object",
+      "required": ["airengine_version", "node_version", "platform"],
+      "properties": {
+        "airengine_version": { "type": "string" },
+        "node_version": { "type": "string" },
+        "platform": { "type": "string" },
+        "git_commit": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "promptMetadata": {
+      "type": "object",
+      "required": ["text", "hash", "char_count", "source"],
+      "properties": {
+        "text": { "type": "string" },
+        "hash": { "type": "string" },
+        "char_count": { "type": "number", "minimum": 0 },
+        "source": { "type": "string", "enum": ["canonical", "cli_arg", "file"] },
+        "source_path": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "generatorMetadata": {
+      "type": "object",
+      "required": ["adapter", "duration_ms"],
+      "properties": {
+        "adapter": { "type": "string" },
+        "model": { "type": "string" },
+        "attempts": { "type": "number", "minimum": 0 },
+        "input_tokens": { "type": "number", "minimum": 0 },
+        "output_tokens": { "type": "number", "minimum": 0 },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "fixture_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "loopStage": {
+      "type": "object",
+      "required": ["name", "status", "duration_ms"],
+      "properties": {
+        "name": { "type": "string" },
+        "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+        "duration_ms": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "loopSummary": {
+      "type": "object",
+      "required": ["stages", "repair_mode", "deterministic", "file_count", "output_lines"],
+      "properties": {
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/loopStage" }
+        },
+        "repair_mode": { "type": "string", "enum": ["deterministic", "claude", "none"] },
+        "repair_attempts": { "type": "number", "minimum": 0 },
+        "deterministic": { "type": "boolean" },
+        "file_count": { "type": "number", "minimum": 0 },
+        "output_lines": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "demoOutcome": {
+      "type": "string",
+      "enum": [
+        "success",
+        "generation_failed",
+        "loop_failed",
+        "missing_api_key",
+        "unexpected_error"
+      ]
+    },
+    "artifactPaths": {
+      "type": "object",
+      "required": ["report"],
+      "properties": {
+        "report": { "type": "string" },
+        "generated_air": { "type": "string" },
+        "output_dir": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
