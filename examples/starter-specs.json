@@ -1,0 +1,1341 @@
+[
+  {
+    "starter_id": "saas-admin",
+    "base_id": "crud-admin",
+    "readiness_level": 0.42,
+    "domain": "Multi-tenant SaaS administration panel",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(admin,editor,viewer)", "status:enum(active,invited,deactivated)", "created_at:datetime"]
+      },
+      {
+        "name": "Organization",
+        "fields": ["id:int", "name:str", "description:str", "plan:enum(free,pro,enterprise)", "created_at:datetime"]
+      },
+      {
+        "name": "Member",
+        "fields": ["id:int", "role:enum(admin,editor,viewer)", "user_id:int", "org_id:int", "joined_at:datetime"]
+      },
+      {
+        "name": "Invitation",
+        "fields": ["id:int", "email:str", "role:enum(admin,editor,viewer)", "status:enum(pending,accepted,expired)", "org_id:int", "invited_by:int", "created_at:datetime"]
+      },
+      {
+        "name": "AuditLog",
+        "fields": ["id:int", "action:enum(create,update,delete,login,invite)", "resource:str", "details:str", "user_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Setting",
+        "fields": ["id:int", "key:str", "value:str", "org_id:int"]
+      }
+    ],
+    "roles": ["admin", "editor", "viewer"],
+    "workflows": [
+      {
+        "name": "user-management",
+        "steps": ["Invite user by email", "User registers via invitation link", "Admin assigns role", "Admin can deactivate user"],
+        "status": "included"
+      },
+      {
+        "name": "org-settings",
+        "steps": ["Admin views organization details", "Edits name/description/plan", "Saves changes"],
+        "status": "included"
+      },
+      {
+        "name": "audit-log",
+        "steps": ["Admin views audit log", "Filters by date/action/user", "Sees activity timeline"],
+        "status": "included"
+      },
+      {
+        "name": "billing",
+        "steps": ["View plan", "Upgrade/downgrade", "Payment method management"],
+        "status": "excluded"
+      },
+      {
+        "name": "sso-integration",
+        "steps": ["Configure SSO provider", "SAML/OAuth setup"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "User CRUD with role assignment",
+      "Organization profile and settings",
+      "Member invitations with status tracking",
+      "Audit log with action/user/timestamp",
+      "Dashboard with user and activity stats",
+      "Search users by name/email",
+      "Filter by role and status",
+      "Role-based route guards"
+    ],
+    "features_excluded": [
+      "Billing / subscription management",
+      "SSO / OAuth / MFA",
+      "API key management",
+      "Webhook configuration",
+      "Email sending",
+      "Multi-tenancy data isolation",
+      "Fine-grained ACL / permission matrices"
+    ],
+    "seed_data_plan": {
+      "User": 5,
+      "Organization": 1,
+      "Member": 5,
+      "Invitation": 2,
+      "AuditLog": 10,
+      "Setting": 4,
+      "notes": "1 org with 5 users (1 admin, 2 editors, 2 viewers), 2 pending invitations, 10 diverse audit log entries, basic settings"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "POST:/auth/register",
+      "GET:/users",
+      "POST:/users",
+      "PUT:/users/:id",
+      "DELETE:/users/:id",
+      "GET:/members",
+      "POST:/invitations",
+      "PUT:/invitations/:id",
+      "GET:/audit-log",
+      "GET:/settings",
+      "PUT:/settings/:key"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["admin", "editor", "viewer"],
+      "route_guards": {
+        "dashboard": ["admin", "editor", "viewer"],
+        "users": ["admin"],
+        "invitations": ["admin"],
+        "audit-log": ["admin"],
+        "settings": ["admin"]
+      }
+    },
+    "validation_plan": {
+      "User": { "email": "required,email", "name": "required,min:2", "role": "required,enum" },
+      "Invitation": { "email": "required,email", "role": "required,enum" },
+      "Setting": { "key": "required", "value": "required" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "dashboard", "settings"],
+      "upgraded": ["dashboard", "settings"],
+      "added": ["users", "members", "invitations", "auditLog"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 42,
+      "workflow_coverage": ["user-management", "org-settings", "audit-log"],
+      "entities": ["User", "Organization", "Member", "Invitation", "AuditLog", "Setting"],
+      "roles": ["admin", "editor", "viewer"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "project-mgmt",
+    "base_id": "kanban",
+    "readiness_level": 0.40,
+    "domain": "Team project and task management",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "avatar_url:?str", "created_at:datetime"]
+      },
+      {
+        "name": "Project",
+        "fields": ["id:int", "name:str", "description:?str", "owner_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Board",
+        "fields": ["id:int", "name:str", "project_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Column",
+        "fields": ["id:int", "name:str", "order_num:int", "board_id:int"]
+      },
+      {
+        "name": "Card",
+        "fields": ["id:int", "title:str", "description:?str", "label:enum(bug,feature,improvement,task)", "priority:enum(low,medium,high)", "order_num:int", "column_id:int", "assignee_id:?int", "due_date:?date", "created_at:datetime"]
+      },
+      {
+        "name": "Comment",
+        "fields": ["id:int", "content:str", "user_id:int", "card_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "ProjectMember",
+        "fields": ["id:int", "role:enum(owner,member,viewer)", "user_id:int", "project_id:int"]
+      }
+    ],
+    "roles": ["owner", "member", "viewer"],
+    "workflows": [
+      {
+        "name": "board-workflow",
+        "steps": ["Create board", "Add columns (To Do, In Progress, Done)", "Add cards with details", "Move cards between columns"],
+        "status": "included"
+      },
+      {
+        "name": "card-detail",
+        "steps": ["Select card", "View description/labels/assignee", "Add comment", "Change priority/label"],
+        "status": "included"
+      },
+      {
+        "name": "project-management",
+        "steps": ["Create project", "Add team members", "Select board", "View project stats"],
+        "status": "included"
+      },
+      {
+        "name": "sprint-planning",
+        "steps": ["Create sprint", "Assign story points", "Sprint velocity tracking"],
+        "status": "excluded"
+      },
+      {
+        "name": "time-tracking",
+        "steps": ["Start timer on card", "Log hours", "Generate timesheet"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Project CRUD with member management",
+      "Board CRUD with ordered columns",
+      "Card CRUD with title, description, label, priority, assignee, due date",
+      "Button-based card movement between columns",
+      "Comments on cards",
+      "Card search and label/priority filter",
+      "Project dashboard with card count and member stats",
+      "Project member roles (owner/member/viewer)"
+    ],
+    "features_excluded": [
+      "Drag-and-drop card movement",
+      "Sprint planning / story points",
+      "Time tracking / timers",
+      "File attachments",
+      "Gantt view / timeline",
+      "Board templates",
+      "Card checklists / subtasks",
+      "Activity feed / notifications"
+    ],
+    "seed_data_plan": {
+      "User": 4,
+      "Project": 1,
+      "Board": 1,
+      "Column": 3,
+      "Card": 8,
+      "Comment": 5,
+      "ProjectMember": 4,
+      "notes": "1 project with 4 members, 1 board with 3 columns (To Do/In Progress/Done), 8 cards spread across columns with diverse labels and priorities, 5 comments"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "POST:/auth/register",
+      "GET:/projects",
+      "POST:/projects",
+      "DELETE:/projects/:id",
+      "GET:/projects/:id/members",
+      "POST:/projects/:id/members",
+      "GET:/boards",
+      "POST:/boards",
+      "GET:/boards/:id/columns",
+      "POST:/boards/:id/columns",
+      "GET:/columns/:id/cards",
+      "POST:/columns/:id/cards",
+      "PUT:/cards/:id",
+      "PUT:/cards/:id/move",
+      "DELETE:/cards/:id",
+      "GET:/cards/:id/comments",
+      "POST:/cards/:id/comments"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["owner", "member", "viewer"],
+      "route_guards": {
+        "boardList": ["owner", "member", "viewer"],
+        "board": ["owner", "member", "viewer"],
+        "projectSettings": ["owner"]
+      }
+    },
+    "validation_plan": {
+      "Project": { "name": "required,min:2" },
+      "Card": { "title": "required,min:1", "label": "required,enum", "priority": "required,enum" },
+      "Comment": { "content": "required,min:1" },
+      "Column": { "name": "required", "order_num": "required,int" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "boardList", "board"],
+      "upgraded": ["boardList", "board"],
+      "added": ["cardDetail", "projectSettings"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 40,
+      "workflow_coverage": ["board-workflow", "card-detail", "project-management"],
+      "entities": ["User", "Project", "Board", "Column", "Card", "Comment", "ProjectMember"],
+      "roles": ["owner", "member", "viewer"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "booking-system",
+    "base_id": "scheduler",
+    "readiness_level": 0.36,
+    "domain": "Service appointment booking system",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(admin,provider,client)", "created_at:datetime"]
+      },
+      {
+        "name": "Service",
+        "fields": ["id:int", "name:str", "description:str", "duration_min:int", "price:float", "category:enum(consultation,treatment,class,other)", "active:bool", "created_at:datetime"]
+      },
+      {
+        "name": "Provider",
+        "fields": ["id:int", "name:str", "specialty:str", "user_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Appointment",
+        "fields": ["id:int", "date:date", "start_time:str", "end_time:str", "status:enum(scheduled,confirmed,completed,cancelled)", "notes:?str", "service_id:int", "provider_id:int", "client_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Client",
+        "fields": ["id:int", "name:str", "email:str", "phone:?str", "user_id:?int", "created_at:datetime"]
+      }
+    ],
+    "roles": ["admin", "provider", "client"],
+    "workflows": [
+      {
+        "name": "booking-flow",
+        "steps": ["Client selects service", "Selects provider", "Picks date", "Picks time slot", "Confirms booking"],
+        "status": "included"
+      },
+      {
+        "name": "provider-schedule",
+        "steps": ["Provider views day/week schedule", "Sees client details", "Marks appointment complete"],
+        "status": "included"
+      },
+      {
+        "name": "service-management",
+        "steps": ["Admin creates/edits services", "Sets duration and price", "Toggles availability"],
+        "status": "included"
+      },
+      {
+        "name": "payment-processing",
+        "steps": ["Collect payment at booking", "Refund on cancellation"],
+        "status": "excluded"
+      },
+      {
+        "name": "reminders",
+        "steps": ["Send email reminder 24h before", "SMS reminder 1h before"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Service catalog with name, duration, price, category",
+      "Provider profiles with specialty",
+      "Appointment booking with date/time selection",
+      "Calendar view with appointment indicators",
+      "Client list with appointment history",
+      "Appointment status workflow (scheduled → confirmed → completed)",
+      "Admin: manage services, providers, view all appointments",
+      "Date-based filtering"
+    ],
+    "features_excluded": [
+      "Payment processing",
+      "Email/SMS reminders",
+      "Recurring appointments",
+      "Waitlist / cancellation policies",
+      "Calendar sync (Google, iCal)",
+      "Buffer times between appointments",
+      "Online/video appointments",
+      "Provider availability schedules"
+    ],
+    "seed_data_plan": {
+      "User": 5,
+      "Service": 4,
+      "Provider": 2,
+      "Appointment": 8,
+      "Client": 5,
+      "notes": "4 services (consultation, haircut, massage, class), 2 providers, 8 appointments across dates/statuses, 5 clients"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "POST:/auth/register",
+      "GET:/services",
+      "POST:/services",
+      "PUT:/services/:id",
+      "GET:/providers",
+      "POST:/providers",
+      "GET:/appointments",
+      "POST:/appointments",
+      "PUT:/appointments/:id",
+      "DELETE:/appointments/:id",
+      "GET:/clients",
+      "GET:/clients/:id/appointments"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["admin", "provider", "client"],
+      "route_guards": {
+        "calendar": ["admin", "provider", "client"],
+        "services": ["admin"],
+        "providers": ["admin"],
+        "bookingFlow": ["client"]
+      }
+    },
+    "validation_plan": {
+      "Service": { "name": "required", "duration_min": "required,int,min:5", "price": "required,float,min:0" },
+      "Appointment": { "date": "required,date", "start_time": "required", "service_id": "required,int", "provider_id": "required,int" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "calendar", "myEvents"],
+      "upgraded": ["calendar", "myEvents"],
+      "added": ["services", "providers", "bookingFlow"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 36,
+      "workflow_coverage": ["booking-flow", "provider-schedule", "service-management"],
+      "entities": ["User", "Service", "Provider", "Appointment", "Client"],
+      "roles": ["admin", "provider", "client"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "restaurant-pos",
+    "base_id": "pos",
+    "readiness_level": 0.38,
+    "domain": "Restaurant point-of-sale terminal",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(cashier,manager)", "pin:?str", "created_at:datetime"]
+      },
+      {
+        "name": "Category",
+        "fields": ["id:int", "name:str", "order_num:int", "active:bool"]
+      },
+      {
+        "name": "MenuItem",
+        "fields": ["id:int", "name:str", "price:float", "description:?str", "category_id:int", "available:bool", "created_at:datetime"]
+      },
+      {
+        "name": "DineTable",
+        "fields": ["id:int", "number:int", "capacity:int", "status:enum(available,occupied,reserved)", "current_order_id:?int"]
+      },
+      {
+        "name": "Order",
+        "fields": ["id:int", "status:enum(open,closed,voided)", "subtotal:float", "tax:float", "total:float", "table_id:?int", "user_id:int", "created_at:datetime", "closed_at:?datetime"]
+      },
+      {
+        "name": "OrderItem",
+        "fields": ["id:int", "quantity:int", "unit_price:float", "notes:?str", "menu_item_id:int", "order_id:int"]
+      }
+    ],
+    "roles": ["cashier", "manager"],
+    "workflows": [
+      {
+        "name": "order-flow",
+        "steps": ["Cashier opens order", "Selects category tab", "Taps menu items", "Items appear on receipt", "Adjusts quantities", "Taps checkout", "Order closes"],
+        "status": "included"
+      },
+      {
+        "name": "table-service",
+        "steps": ["Assign order to table", "Table status updates to occupied", "Close order", "Table returns to available"],
+        "status": "included"
+      },
+      {
+        "name": "menu-management",
+        "steps": ["Manager adds menu item", "Sets price and category", "Toggles availability"],
+        "status": "included"
+      },
+      {
+        "name": "split-bill",
+        "steps": ["Split order by items or amount", "Process separate payments"],
+        "status": "excluded"
+      },
+      {
+        "name": "kitchen-display",
+        "steps": ["Order sent to kitchen screen", "Kitchen marks items ready"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Menu items with categories, prices, availability",
+      "Category tab filtering on terminal",
+      "Split-panel: product grid + live receipt",
+      "Quantity adjustment per line item",
+      "Running subtotal, tax, total",
+      "Checkout → order history",
+      "Table list with status",
+      "Order history with date filter",
+      "Manager-only menu editing",
+      "Void order (manager only)"
+    ],
+    "features_excluded": [
+      "Kitchen display system",
+      "Split bills / separate checks",
+      "Tips / gratuity",
+      "Payment gateway integration",
+      "Receipt printing",
+      "Inventory / ingredient management",
+      "Reservations",
+      "Modifier customization"
+    ],
+    "seed_data_plan": {
+      "User": 3,
+      "Category": 4,
+      "MenuItem": 12,
+      "DineTable": 6,
+      "Order": 5,
+      "OrderItem": 15,
+      "notes": "4 categories (Appetizers/Mains/Drinks/Desserts), 12 items, 6 tables, 5 orders in various states"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "GET:/menu-items",
+      "POST:/menu-items",
+      "PUT:/menu-items/:id",
+      "GET:/categories",
+      "GET:/tables",
+      "PUT:/tables/:id",
+      "POST:/orders",
+      "PUT:/orders/:id",
+      "POST:/orders/:id/items",
+      "PUT:/orders/:id/items/:itemId",
+      "DELETE:/orders/:id/items/:itemId",
+      "GET:/orders"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["cashier", "manager"],
+      "route_guards": {
+        "terminal": ["cashier", "manager"],
+        "history": ["cashier", "manager"],
+        "menuManagement": ["manager"],
+        "tables": ["cashier", "manager"]
+      }
+    },
+    "validation_plan": {
+      "MenuItem": { "name": "required", "price": "required,float,min:0", "category_id": "required,int" },
+      "Order": { "user_id": "required,int" },
+      "OrderItem": { "quantity": "required,int,min:1", "menu_item_id": "required,int" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "terminal", "history"],
+      "upgraded": ["terminal", "history"],
+      "added": ["menuManagement", "tables"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 38,
+      "workflow_coverage": ["order-flow", "table-service", "menu-management"],
+      "entities": ["User", "Category", "MenuItem", "DineTable", "Order", "OrderItem"],
+      "roles": ["cashier", "manager"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "inventory-mgmt",
+    "base_id": "warehouse",
+    "readiness_level": 0.36,
+    "domain": "Warehouse inventory management",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(picker,supervisor,admin)", "created_at:datetime"]
+      },
+      {
+        "name": "Product",
+        "fields": ["id:int", "sku:str", "name:str", "description:?str", "category:enum(electronics,hardware,packaging,other)", "bin_location:str", "quantity:int", "min_stock:int", "unit_cost:?float", "created_at:datetime"]
+      },
+      {
+        "name": "StockMovement",
+        "fields": ["id:int", "type:enum(scan,pick,restock,adjust,return)", "quantity:int", "notes:?str", "product_id:int", "user_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "PickOrder",
+        "fields": ["id:int", "order_num:str", "status:enum(pending,assigned,in_progress,completed)", "priority:enum(normal,urgent)", "assigned_to:?int", "created_at:datetime"]
+      },
+      {
+        "name": "PickItem",
+        "fields": ["id:int", "quantity:int", "picked:bool", "product_id:int", "order_id:int"]
+      },
+      {
+        "name": "BinLocation",
+        "fields": ["id:int", "code:str", "zone:enum(A,B,C,D)", "aisle:int", "shelf:int"]
+      }
+    ],
+    "roles": ["picker", "supervisor", "admin"],
+    "workflows": [
+      {
+        "name": "scan-flow",
+        "steps": ["Picker taps Scan", "Enters/selects SKU", "Sees product details + bin", "Confirms scan", "Stock movement logged"],
+        "status": "included"
+      },
+      {
+        "name": "pick-order",
+        "steps": ["Supervisor creates pick order", "Assigns to picker", "Picker picks items", "Marks items picked", "Completes order"],
+        "status": "included"
+      },
+      {
+        "name": "inventory-check",
+        "steps": ["Search by SKU/name", "View bin location and quantity", "View movement history"],
+        "status": "included"
+      },
+      {
+        "name": "receiving",
+        "steps": ["Receive shipment", "Scan items into inventory", "Update quantities"],
+        "status": "excluded"
+      },
+      {
+        "name": "cycle-count",
+        "steps": ["Schedule cycle count", "Count items in zone", "Reconcile discrepancies"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Product catalog with SKU, name, bin, quantity, min_stock",
+      "Barcode scan flow (button-triggered, SKU input)",
+      "Stock movement logging (scan, pick, restock, adjust)",
+      "Pick order management with item checklist",
+      "Inventory search by SKU/name with category filter",
+      "Low-stock alerts (quantity < min_stock)",
+      "Movement history per product",
+      "Bin location management"
+    ],
+    "features_excluded": [
+      "Barcode camera scanning",
+      "Multi-warehouse support",
+      "Purchase order / supplier management",
+      "Lot / batch tracking",
+      "Expiry date management",
+      "Shipping label generation",
+      "Cycle count scheduling",
+      "Receiving workflow"
+    ],
+    "seed_data_plan": {
+      "User": 4,
+      "Product": 12,
+      "StockMovement": 15,
+      "PickOrder": 3,
+      "PickItem": 8,
+      "BinLocation": 10,
+      "notes": "12 products in 4 categories across 10 bin locations, 3 pick orders (pending/in_progress/completed), 15 stock movements, 2 products below min_stock"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "GET:/products",
+      "POST:/products",
+      "PUT:/products/:id",
+      "GET:/products/:id/movements",
+      "POST:/scans",
+      "GET:/pick-orders",
+      "POST:/pick-orders",
+      "PUT:/pick-orders/:id",
+      "PUT:/pick-items/:id",
+      "GET:/bin-locations",
+      "GET:/alerts/low-stock"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["picker", "supervisor", "admin"],
+      "route_guards": {
+        "scan": ["picker", "supervisor", "admin"],
+        "pick": ["picker", "supervisor", "admin"],
+        "inventorySearch": ["picker", "supervisor", "admin"],
+        "productDetail": ["supervisor", "admin"],
+        "stockMovements": ["supervisor", "admin"]
+      }
+    },
+    "validation_plan": {
+      "Product": { "sku": "required,unique", "name": "required", "bin_location": "required", "quantity": "required,int,min:0" },
+      "StockMovement": { "type": "required,enum", "quantity": "required,int", "product_id": "required,int" },
+      "PickOrder": { "order_num": "required,unique" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "scan", "pick", "inventorySearch", "profile"],
+      "upgraded": ["scan", "pick", "inventorySearch"],
+      "added": ["productDetail", "stockMovements"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 36,
+      "workflow_coverage": ["scan-flow", "pick-order", "inventory-check"],
+      "entities": ["User", "Product", "StockMovement", "PickOrder", "PickItem", "BinLocation"],
+      "roles": ["picker", "supervisor", "admin"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "online-marketplace",
+    "base_id": "marketplace",
+    "readiness_level": 0.35,
+    "domain": "Two-sided online marketplace",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(buyer,seller)", "created_at:datetime"]
+      },
+      {
+        "name": "Listing",
+        "fields": ["id:int", "title:str", "description:str", "price:float", "condition:enum(new,like_new,good,fair)", "category:enum(electronics,clothing,home,books,services,other)", "status:enum(active,sold,expired)", "image_url:?str", "seller_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Review",
+        "fields": ["id:int", "rating:int", "comment:str", "reviewer_id:int", "listing_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "SavedItem",
+        "fields": ["id:int", "user_id:int", "listing_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "SellerProfile",
+        "fields": ["id:int", "bio:?str", "location:?str", "avg_rating:float", "listing_count:int", "user_id:int"]
+      },
+      {
+        "name": "Category",
+        "fields": ["id:int", "name:str", "listing_count:int"]
+      }
+    ],
+    "roles": ["buyer", "seller"],
+    "workflows": [
+      {
+        "name": "listing-creation",
+        "steps": ["Seller creates listing", "Adds title, description, price, category, condition", "Listing appears in search"],
+        "status": "included"
+      },
+      {
+        "name": "discovery",
+        "steps": ["Buyer searches", "Filters by category", "Sorts by price/date", "Views listing detail"],
+        "status": "included"
+      },
+      {
+        "name": "engagement",
+        "steps": ["Buyer saves listing", "Leaves review", "Views saved items"],
+        "status": "included"
+      },
+      {
+        "name": "transaction",
+        "steps": ["Buyer purchases listing", "Payment processed", "Seller notified"],
+        "status": "excluded"
+      },
+      {
+        "name": "messaging",
+        "steps": ["Buyer messages seller", "Negotiate price", "Arrange pickup"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Listing CRUD with title, description, price, category, condition",
+      "Hero search bar with live filtering",
+      "Category tabs and sort dropdown",
+      "Seller profiles with rating and listing count",
+      "Reviews with rating and comment",
+      "Save/unsave listings",
+      "Listing detail view",
+      "My Listings (seller view)",
+      "Saved Items page"
+    ],
+    "features_excluded": [
+      "Payment processing / escrow",
+      "In-app messaging",
+      "Shipping / delivery tracking",
+      "Dispute resolution",
+      "Featured / promoted listings",
+      "Admin moderation panel",
+      "Seller verification",
+      "Price negotiation / offers"
+    ],
+    "seed_data_plan": {
+      "User": 5,
+      "Listing": 12,
+      "Review": 8,
+      "SavedItem": 4,
+      "SellerProfile": 3,
+      "Category": 6,
+      "notes": "3 sellers with profiles, 12 listings across 6 categories, 8 reviews with varied ratings, 4 saved items"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "POST:/auth/register",
+      "GET:/listings",
+      "POST:/listings",
+      "PUT:/listings/:id",
+      "DELETE:/listings/:id",
+      "GET:/listings/:id",
+      "GET:/listings/:id/reviews",
+      "POST:/listings/:id/reviews",
+      "GET:/saved",
+      "POST:/saved",
+      "DELETE:/saved/:id",
+      "GET:/sellers/:id",
+      "GET:/my-listings"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["buyer", "seller"],
+      "route_guards": {
+        "explore": ["buyer", "seller"],
+        "saved": ["buyer", "seller"],
+        "createListing": ["seller"],
+        "myListings": ["seller"]
+      }
+    },
+    "validation_plan": {
+      "Listing": { "title": "required,min:3", "description": "required,min:10", "price": "required,float,min:0", "category": "required,enum" },
+      "Review": { "rating": "required,int,min:1,max:5", "comment": "required,min:5" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "explore", "saved"],
+      "upgraded": ["explore", "saved"],
+      "added": ["createListing", "listingDetail", "sellerProfile", "myListings"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 35,
+      "workflow_coverage": ["listing-creation", "discovery", "engagement"],
+      "entities": ["User", "Listing", "Review", "SavedItem", "SellerProfile", "Category"],
+      "roles": ["buyer", "seller"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "ecommerce-store",
+    "base_id": "storefront",
+    "readiness_level": 0.42,
+    "domain": "Online retail store with purchase flow",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(customer,admin)", "created_at:datetime"]
+      },
+      {
+        "name": "Product",
+        "fields": ["id:int", "name:str", "description:str", "price:float", "compare_price:?float", "category:enum(electronics,clothing,home,books,food)", "in_stock:bool", "image_url:?str", "created_at:datetime"]
+      },
+      {
+        "name": "Order",
+        "fields": ["id:int", "order_number:str", "subtotal:float", "tax:float", "total:float", "status:enum(pending,processing,shipped,delivered,cancelled)", "shipping_name:str", "shipping_address:str", "shipping_city:str", "user_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "OrderItem",
+        "fields": ["id:int", "quantity:int", "unit_price:float", "product_id:int", "order_id:int"]
+      },
+      {
+        "name": "Review",
+        "fields": ["id:int", "rating:int", "comment:str", "user_id:int", "product_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Address",
+        "fields": ["id:int", "label:str", "name:str", "street:str", "city:str", "state:str", "zip:str", "user_id:int"]
+      }
+    ],
+    "roles": ["customer", "admin"],
+    "workflows": [
+      {
+        "name": "shopping-flow",
+        "steps": ["Browse products", "Filter by category", "Add to cart", "Adjust quantities", "Proceed to checkout", "Enter shipping info", "Place order"],
+        "status": "included"
+      },
+      {
+        "name": "order-tracking",
+        "steps": ["View order list", "See order status", "View order items"],
+        "status": "included"
+      },
+      {
+        "name": "admin-management",
+        "steps": ["Add/edit products", "Manage categories", "View all orders", "Update order status"],
+        "status": "included"
+      },
+      {
+        "name": "payment",
+        "steps": ["Enter card details", "Process payment", "Handle failures"],
+        "status": "excluded"
+      },
+      {
+        "name": "returns",
+        "steps": ["Request return", "Process refund", "Track return shipment"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Product catalog with name, description, price, category, stock",
+      "Category navigation tabs",
+      "Hero banner on shop page",
+      "Cart management (add, remove, quantity +/−)",
+      "Cart persistence (localStorage)",
+      "Checkout form with shipping info",
+      "Order creation with line items",
+      "Order history with status tracking",
+      "Admin product CRUD",
+      "Admin order status management",
+      "Product search + category filter",
+      "Product reviews"
+    ],
+    "features_excluded": [
+      "Payment gateway (Stripe, PayPal)",
+      "Shipping rates / calculation",
+      "Product variants (size, color)",
+      "Inventory sync / stock alerts",
+      "Coupons / discount codes",
+      "Wishlists / favorites",
+      "Tax calculation per region",
+      "Multi-currency",
+      "Returns / refund process"
+    ],
+    "seed_data_plan": {
+      "User": 4,
+      "Product": 15,
+      "Order": 5,
+      "OrderItem": 12,
+      "Review": 8,
+      "Address": 3,
+      "notes": "15 products across 5 categories (3 per category), 5 orders in varied states, 12 order items, 8 reviews, 3 saved addresses"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "POST:/auth/register",
+      "GET:/products",
+      "POST:/products",
+      "PUT:/products/:id",
+      "DELETE:/products/:id",
+      "GET:/products/:id",
+      "GET:/products/:id/reviews",
+      "POST:/products/:id/reviews",
+      "GET:/orders",
+      "POST:/orders",
+      "PUT:/orders/:id",
+      "POST:/orders/:id/items",
+      "GET:/addresses",
+      "POST:/addresses"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["customer", "admin"],
+      "route_guards": {
+        "shop": "public",
+        "cart": ["customer", "admin"],
+        "checkout": ["customer"],
+        "orders": ["customer", "admin"],
+        "adminProducts": ["admin"],
+        "adminOrders": ["admin"]
+      }
+    },
+    "validation_plan": {
+      "Product": { "name": "required", "price": "required,float,min:0", "category": "required,enum" },
+      "Order": { "shipping_name": "required", "shipping_address": "required", "shipping_city": "required" },
+      "Review": { "rating": "required,int,min:1,max:5", "comment": "required" },
+      "Address": { "name": "required", "street": "required", "city": "required", "zip": "required" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "shop", "cart", "checkout", "orders"],
+      "upgraded": ["shop", "cart", "checkout", "orders"],
+      "added": ["adminProducts", "adminOrders", "productDetail"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 42,
+      "workflow_coverage": ["shopping-flow", "order-tracking", "admin-management"],
+      "entities": ["User", "Product", "Order", "OrderItem", "Review", "Address"],
+      "roles": ["customer", "admin"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "ai-assistant",
+    "base_id": "ai-chat",
+    "readiness_level": 0.33,
+    "domain": "AI chatbot / assistant interface",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(user,admin)", "created_at:datetime"]
+      },
+      {
+        "name": "Conversation",
+        "fields": ["id:int", "title:str", "system_prompt:?str", "preset_id:?int", "user_id:int", "created_at:datetime", "updated_at:datetime"]
+      },
+      {
+        "name": "Message",
+        "fields": ["id:int", "role:enum(user,assistant,system)", "content:str", "conversation_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "PromptPreset",
+        "fields": ["id:int", "name:str", "description:str", "system_prompt:str", "category:enum(general,coding,writing,analysis)", "created_by:?int", "created_at:datetime"]
+      }
+    ],
+    "roles": ["user", "admin"],
+    "workflows": [
+      {
+        "name": "chat-flow",
+        "steps": ["Create new conversation", "Optionally select preset", "Type message", "Message appears with user role", "Assistant response placeholder", "Conversation saved"],
+        "status": "included"
+      },
+      {
+        "name": "conversation-management",
+        "steps": ["View conversation list", "Select conversation", "Messages load", "Delete conversation"],
+        "status": "included"
+      },
+      {
+        "name": "preset-management",
+        "steps": ["Admin creates prompt presets", "User selects preset for new chat", "System prompt applied"],
+        "status": "included"
+      },
+      {
+        "name": "ai-integration",
+        "steps": ["Send message to LLM API", "Stream response", "Handle errors"],
+        "status": "excluded"
+      },
+      {
+        "name": "file-upload",
+        "steps": ["Upload file", "AI analyzes content", "Responds with analysis"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Conversation sidebar with titles and timestamps",
+      "Message stream with role badges (user/assistant/system)",
+      "Pinned input footer with send button",
+      "New conversation creation with optional preset",
+      "Conversation deletion",
+      "System prompt presets (CRUD for admin, select for user)",
+      "Typing indicator placeholder",
+      "Message timestamps",
+      "Conversation title editing"
+    ],
+    "features_excluded": [
+      "Actual AI/LLM API integration",
+      "Streaming responses",
+      "Tool use / function calling",
+      "File uploads / image analysis",
+      "Code execution",
+      "RAG / knowledge base",
+      "Model selection",
+      "Token counting / usage tracking",
+      "Plugins / extensions"
+    ],
+    "seed_data_plan": {
+      "User": 2,
+      "Conversation": 3,
+      "Message": 12,
+      "PromptPreset": 4,
+      "notes": "3 conversations (2 with messages, 1 empty), 12 messages alternating user/assistant, 4 presets (general, coding, writing, analysis)"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "POST:/auth/register",
+      "GET:/conversations",
+      "POST:/conversations",
+      "PUT:/conversations/:id",
+      "DELETE:/conversations/:id",
+      "GET:/conversations/:id/messages",
+      "POST:/conversations/:id/messages",
+      "GET:/presets",
+      "POST:/presets",
+      "PUT:/presets/:id",
+      "DELETE:/presets/:id"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["user", "admin"],
+      "route_guards": {
+        "chat": ["user", "admin"],
+        "presets": ["admin"],
+        "settings": ["user", "admin"]
+      }
+    },
+    "validation_plan": {
+      "Message": { "content": "required,min:1" },
+      "Conversation": { "title": "required" },
+      "PromptPreset": { "name": "required", "system_prompt": "required,min:10" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "chat"],
+      "upgraded": ["chat"],
+      "added": ["presets", "settings"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 33,
+      "workflow_coverage": ["chat-flow", "conversation-management", "preset-management"],
+      "entities": ["User", "Conversation", "Message", "PromptPreset"],
+      "roles": ["user", "admin"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "help-desk",
+    "base_id": "inbox",
+    "readiness_level": 0.40,
+    "domain": "Customer support ticketing system",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(customer,agent,admin)", "created_at:datetime"]
+      },
+      {
+        "name": "Ticket",
+        "fields": ["id:int", "subject:str", "status:enum(open,in_progress,waiting,resolved,closed)", "priority:enum(low,medium,high,urgent)", "label:?enum(bug,question,feature_request,billing,other)", "assigned_to:?int", "customer_id:int", "created_at:datetime", "updated_at:datetime"]
+      },
+      {
+        "name": "TicketMessage",
+        "fields": ["id:int", "content:str", "is_internal:bool", "sender_id:int", "ticket_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "CannedResponse",
+        "fields": ["id:int", "title:str", "content:str", "category:enum(greeting,resolution,follow_up,other)", "created_by:int", "created_at:datetime"]
+      },
+      {
+        "name": "Customer",
+        "fields": ["id:int", "name:str", "email:str", "company:?str", "ticket_count:int", "user_id:?int", "created_at:datetime"]
+      },
+      {
+        "name": "Label",
+        "fields": ["id:int", "name:str", "color:str"]
+      }
+    ],
+    "roles": ["customer", "agent", "admin"],
+    "workflows": [
+      {
+        "name": "ticket-lifecycle",
+        "steps": ["Customer submits ticket", "Appears in agent queue", "Agent opens ticket", "Reads messages", "Sends reply", "Marks resolved/closed"],
+        "status": "included"
+      },
+      {
+        "name": "triage",
+        "steps": ["Agent views queue", "Filters by status/priority", "Assigns label", "Changes priority", "Assigns to agent"],
+        "status": "included"
+      },
+      {
+        "name": "canned-responses",
+        "steps": ["Admin creates canned responses", "Agent selects canned response", "Inserts into reply"],
+        "status": "included"
+      },
+      {
+        "name": "sla-management",
+        "steps": ["Define SLA rules", "Track response time", "Escalate overdue tickets"],
+        "status": "excluded"
+      },
+      {
+        "name": "satisfaction-survey",
+        "steps": ["Send CSAT survey after resolution", "Track satisfaction scores"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Ticket queue (three-pane: labels sidebar, ticket list, detail)",
+      "Ticket status workflow: open → in_progress → waiting → resolved → closed",
+      "Priority levels with badge indicators",
+      "Labels for ticket classification",
+      "Message thread per ticket (customer + agent messages)",
+      "Internal notes (agent-only messages)",
+      "Canned responses (CRUD + select + insert)",
+      "Customer profiles with ticket history",
+      "Agent assignment",
+      "Ticket search + status/priority/label filter",
+      "Unread ticket indicators"
+    ],
+    "features_excluded": [
+      "SLA timers / escalation rules",
+      "Auto-assignment / round-robin",
+      "Customer satisfaction surveys",
+      "Knowledge base integration",
+      "Email integration (receive via email)",
+      "Collision detection (two agents same ticket)",
+      "Merge / link tickets",
+      "Analytics / reporting dashboard"
+    ],
+    "seed_data_plan": {
+      "User": 6,
+      "Ticket": 10,
+      "TicketMessage": 25,
+      "CannedResponse": 5,
+      "Customer": 5,
+      "Label": 5,
+      "notes": "10 tickets across all statuses/priorities, 25 messages (mix of customer/agent/internal), 5 canned responses, 5 customers, 5 labels"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "POST:/auth/register",
+      "GET:/tickets",
+      "POST:/tickets",
+      "PUT:/tickets/:id",
+      "GET:/tickets/:id/messages",
+      "POST:/tickets/:id/messages",
+      "GET:/canned-responses",
+      "POST:/canned-responses",
+      "PUT:/canned-responses/:id",
+      "DELETE:/canned-responses/:id",
+      "GET:/customers",
+      "GET:/customers/:id",
+      "GET:/labels"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["customer", "agent", "admin"],
+      "route_guards": {
+        "queue": ["agent", "admin"],
+        "submitTicket": ["customer"],
+        "ticketDetail": ["customer", "agent", "admin"],
+        "cannedResponses": ["admin"],
+        "customerProfile": ["agent", "admin"]
+      }
+    },
+    "validation_plan": {
+      "Ticket": { "subject": "required,min:5" },
+      "TicketMessage": { "content": "required,min:1" },
+      "CannedResponse": { "title": "required", "content": "required,min:10" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "mail", "compose"],
+      "upgraded": ["mail", "compose"],
+      "added": ["ticketDetail", "cannedResponses", "customerProfile"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 40,
+      "workflow_coverage": ["ticket-lifecycle", "triage", "canned-responses"],
+      "entities": ["User", "Ticket", "TicketMessage", "CannedResponse", "Customer", "Label"],
+      "roles": ["customer", "agent", "admin"],
+      "starter_version": "1.0.0"
+    }
+  },
+  {
+    "starter_id": "support-portal",
+    "base_id": "portal",
+    "readiness_level": 0.35,
+    "domain": "Self-service customer support portal",
+    "entities": [
+      {
+        "name": "User",
+        "fields": ["id:int", "name:str", "email:str", "role:enum(customer,author,admin)", "created_at:datetime"]
+      },
+      {
+        "name": "Article",
+        "fields": ["id:int", "title:str", "summary:str", "content:str", "category:enum(getting_started,api,billing,troubleshooting,integrations)", "status:enum(draft,published,archived)", "views:int", "helpful_count:int", "author_id:int", "created_at:datetime", "updated_at:datetime"]
+      },
+      {
+        "name": "FAQ",
+        "fields": ["id:int", "question:str", "answer:str", "order_num:int", "category:?str"]
+      },
+      {
+        "name": "Ticket",
+        "fields": ["id:int", "subject:str", "description:str", "status:enum(open,in_progress,resolved,closed)", "priority:enum(low,medium,high)", "user_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Feedback",
+        "fields": ["id:int", "helpful:bool", "comment:?str", "article_id:int", "user_id:int", "created_at:datetime"]
+      },
+      {
+        "name": "Tag",
+        "fields": ["id:int", "name:str"]
+      }
+    ],
+    "roles": ["customer", "author", "admin"],
+    "workflows": [
+      {
+        "name": "self-service",
+        "steps": ["Customer searches knowledge base", "Reads article", "Problem solved OR submits ticket"],
+        "status": "included"
+      },
+      {
+        "name": "article-management",
+        "steps": ["Author creates article", "Writes title, summary, content", "Selects category", "Publishes"],
+        "status": "included"
+      },
+      {
+        "name": "ticket-submission",
+        "steps": ["Customer fills ticket form", "Submits ticket", "Views ticket status in My Tickets"],
+        "status": "included"
+      },
+      {
+        "name": "analytics",
+        "steps": ["View article views", "Track search queries", "Measure deflection rate"],
+        "status": "excluded"
+      },
+      {
+        "name": "community-forums",
+        "steps": ["Create forum post", "Reply to discussions", "Upvote answers"],
+        "status": "excluded"
+      }
+    ],
+    "features_included": [
+      "Knowledge base with articles (title, summary, content, category)",
+      "Article search with live filtering",
+      "Category-based article browsing",
+      "FAQ section with question/answer pairs",
+      "Hero banner with search",
+      "Feature card grid (quick links)",
+      "Ticket submission form",
+      "Ticket status tracking (My Tickets)",
+      "Article CRUD for authors (draft → published)",
+      "Article feedback (helpful/not helpful)",
+      "FAQ management (admin)"
+    ],
+    "features_excluded": [
+      "Community forums / discussions",
+      "Live chat / chatbot",
+      "Article versioning / drafts history",
+      "Search analytics",
+      "Video tutorials / embeds",
+      "Multilingual content",
+      "Article comments",
+      "Related articles / suggestions",
+      "Analytics dashboard"
+    ],
+    "seed_data_plan": {
+      "User": 4,
+      "Article": 10,
+      "FAQ": 8,
+      "Ticket": 4,
+      "Feedback": 6,
+      "Tag": 5,
+      "notes": "10 articles across 5 categories (2 per category), 8 FAQs, 4 tickets in various states, 6 feedback entries, 5 tags"
+    },
+    "api_plan": [
+      "POST:/auth/login",
+      "POST:/auth/register",
+      "GET:/articles",
+      "POST:/articles",
+      "PUT:/articles/:id",
+      "DELETE:/articles/:id",
+      "GET:/articles/:id",
+      "POST:/articles/:id/feedback",
+      "GET:/faqs",
+      "POST:/faqs",
+      "PUT:/faqs/:id",
+      "DELETE:/faqs/:id",
+      "GET:/tickets",
+      "POST:/tickets",
+      "GET:/tags"
+    ],
+    "auth_plan": {
+      "method": "jwt-cookie",
+      "roles": ["customer", "author", "admin"],
+      "route_guards": {
+        "home": "public",
+        "knowledgeBase": "public",
+        "support": ["customer", "author", "admin"],
+        "articleEditor": ["author", "admin"],
+        "faqManager": ["admin"],
+        "account": ["customer", "author", "admin"]
+      }
+    },
+    "validation_plan": {
+      "Article": { "title": "required,min:5", "summary": "required,min:10", "content": "required,min:50", "category": "required,enum" },
+      "Ticket": { "subject": "required,min:5", "description": "required,min:20" },
+      "FAQ": { "question": "required,min:10", "answer": "required,min:10" }
+    },
+    "screens": {
+      "reused_from_base": ["login", "home", "knowledgeBase", "support", "account"],
+      "upgraded": ["home", "knowledgeBase", "support"],
+      "added": ["articleDetail", "articleEditor", "faqManager"]
+    },
+    "manifest_extensions": {
+      "template_type": "starter",
+      "readiness_score": 35,
+      "workflow_coverage": ["self-service", "article-management", "ticket-submission"],
+      "entities": ["User", "Article", "FAQ", "Ticket", "Feedback", "Tag"],
+      "roles": ["customer", "author", "admin"],
+      "starter_version": "1.0.0"
+    }
+  }
+]

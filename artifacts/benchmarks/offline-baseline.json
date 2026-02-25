@@ -1,0 +1,156 @@
+{
+  "timestamp": "2026-02-25T12:17:00.145Z",
+  "airengineVersion": "0.2.0",
+  "nodeVersion": "v20.17.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "examples": [
+    {
+      "file": "todo.air",
+      "sourceLines": 12,
+      "sourceBytes": 431,
+      "sourceHash": "5c050ded12855e9137dd6dd4e711cc61eaebc95d8b26a88759b40c247df39982",
+      "parseMs": 1.07,
+      "validateMs": 0.31,
+      "transpileMs": 3.8,
+      "totalMs": 5.19,
+      "outputFiles": 9,
+      "outputLines": 395,
+      "compressionRatio": 32.9,
+      "diagnostics": {
+        "errors": 0,
+        "warnings": 0,
+        "info": 0
+      },
+      "hashStable": true
+    },
+    {
+      "file": "expense-tracker.air",
+      "sourceLines": 33,
+      "sourceBytes": 1233,
+      "sourceHash": "e5c14f34f43152be870cb8e98c47685b8f995bb079dd3eb6671249ab49eb9a94",
+      "parseMs": 0.68,
+      "validateMs": 0.06,
+      "transpileMs": 1.3,
+      "totalMs": 2.03,
+      "outputFiles": 9,
+      "outputLines": 450,
+      "compressionRatio": 13.6,
+      "diagnostics": {
+        "errors": 0,
+        "warnings": 0,
+        "info": 0
+      },
+      "hashStable": true
+    },
+    {
+      "file": "auth.air",
+      "sourceLines": 25,
+      "sourceBytes": 672,
+      "sourceHash": "f68b9a75149ed3afeac90d4a70037e69dfe616551a3193fbf046e269df9b756e",
+      "parseMs": 0.39,
+      "validateMs": 7.13,
+      "transpileMs": 3.58,
+      "totalMs": 11.11,
+      "outputFiles": 21,
+      "outputLines": 967,
+      "compressionRatio": 38.7,
+      "diagnostics": {
+        "errors": 2,
+        "warnings": 1,
+        "info": 1
+      },
+      "hashStable": true
+    },
+    {
+      "file": "dashboard.air",
+      "sourceLines": 38,
+      "sourceBytes": 1037,
+      "sourceHash": "f731863ecfd519d8a9dc2bd9804b835c4b84f4f9b0246f3f7289ceeaf2081af8",
+      "parseMs": 0.44,
+      "validateMs": 0.07,
+      "transpileMs": 1.95,
+      "totalMs": 2.45,
+      "outputFiles": 26,
+      "outputLines": 1343,
+      "compressionRatio": 35.3,
+      "diagnostics": {
+        "errors": 1,
+        "warnings": 0,
+        "info": 1
+      },
+      "hashStable": true
+    },
+    {
+      "file": "landing.air",
+      "sourceLines": 32,
+      "sourceBytes": 1085,
+      "sourceHash": "03782d3e915bef4ffdd35070fb383c371950ba3e9b13fb0cd759479f7a3d1537",
+      "parseMs": 0.31,
+      "validateMs": 0.03,
+      "transpileMs": 0.47,
+      "totalMs": 0.81,
+      "outputFiles": 9,
+      "outputLines": 429,
+      "compressionRatio": 13.4,
+      "diagnostics": {
+        "errors": 0,
+        "warnings": 1,
+        "info": 0
+      },
+      "hashStable": true
+    },
+    {
+      "file": "fullstack-todo.air",
+      "sourceLines": 21,
+      "sourceBytes": 726,
+      "sourceHash": "1d268f08b5c10aafdacbaa16eac5fc984c76d634bc37601c1be47b226450a715",
+      "parseMs": 0.36,
+      "validateMs": 0.1,
+      "transpileMs": 1.85,
+      "totalMs": 2.32,
+      "outputFiles": 25,
+      "outputLines": 1135,
+      "compressionRatio": 54,
+      "diagnostics": {
+        "errors": 0,
+        "warnings": 0,
+        "info": 0
+      },
+      "hashStable": true
+    },
+    {
+      "file": "projectflow.air",
+      "sourceLines": 302,
+      "sourceBytes": 8702,
+      "sourceHash": "25d7d6279846e84cb488d1107991593c5dfb4b8f639ae45d554404482fa5cf9f",
+      "parseMs": 1.67,
+      "validateMs": 0.3,
+      "transpileMs": 6.9,
+      "totalMs": 8.88,
+      "outputFiles": 44,
+      "outputLines": 3177,
+      "compressionRatio": 10.5,
+      "diagnostics": {
+        "errors": 0,
+        "warnings": 2,
+        "info": 0
+      },
+      "hashStable": true
+    }
+  ],
+  "aggregate": {
+    "totalExamples": 7,
+    "totalSourceLines": 463,
+    "totalOutputLines": 7896,
+    "avgCompressionRatio": 28.3,
+    "totalParseMs": 4.92,
+    "totalValidateMs": 8,
+    "totalTranspileMs": 19.85,
+    "totalMs": 32.79,
+    "maxSingleFileMs": 11.11,
+    "allHashStable": true,
+    "allUnder200ms": true,
+    "cumulativeUnder500ms": true
+  }
+}

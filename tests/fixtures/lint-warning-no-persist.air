@@ -1,0 +1,3 @@
+@app:nopersist
+@state{items:[{id:int,name:str}]}
+@ui(h1>"hello")

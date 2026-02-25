@@ -1,0 +1,3 @@
+@app:minimal
+@state{x:int}
+@ui(h1>"hello")

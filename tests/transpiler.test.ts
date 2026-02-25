@@ -980,12 +980,6 @@ describe('transpile: output structure', () => {
     expect(result.stats.components).toBeGreaterThanOrEqual(1);
   });
 
-  it('relative .html links get target="_blank"', () => {
-    const allJsx = getAllJsx('airengine-site');
-    // The airengine-site has a link to ./gallery/index.html
-    expect(allJsx).toContain('target="_blank"');
-    expect(allJsx).toContain('gallery/index.html');
-  });
 });
 
 // ---- D1: Visual Semantics ----
@@ -1157,67 +1151,7 @@ describe('scaffold: code/pre/hr CSS', () => {
   });
 });
 
-// ---- airengine-site.air integration ----
-
-describe('airengine-site.air integration', () => {
-  const result = transpileFile('airengine-site');
-  const appFile = result.files.find(f => f.path === 'src/App.jsx');
-  const jsx = appFile?.content ?? '';
-  const css = result.files.find(f => f.path === 'src/index.css')!.content;
-
-  it('transpiles successfully', () => {
-    expect(result.files.length).toBeGreaterThan(0);
-    expect(appFile).toBeDefined();
-  });
-
-  it('uses 1100px container', () => {
-    expect(jsx).toContain('max-w-[1100px]');
-  });
-
-  it('hero section has centered styling', () => {
-    expect(jsx).toMatch(/id="hero"[^>]*text-center/);
-  });
-
-  it('h1:hero modifier produces large heading', () => {
-    expect(jsx).toContain('text-5xl');
-    expect(jsx).toContain('font-extrabold');
-  });
-
-  it('p:lead modifier produces lead text', () => {
-    expect(jsx).toContain('text-lg');
-    expect(jsx).toContain('max-w-2xl');
-  });
-
-  it('p:muted modifier produces muted text', () => {
-    expect(jsx).toContain('text-[var(--muted)]');
-  });
-
-  it('code:block renders as <pre> with code content', () => {
-    expect(jsx).toContain('<pre');
-    expect(jsx).toContain('@app:todo');
-  });
-
-  it('has all expected sections', () => {
-    const sections = ['hero', 'stats', 'code', 'how', 'features', 'blocks', 'start', 'cta', 'footer'];
-    for (const s of sections) {
-      expect(jsx).toContain(`id="${s}"`);
-    }
-  });
-
-  it('footer section has compact styling', () => {
-    expect(jsx).toMatch(/id="footer"[^>]*py-8/);
-    expect(jsx).toMatch(/id="footer"[^>]*border-t/);
-  });
-
-  it('p:small modifier produces small muted text', () => {
-    expect(jsx).toContain('text-sm');
-  });
-
-  it('CSS uses dark theme and accent', () => {
-    expect(css).toContain('--accent: #7c5cfc');
-    expect(css).toContain('--bg: #030712');
-  });
-});
+// airengine-site.air integration tests removed — fixture was deleted in Phase 4
 
 // ---- Batch 1: Transpiler Foundation Tests ----
 
@@ -1275,5 +1209,339 @@ describe('Batch 1: memoization, timing, provenance', () => {
   it('frontend-only app has zero expandedRoutes', () => {
     const todoCtx = extractContext(parseFile('todo'));
     expect(todoCtx.expandedRoutes).toEqual([]);
+  });
+});
+
+// ---- Phase T1: Starter-Ready Transpiler Tests ----
+
+describe('T1.1: CRUD pages render .air UI structure', () => {
+  // Inline fixture: auth-gated CRUD app with custom .air page content
+  const source = `
+@app:taskApp
+@state{
+  user:?map,
+  authError:?str,
+  currentPage:str
+}
+@db{
+  Task{id:int:primary:auto,title:str:required,status:str,created:datetime:auto}
+}
+@api(
+  CRUD:/tasks>~db.Task
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  POST:/auth/logout>auth.logout
+)
+@auth(required)
+@nav(/>?user>page:login)
+@ui(
+  @page:login(
+    form(
+      h2>"Sign In"
+      input:email>#email
+      input:password>#password
+      btn:primary>"Sign In">!login
+    )
+  )
+  @page:dashboard(
+    sidebar(nav:vertical(btn:ghost>"Dashboard"+btn:ghost>"Tasks"))
+    +main(
+      h1>"Dashboard"
+    )
+  )
+  @page:tasks(
+    sidebar(nav:vertical(btn:ghost>"Dashboard"+btn:ghost>"Tasks"))
+    +main(
+      h1>"My Tasks"
+      input:search>#search
+      tabs>statusFilter.set(all,open,closed)
+    )
+  )
+)`;
+  const ast = parse(source);
+  const result = transpile(ast);
+  const tasksPage = result.files.find(f => f.path.includes('TasksPage.jsx'));
+  const tasksJsx = tasksPage?.content ?? '';
+
+  it('CRUD page with .air content renders generateJSX output (not generic wrapper)', () => {
+    // Should contain .air elements like search input, tabs, cards
+    expect(tasksJsx).toContain('statusFilter');
+    expect(tasksJsx).toContain('search');
+  });
+
+  it('CRUD page still has load() and useEffect fetch', () => {
+    expect(tasksJsx).toContain('const load = async');
+    expect(tasksJsx).toContain('useEffect');
+    expect(tasksJsx).toContain('api.');
+  });
+
+  it('CRUD page falls back to generic wrapper when page has no .air content', () => {
+    // A page with only sidebar+main wrappers and no real content inside should still work
+    const dashboardPage = result.files.find(f => f.path.includes('DashboardPage.jsx'));
+    expect(dashboardPage).toBeDefined();
+  });
+});
+
+describe('T1.2: Server errors surfaced to UI', () => {
+  const source = `
+@app:errApp
+@state{
+  user:?map,
+  authError:?str,
+  currentPage:str
+}
+@db{Item{id:int:primary:auto,name:str:required}}
+@api(
+  CRUD:/items>~db.Item
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/logout>auth.logout
+)
+@auth(required)
+@nav(/>?user>page:login)
+@ui(
+  @page:login(form(input:email>#email+input:password>#password+btn:primary>"Login">!login))
+  @page:dashboard(sidebar(nav:vertical(btn:ghost>"Dashboard"+btn:ghost>"Items"))+main(h1>"Dashboard"))
+  @page:items(sidebar(nav:vertical(btn:ghost>"Dashboard"+btn:ghost>"Items"))+main(h1>"Items"))
+)`;
+  const ast = parse(source);
+  const result = transpile(ast);
+  const itemsPage = result.files.find(f => f.path.includes('ItemsPage.jsx'));
+  const itemsJsx = itemsPage?.content ?? '';
+  const dashPage = result.files.find(f => f.path.includes('DashboardPage.jsx'));
+  const dashJsx = dashPage?.content ?? '';
+
+  it('CRUD page has error and successMsg state', () => {
+    expect(itemsJsx).toContain('const [error, setError] = useState(null)');
+    expect(itemsJsx).toContain('const [successMsg, setSuccessMsg] = useState(null)');
+  });
+
+  it('CRUD page renders error alert', () => {
+    expect(itemsJsx).toContain('{error &&');
+    expect(itemsJsx).toContain('bg-red-500/10');
+  });
+
+  it('CRUD page renders success message alert', () => {
+    expect(itemsJsx).toContain('{successMsg &&');
+    expect(itemsJsx).toContain('bg-green-500/10');
+  });
+
+  it('CRUD page load() sets error on failure instead of console.error', () => {
+    expect(itemsJsx).toContain("setError(err.message || 'Failed to load data')");
+    // Should NOT have console.error as sole error handling
+    expect(itemsJsx).not.toMatch(/catch.*\n\s*console\.error\(err\);\n\s*\}/);
+  });
+
+  it('CRUD page handleCreate shows success message', () => {
+    expect(itemsJsx).toContain("setSuccessMsg('Item created successfully')");
+    expect(itemsJsx).toContain('setTimeout(() => setSuccessMsg(null), 3000)');
+  });
+
+  it('dashboard page has error state', () => {
+    expect(dashJsx).toContain('const [error, setError] = useState(null)');
+    expect(dashJsx).toContain('{error &&');
+  });
+});
+
+describe('T1.3: HTML5 validation attributes', () => {
+  const source = `
+@app:valApp
+@state{
+  user:?map,
+  authError:?str,
+  currentPage:str
+}
+@db{Product{id:int:primary:auto,name:str:required,email:str:required,price:float:required,active:bool,notes:str}}
+@api(
+  CRUD:/products>~db.Product
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/logout>auth.logout
+)
+@auth(required)
+@nav(/>?user>page:login)
+@ui(
+  @page:login(form(input:email>#email+input:password>#password+btn:primary>"Login">!login))
+  @page:products(sidebar(nav:vertical(btn:ghost>"Products"))+main(h1>"Products"))
+)`;
+  const ast = parse(source);
+  const result = transpile(ast);
+  const productsPage = result.files.find(f => f.path.includes('ProductsPage.jsx'));
+  const productsJsx = productsPage?.content ?? '';
+
+  it('required db fields get required attribute on form inputs', () => {
+    // name:str:required → <input ... required ...>
+    expect(productsJsx).toMatch(/name="name"[^>]*required/);
+    expect(productsJsx).toMatch(/name="email"[^>]*required/);
+    expect(productsJsx).toMatch(/name="price"[^>]*required/);
+  });
+
+  it('non-required db fields do NOT get required attribute', () => {
+    // notes:str (no :required) → no required attribute
+    // active:bool → checkbox, no required
+    expect(productsJsx).not.toMatch(/name="notes"[^>]*required/);
+  });
+
+  it('email fields use type="email"', () => {
+    expect(productsJsx).toContain('type="email"');
+  });
+
+  it('number fields use type="number"', () => {
+    expect(productsJsx).toContain('type="number"');
+  });
+});
+
+describe('T1.4: Forgot password flow', () => {
+  const source = `
+@app:fpApp
+@state{
+  user:?map,
+  authError:?str,
+  currentPage:str,
+  successMsg:?str
+}
+@db{User{id:int:primary:auto,email:str:required,name:str:required,password:str:required}}
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str)>auth.register
+  POST:/auth/logout>auth.logout
+  POST:/auth/forgot-password(email:str)>auth.forgotPassword
+)
+@auth(required)
+@nav(/>?user>page:login)
+@ui(
+  @page:login(
+    form(
+      h2>"Sign In"
+      input:email>#email
+      input:password>#password
+      btn:primary>"Sign In">!login
+      btn:ghost>"Forgot Password?">!forgotPassword
+    )
+  )
+  @page:forgotPassword(
+    form(
+      h2>"Reset Password"
+      input:email>#email
+      btn:primary>"Send Reset Link">!forgotPassword
+      btn:ghost>"Back to Login">!goBack
+    )
+  )
+  @page:dashboard(sidebar(nav:vertical(btn:ghost>"Dashboard"))+main(h1>"Dashboard"))
+)`;
+  const ast = parse(source);
+  const result = transpile(ast);
+  const allJsx = result.files.filter(f => f.path.endsWith('.jsx')).map(f => f.content).join('\n');
+  const serverFiles = result.files.filter(f => f.path.endsWith('.ts') || f.path.endsWith('.js'));
+  const apiContent = serverFiles.map(f => f.content).join('\n');
+
+  it('login page has "Forgot Password?" link', () => {
+    expect(allJsx).toContain('Forgot Password');
+  });
+
+  it('forgotPassword mutation is generated', () => {
+    expect(allJsx).toContain('const forgotPassword');
+  });
+
+  it('server generates forgot-password endpoint', () => {
+    expect(apiContent).toContain('forgot-password');
+    // Should return a generic success message to prevent email enumeration
+    expect(apiContent).toContain('If an account exists');
+  });
+
+  it('goBack mutation generates form reset + page navigation', () => {
+    expect(allJsx).toContain('const goBack');
+    expect(allJsx).toContain("setCurrentPage('login')");
+  });
+});
+
+describe('T1.5: Improved mutation wiring', () => {
+  const source = `
+@app:mutApp
+@state{
+  user:?map,
+  authError:?str,
+  currentPage:str
+}
+@db{Ticket{id:int:primary:auto,title:str:required,status:str,assignee:str}}
+@api(
+  CRUD:/tickets>~db.Ticket
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/logout>auth.logout
+)
+@auth(required)
+@nav(/>?user>page:login)
+@ui(
+  @page:login(form(input:email>#email+input:password>#password+btn:primary>"Login">!login))
+  @page:tickets(
+    sidebar(nav:vertical(btn:ghost>"Tickets"))
+    +main(
+      h1>"Tickets"
+      list>tickets>*ticket(
+        card(
+          h3>#ticket.title
+          +badge:#ticket.status
+          +btn:ghost>"Resolve">!resolveTicket(#ticket.id)
+          +btn:ghost>"Close">!closeTicket(#ticket.id)
+        )
+      )
+    )
+  )
+)`;
+  const ast = parse(source);
+  const result = transpile(ast);
+  const allJsx = result.files.filter(f => f.path.endsWith('.jsx')).map(f => f.content).join('\n');
+
+  it('resolveTicket mutation matches PUT:/tickets/:id via verb+model pattern', () => {
+    // Should generate an async function that calls the API, not a console.log stub
+    expect(allJsx).toMatch(/const resolveTicket\s*=\s*async/);
+  });
+
+  it('closeTicket mutation matches PUT:/tickets/:id', () => {
+    expect(allJsx).toMatch(/const closeTicket\s*=\s*async/);
+  });
+});
+
+describe('T1.6: Cancel button recognition', () => {
+  const source = `
+@app:cancelApp
+@state{
+  user:?map,
+  authError:?str,
+  currentPage:str
+}
+@api(POST:/auth/login(email:str,password:str)>auth.login)
+@auth(required)
+@nav(/>?user>page:login)
+@ui(
+  @page:login(
+    form(
+      input:email>#email
+      +input:password>#password
+      +btn:primary>"Login">!login
+      +btn:ghost>"Cancel">!cancel
+    )
+  )
+  @page:register(
+    form(
+      input:text>#name
+      +input:email>#email
+      +input:password>#password
+      +btn:primary>"Register">!register
+      +btn:ghost>"Back">!cancelLogin
+    )
+  )
+  @page:dashboard(h1>"Welcome")
+)`;
+  const ast = parse(source);
+  const result = transpile(ast);
+  const allJsx = result.files.filter(f => f.path.endsWith('.jsx')).map(f => f.content).join('\n');
+
+  it('cancel mutation generates form reset', () => {
+    expect(allJsx).toContain('const cancel');
+    expect(allJsx).toContain('.reset');
+  });
+
+  it('cancelLogin mutation generates form reset + page navigation', () => {
+    expect(allJsx).toContain('const cancelLogin');
+    expect(allJsx).toContain("setCurrentPage('login')");
   });
 });

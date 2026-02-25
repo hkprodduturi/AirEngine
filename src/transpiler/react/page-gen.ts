@@ -11,7 +11,7 @@ import type { AirUINode, AirDbModel, AirDbField, AirRoute, AirType } from '../..
 import type { TranspileContext } from '../context.js';
 import type { UIAnalysis } from '../normalize-ui.js';
 import type { OutputFile } from '../index.js';
-import { resolveBindChain } from '../normalize-ui.js';
+import { resolveBindChain, extractMutations } from '../normalize-ui.js';
 import { routeToFunctionName } from '../route-utils.js';
 import {
   capitalize, pluralize, toCamelCase, camelToLabel, ROOT_SCOPE,
@@ -21,6 +21,7 @@ import {
   Scope,
 } from './helpers.js';
 import { generateJSX } from './jsx-gen.js';
+import { findGenericRouteMatch } from './mutation-gen.js';
 
 // ---- Page Resource Binding ----
 
@@ -42,6 +43,7 @@ interface FormFieldInfo {
   name: string;
   type: 'text' | 'number' | 'email' | 'date' | 'select' | 'checkbox' | 'textarea';
   enumValues?: string[];
+  required?: boolean;  // T1.3: derived from @db :required modifier
 }
 
 /**
@@ -180,7 +182,12 @@ function buildFormFields(model: AirDbModel): FormFieldInfo[] {
     .filter(f => !(f.primary && f.auto))  // skip auto PK
     .filter(f => !f.auto)                  // skip auto timestamps
     .filter(f => !f.name.endsWith('_id'))  // skip FK
-    .map(f => fieldTypeToInputType(f))
+    .map(f => {
+      const info = fieldTypeToInputType(f);
+      // T1.3: propagate required flag from @db field modifier
+      if (f.required) info.required = true;
+      return info;
+    })
     .slice(0, 8);
 }
 
@@ -394,6 +401,11 @@ function generateDashboardPage(
   }
   lines.push('');
 
+  // T1.2: Error state for dashboard pages
+  lines.push('  const [error, setError] = useState(null);');
+  declaredVars.add('error'); declaredVars.add('setError');
+  lines.push('');
+
   // Parallel fetch on mount
   lines.push('  useEffect(() => {');
   lines.push('    Promise.all([');
@@ -401,7 +413,7 @@ function generateDashboardPage(
     lines.push(`      api.${ds.getFnName}().then(set${capitalize(ds.stateVar)}),`);
   }
   lines.push('    ])');
-  lines.push('      .catch(console.error)');
+  lines.push("      .catch(err => setError(err.message || 'Failed to load data'))");
   lines.push('      .finally(() => setLoading(false));');
   lines.push('  }, []);');
   lines.push('');
@@ -413,6 +425,9 @@ function generateDashboardPage(
     : '    <div className="min-h-screen p-6" style={{ background: "var(--bg)", color: "var(--fg)" }}>';
   const WrapClose = hasLayout ? '    </Layout>' : '    </div>';
   lines.push(WrapOpen);
+
+  // T1.2: Error alert for dashboard
+  lines.push('      {error && <div className="mb-4 rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{error}</div>}');
 
   // Loading state
   lines.push('      {loading ? (');
@@ -494,6 +509,11 @@ function generateCrudPage(
     lines.push('  const [deleteId, setDeleteId] = useState(null);');
     declaredVars.add('deleteId'); declaredVars.add('setDeleteId');
   }
+  // T1.2: Error and success state for user-visible feedback
+  lines.push('  const [error, setError] = useState(null);');
+  lines.push('  const [successMsg, setSuccessMsg] = useState(null);');
+  declaredVars.add('error'); declaredVars.add('setError');
+  declaredVars.add('successMsg'); declaredVars.add('setSuccessMsg');
   // Mark handler names as known
   if (postFnName) declaredVars.add('handleCreate');
   if (putFnName) declaredVars.add('handleUpdate');
@@ -508,7 +528,7 @@ function generateCrudPage(
     lines.push(`      const data = await api.${getFnName}();`);
     lines.push(`      set${capitalize(modelPlural)}(data);`);
     lines.push('    } catch (err) {');
-    lines.push('      console.error(err);');
+    lines.push("      setError(err.message || 'Failed to load data');");
     lines.push('    } finally {');
     lines.push('      setLoading(false);');
     lines.push('    }');
@@ -523,6 +543,7 @@ function generateCrudPage(
     lines.push('  const handleCreate = async (e) => {');
     lines.push('    e.preventDefault();');
     lines.push('    setSubmitting(true);');
+    lines.push('    setError(null);');
     lines.push('    try {');
     lines.push('      const fd = Object.fromEntries(new FormData(e.target));');
     // Convert numeric fields
@@ -534,9 +555,11 @@ function generateCrudPage(
     lines.push(`      await api.${postFnName}(fd);`);
     lines.push('      e.target.reset();');
     lines.push('      setShowForm(false);');
+    lines.push(`      setSuccessMsg('${singularLabel} created successfully');`);
+    lines.push('      setTimeout(() => setSuccessMsg(null), 3000);');
     lines.push('      load();');
     lines.push('    } catch (err) {');
-    lines.push('      console.error(err);');
+    lines.push("      setError(err.message || 'Failed to create');");
     lines.push('    } finally {');
     lines.push('      setSubmitting(false);');
     lines.push('    }');
@@ -548,6 +571,7 @@ function generateCrudPage(
   if (putFnName && getFnName) {
     lines.push('  const handleUpdate = async (e) => {');
     lines.push('    e.preventDefault();');
+    lines.push('    setError(null);');
     lines.push('    try {');
     lines.push('      const fd = Object.fromEntries(new FormData(e.target));');
     for (const f of binding.formFields) {
@@ -557,9 +581,11 @@ function generateCrudPage(
     }
     lines.push(`      await api.${putFnName}(editId, fd);`);
     lines.push('      setEditId(null);');
+    lines.push(`      setSuccessMsg('${singularLabel} updated successfully');`);
+    lines.push('      setTimeout(() => setSuccessMsg(null), 3000);');
     lines.push('      load();');
     lines.push('    } catch (err) {');
-    lines.push('      console.error(err);');
+    lines.push("      setError(err.message || 'Failed to update');");
     lines.push('    }');
     lines.push('  };');
     lines.push('');
@@ -568,16 +594,142 @@ function generateCrudPage(
   // Delete handler — uses modal instead of window.confirm
   if (deleteFnName && getFnName) {
     lines.push('  const handleDelete = async (id) => {');
+    lines.push('    setError(null);');
     lines.push('    try {');
     lines.push(`      await api.${deleteFnName}(id);`);
     lines.push('      setDeleteId(null);');
+    lines.push(`      setSuccessMsg('${singularLabel} deleted');`);
+    lines.push('      setTimeout(() => setSuccessMsg(null), 3000);');
     lines.push('      load();');
     lines.push('    } catch (err) {');
-    lines.push('      console.error(err);');
+    lines.push("      setError(err.message || 'Failed to delete');");
     lines.push('    }');
     lines.push('  };');
     lines.push('');
   }
+
+  // T1.5/A2c: Generate custom page-level mutations (e.g., resolveTicket, closeTicket)
+  // Extract mutations from page children, skip standard CRUD names, wire to API routes
+  const standardMutNames = new Set(['add', 'addItem', 'del', 'delItem', 'remove', 'update', 'save', 'toggle', 'handleCreate', 'handleUpdate', 'handleDelete']);
+  const pageMuts = extractMutations(page.children);
+  const expandedRoutes = ctx.expandedRoutes;
+  for (const mut of pageMuts) {
+    if (standardMutNames.has(mut.name)) continue;
+    const genericMatch = findGenericRouteMatch(mut.name, expandedRoutes);
+    if (genericMatch) {
+      declaredVars.add(mut.name);
+      if (genericMatch.method === 'PUT') {
+        lines.push(`  const ${mut.name} = async (id, data) => {`);
+        lines.push('    try {');
+        lines.push(`      await api.${genericMatch.fnName}(id, data || { ${mut.name}: true });`);
+        if (getFnName) {
+          lines.push(`      load();`);
+        }
+        lines.push('    } catch (err) {');
+        lines.push(`      setError(err.message || '${mut.name} failed');`);
+        lines.push('    }');
+        lines.push('  };');
+      } else {
+        lines.push(`  const ${mut.name} = async (data) => {`);
+        lines.push('    try {');
+        lines.push(`      await api.${genericMatch.fnName}(data);`);
+        if (getFnName) {
+          lines.push(`      load();`);
+        }
+        lines.push('    } catch (err) {');
+        lines.push(`      setError(err.message || '${mut.name} failed');`);
+        lines.push('    }');
+        lines.push('  };');
+      }
+      lines.push('');
+    }
+  }
+
+  // Pre-generate child JSX to check if page has substantive .air content
+  const filteredChildren = page.children.filter(c => !hasSidebarNode(c));
+  const mainChildren = extractMainContent(page.children) || filteredChildren;
+  const hasSubstantiveContent = mainChildren.length > 0 && mainChildren.some(c => {
+    // Check if children have meaningful content beyond just wrappers or headings
+    if (c.kind === 'element' && ['main', 'div', 'section'].includes(c.element) && (!c.children || c.children.length === 0)) return false;
+    // Headings alone (h1>"Title") don't count as substantive page content
+    if (isHeadingOnly(c)) return false;
+    return true;
+  });
+
+  // T1.1: If page has substantive .air content, render it via generateJSX()
+  // instead of the generic CRUD wrapper. Inject data handlers above the return.
+  if (hasSubstantiveContent) {
+    const childJsx = mainChildren.map(c =>
+      generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
+    ).filter(Boolean).join('\n');
+
+    // Scan JSX for undeclared state variables and add them
+    const extraState = detectUndeclaredStateVars(childJsx, declaredVars, ctx);
+    for (const { name, defaultVal } of extraState) {
+      lines.push(`  const [${name}, set${capitalize(name)}] = useState(${defaultVal});`);
+      declaredVars.add(name);
+    }
+    lines.push('');
+
+    // Render with Layout wrapping
+    lines.push('  return (');
+    lines.push(hasLayout
+      ? '    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>'
+      : '    <div className="min-h-screen p-6" style={{ background: "var(--bg)", color: "var(--fg)" }}>');
+
+    // Error/success alerts (T1.2)
+    lines.push('      {error && <div className="mb-4 rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{error}</div>}');
+    lines.push('      {successMsg && <div className="mb-4 rounded-[var(--radius)] bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 text-sm">{successMsg}</div>}');
+
+    // Loading state
+    lines.push('      {loading ? (');
+    lines.push('        <div className="space-y-6 animate-pulse">');
+    lines.push('          <div className="h-8 w-48 bg-[var(--hover)] rounded" />');
+    lines.push('          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">');
+    lines.push('            {[1,2,3].map(i => (');
+    lines.push('              <div key={i} className="h-28 bg-[var(--hover)] rounded-[var(--radius)]" />');
+    lines.push('            ))}');
+    lines.push('          </div>');
+    lines.push('          <div className="h-64 bg-[var(--hover)] rounded-[var(--radius)]" />');
+    lines.push('        </div>');
+    lines.push('      ) : (');
+
+    if (childJsx.trim()) {
+      lines.push('        <div className="space-y-6 animate-fade-in">');
+      lines.push(childJsx);
+      lines.push('        </div>');
+    } else {
+      lines.push('        <div className="space-y-6 animate-fade-in" />');
+    }
+
+    lines.push('      )}');
+
+    // Delete confirmation modal (still needed for CRUD pages)
+    if (deleteFnName) {
+      lines.push('');
+      lines.push('      {/* Delete confirmation modal */}');
+      lines.push('      {deleteId !== null && (');
+      lines.push('        <div className="modal-backdrop" onClick={() => setDeleteId(null)}>');
+      lines.push('          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>');
+      lines.push(`            <h3 className="text-lg font-semibold mb-2">Delete ${singularLabel}</h3>`);
+      lines.push(`            <p className="text-sm text-[var(--muted)] mb-6">Are you sure you want to delete this ${singularLabel.toLowerCase()}? This action cannot be undone.</p>`);
+      lines.push('            <div className="flex justify-end gap-3">');
+      lines.push('              <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded-[var(--radius)] border border-[var(--border)] hover:bg-[var(--hover)] text-sm font-medium transition-colors">Cancel</button>');
+      lines.push('              <button onClick={() => handleDelete(deleteId)} className="px-4 py-2 rounded-[var(--radius)] bg-red-500 text-white hover:bg-red-600 text-sm font-medium transition-colors">Delete</button>');
+      lines.push('            </div>');
+      lines.push('          </div>');
+      lines.push('        </div>');
+      lines.push('      )}');
+    }
+
+    lines.push(hasLayout ? '    </Layout>' : '    </div>');
+    lines.push('  );');
+    lines.push('}');
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  // ---- Fallback: Generic CRUD wrapper (when page has no substantive .air content) ----
 
   // Render
   lines.push('  return (');
@@ -585,10 +737,12 @@ function generateCrudPage(
     ? '    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>'
     : '    <div className="min-h-screen p-6" style={{ background: "var(--bg)", color: "var(--fg)" }}>');
 
-
-  // Auth-gated CRUD pages use the generated CRUD wrapper exclusively —
-  // skip the @ui block JSX since the wrapper already handles display.
   lines.push(`      <div className="space-y-6 animate-fade-in">`);
+
+  // Error/success alerts (T1.2)
+  lines.push('        {error && <div className="mb-4 rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{error}</div>}');
+  lines.push('        {successMsg && <div className="mb-4 rounded-[var(--radius)] bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 text-sm">{successMsg}</div>}');
+
   lines.push(`        <div className="flex items-center justify-between">`);
   lines.push(`          <div>`);
   lines.push(`            <h1 className="text-2xl font-bold tracking-tight">${modelLabel}</h1>`);
@@ -614,7 +768,7 @@ function generateCrudPage(
       lines.push(`          <form onSubmit={handleCreate} className="p-6 border border-[var(--border)] rounded-[var(--radius)] bg-[var(--surface)] space-y-4 animate-slide-up">`);
       lines.push(`            <h3 className="text-lg font-semibold mb-2">New ${singularLabel}</h3>`);
       for (const field of binding.formFields) {
-        lines.push(renderFormField(field, 12));
+        lines.push(renderFormField(field, binding, 12));
       }
       lines.push(`            <div className="flex justify-end gap-3 pt-2">`);
       lines.push(`              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2.5 rounded-[var(--radius)] border border-[var(--border)] hover:bg-[var(--hover)] text-sm font-medium transition-colors">Cancel</button>`);
@@ -711,15 +865,17 @@ function generateCrudPage(
 }
 
 /** Render a single form field with smart type mapping */
-function renderFormField(field: FormFieldInfo, indent: number): string {
+function renderFormField(field: FormFieldInfo, binding: PageResourceBinding, indent: number): string {
   const pad = ' '.repeat(indent);
   const label = field.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const placeholder = `Enter ${label.toLowerCase()}...`;
+  // T1.3: Required attribute from @db :required modifier
+  const reqAttr = field.required ? ' required' : '';
 
   if (field.type === 'select' && field.enumValues) {
     return `${pad}<div>\n`
       + `${pad}  <label className="block text-sm font-medium mb-1.5">${label}</label>\n`
-      + `${pad}  <select name="${field.name}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm">\n`
+      + `${pad}  <select name="${field.name}"${reqAttr} className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm">\n`
       + field.enumValues.map(v => `${pad}    <option value="${v}">${capitalize(v)}</option>`).join('\n') + '\n'
       + `${pad}  </select>\n`
       + `${pad}</div>`;
@@ -733,14 +889,28 @@ function renderFormField(field: FormFieldInfo, indent: number): string {
   if (field.type === 'textarea') {
     return `${pad}<div>\n`
       + `${pad}  <label className="block text-sm font-medium mb-1.5">${label}</label>\n`
-      + `${pad}  <textarea name="${field.name}" rows="3" placeholder="${placeholder}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm resize-y" />\n`
+      + `${pad}  <textarea name="${field.name}" rows="3"${reqAttr} placeholder="${placeholder}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm resize-y" />\n`
       + `${pad}</div>`;
   }
 
   return `${pad}<div>\n`
     + `${pad}  <label className="block text-sm font-medium mb-1.5">${label}</label>\n`
-    + `${pad}  <input type="${field.type}" name="${field.name}" placeholder="${placeholder}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm" />\n`
+    + `${pad}  <input type="${field.type}" name="${field.name}"${reqAttr} placeholder="${placeholder}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm" />\n`
     + `${pad}</div>`;
+}
+
+/** Check if a node is just a heading (h1-h6 with text content). */
+function isHeadingOnly(node: AirUINode): boolean {
+  const headings = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  if (node.kind === 'element' && headings.includes(node.element)) return true;
+  // h1>"Title" is binary '>' with left=h1
+  if (node.kind === 'binary' && node.operator === '>') {
+    const left = node.left;
+    if (left.kind === 'element' && headings.includes(left.element)) return true;
+    const resolved = tryResolveElement(left);
+    if (resolved && headings.includes(resolved.element)) return true;
+  }
+  return false;
 }
 
 // ---- Form / Sidebar Detection Helpers ----

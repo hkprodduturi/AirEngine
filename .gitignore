@@ -6,6 +6,8 @@ package-lock.json
 *.tgz
 .DS_Store
 output/.air-cache/
+.air-artifacts/
+.air-cache/
 output/client/
 output/server/
 output/docker-compose.yml

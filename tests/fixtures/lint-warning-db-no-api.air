@@ -1,0 +1,4 @@
+@app:dbonly
+@state{x:int}
+@db{Item{id:int:primary:auto,name:str:required}}
+@ui(h1>"hello")

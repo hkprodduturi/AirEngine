@@ -208,6 +208,34 @@ program
     await server.start();
   });
 
+// ---- air loop ----
+
+program
+  .command('loop')
+  .description('Run the full agent loop: validate → repair → transpile → smoke → deliver')
+  .argument('<file>', 'Path to .air file')
+  .option('-o, --output <dir>', 'Output directory', './output')
+  .action(async (file, options) => {
+    console.log(`\n  ⚡ AirEngine Loop\n`);
+
+    try {
+      const { runLoop, formatLoopResult } = await import('./loop.js');
+      const result = await runLoop(file, options.output);
+      console.log(formatLoopResult(result));
+
+      const failed = result.stages.some(s => s.status === 'fail');
+      if (failed) {
+        console.log('\n  Loop completed with failures.\n');
+        process.exit(1);
+      } else {
+        console.log(`\n  Loop completed successfully → ${options.output}/\n`);
+      }
+    } catch (err) {
+      console.error(`  ❌ ${err}\n`);
+      process.exit(1);
+    }
+  });
+
 // ---- air doctor ----
 
 program

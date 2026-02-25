@@ -1,0 +1,5 @@
+@app:nopk
+@state{x:int}
+@db{Item{name:str,email:str}}
+@api(GET:/items>test)
+@ui(h1>"hello")

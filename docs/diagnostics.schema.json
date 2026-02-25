@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/diagnostics/1.0",
+  "title": "AirEngine DiagnosticResult",
+  "description": "Structured diagnostic output from AirEngine validation and linting, schema version 1.0",
+  "type": "object",
+  "required": ["valid", "diagnostics", "summary", "source_hash", "airengine_version", "schema_version"],
+  "properties": {
+    "valid": {
+      "type": "boolean",
+      "description": "false if any diagnostic has severity='error'"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Diagnostic" },
+      "description": "All issues, ordered by severity then line number then code"
+    },
+    "summary": {
+      "type": "object",
+      "required": ["errors", "warnings", "info"],
+      "properties": {
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "info": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "source_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex digest of input source"
+    },
+    "airengine_version": {
+      "type": "string",
+      "description": "Semantic version of AirEngine that produced this result"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for forward compatibility"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "message", "category"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^AIR-[PEWL]\\d{3}$",
+          "description": "Stable error code (e.g., AIR-E001, AIR-P003)"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning", "info"]
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable description of the issue"
+        },
+        "location": {
+          "$ref": "#/$defs/DiagnosticLocation"
+        },
+        "block": {
+          "type": "string",
+          "description": "Which @block the issue is in (e.g., @db, @api)"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path within block (e.g., User.email, POST:/tasks)"
+        },
+        "fix": {
+          "$ref": "#/$defs/DiagnosticFix"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["syntax", "structural", "semantic", "style", "performance"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "DiagnosticLocation": {
+      "type": "object",
+      "required": ["line", "col"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 1, "description": "1-indexed line number" },
+        "col": { "type": "integer", "minimum": 1, "description": "1-indexed column number" },
+        "endLine": { "type": "integer", "minimum": 1 },
+        "endCol": { "type": "integer", "minimum": 1 },
+        "sourceLine": { "type": "string", "description": "Raw source text at error location" }
+      },
+      "additionalProperties": false
+    },
+    "DiagnosticFix": {
+      "type": "object",
+      "required": ["description"],
+      "properties": {
+        "description": { "type": "string", "description": "What to do, in imperative form" },
+        "suggestion": { "type": "string", "description": "Exact replacement text (when deterministic)" },
+        "pattern": { "type": "string", "description": "Regex pattern to find problematic text" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

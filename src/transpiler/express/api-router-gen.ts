@@ -626,13 +626,16 @@ export function unwrapKind(type: { kind: string; of?: unknown }): string {
  * Check if a handler string is an auth-related handler.
  * Matches: auth.login, auth.register, or handlers ending with /login, /register, /signup.
  */
-export function isAuthHandler(handler: string, path: string): 'login' | 'register' | null {
+export function isAuthHandler(handler: string, path: string): 'login' | 'register' | 'forgotPassword' | null {
   // Handler-based detection
   if (handler === 'auth.login' || handler === '~jwt.verify') return 'login';
   if (handler === 'auth.register' || handler === 'auth.signup') return 'register';
+  // T1.4: Forgot password handler detection
+  if (handler === 'auth.forgotPassword' || handler === 'auth.resetPassword') return 'forgotPassword';
   // Path-based detection
   if (path.endsWith('/login')) return 'login';
   if (path.endsWith('/register') || path.endsWith('/signup')) return 'register';
+  if (path.endsWith('/forgot-password') || path.endsWith('/reset-password')) return 'forgotPassword';
   return null;
 }
 
@@ -642,7 +645,7 @@ export function isAuthHandler(handler: string, path: string): 'login' | 'registe
  * Uses createToken from auth.ts for token generation.
  */
 export function generateAuthHandlerLines(
-  authType: 'login' | 'register',
+  authType: 'login' | 'register' | 'forgotPassword',
   route: AirRoute,
   ctx: TranspileContext,
 ): string[] {
@@ -663,7 +666,24 @@ export function generateAuthHandlerLines(
     ? userModel.name.charAt(0).toLowerCase() + userModel.name.slice(1)
     : 'user';
 
-  if (authType === 'login') {
+  if (authType === 'forgotPassword') {
+    // T1.4: Forgot password endpoint — validates email, generates reset token stub
+    lines.push('    const { email } = req.body;');
+    lines.push("    if (!email) return res.status(400).json({ error: 'Email is required' });");
+    if (userModel && ctx.db) {
+      lines.push(`    const user = await prisma.${modelVar}.findFirst({ where: { email } });`);
+      lines.push('    if (user) {');
+      lines.push("      // TODO: generate actual reset token, store it, and send email");
+      lines.push("      const resetToken = require('crypto').randomBytes(32).toString('hex');");
+      lines.push("      console.log(`Password reset requested for ${email}. Token: ${resetToken}`);");
+      lines.push('    }');
+    } else {
+      lines.push('    // TODO: implement user lookup for password reset');
+    }
+    lines.push('    // Always return success to prevent email enumeration');
+    lines.push("    res.json({ message: 'If an account exists for that email, a reset link has been sent.' });");
+    return lines;
+  } else if (authType === 'login') {
     lines.push('    const { email, password } = req.body;');
     lines.push("    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });");
     if (userModel && ctx.db) {

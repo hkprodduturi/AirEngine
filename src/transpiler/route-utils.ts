@@ -12,7 +12,7 @@ export function expandCrud(routes: AirRoute[]): AirRoute[] {
   const result: AirRoute[] = [];
   for (const route of routes) {
     if (route.method === 'CRUD') {
-      const handlerBase = route.handler.replace(/\.\w+$/, '');
+      const handlerBase = route.handler;
       result.push({ method: 'GET', path: route.path, handler: `${handlerBase}.findMany` });
       result.push({ method: 'POST', path: route.path, handler: `${handlerBase}.create`, params: route.params });
       result.push({ method: 'PUT', path: `${route.path}/:id`, handler: `${handlerBase}.update`, params: route.params });

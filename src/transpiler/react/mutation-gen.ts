@@ -129,6 +129,11 @@ export function findMatchingRoute(
     matchedRoute = expandedRoutes.find(r =>
       r.method === 'POST' && r.path.endsWith('/logout')
     );
+  } else if (mutName === 'forgotPassword' || mutName === 'resetPassword') {
+    // T1.4: Match forgot password / reset password endpoints
+    matchedRoute = expandedRoutes.find(r =>
+      r.method === 'POST' && (r.path.endsWith('/forgot-password') || r.path.endsWith('/reset-password'))
+    );
   }
 
   if (!matchedRoute) return null;
@@ -168,7 +173,7 @@ export function findMatchingRoute(
  * e.g., !processPayment → find POST /.../process-payment
  * Also tries PUT routes for action verbs (approve, reject, cancel, etc.)
  */
-function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]): { fnName: string; method: string } | null {
+export function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]): { fnName: string; method: string } | null {
   // Convert camelCase to kebab-case
   const kebab = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
   // Try POST first
@@ -185,6 +190,40 @@ function findGenericRouteMatch(name: string, expandedRoutes: AirRoute[]): { fnNa
   if (putRoute) {
     return { fnName: routeToFunctionName(putRoute.method, putRoute.path), method: 'PUT' };
   }
+
+  // T1.5: Verb+Model pattern matching — split camelCase mutation names into [verb][Model]
+  // e.g., createTicket → verb=create, model=Ticket → match POST:/tickets
+  // e.g., resolveTicket → verb=resolve, model=Ticket → match PUT:/tickets/:id
+  const verbModelMatch = name.match(/^(create|add|update|resolve|assign|close|reopen|complete|approve|reject|cancel|confirm|publish|unpublish|activate|deactivate|archive|restore|block|unblock|mark|flag|enroll|book|move|pin|unpin|star|unstar|remove|delete)([A-Z]\w*)$/);
+  if (verbModelMatch) {
+    const [, verb, model] = verbModelMatch;
+    const modelPlural = model.toLowerCase().endsWith('s') ? model.toLowerCase() : model.toLowerCase() + 's';
+    // Map verb to HTTP method
+    const verbToMethod: Record<string, string> = {
+      create: 'POST', add: 'POST',
+      delete: 'DELETE', remove: 'DELETE',
+    };
+    const method = verbToMethod[verb] || 'PUT';
+
+    if (method === 'POST') {
+      const route = expandedRoutes.find(r =>
+        r.method === 'POST' && r.path.includes(`/${modelPlural}`) && /~db\.\w+\.create/.test(r.handler)
+      );
+      if (route) return { fnName: routeToFunctionName(route.method, route.path), method: 'POST' };
+    } else if (method === 'DELETE') {
+      const route = expandedRoutes.find(r =>
+        r.method === 'DELETE' && r.path.includes(`/${modelPlural}`) && /~db\.\w+\.delete/.test(r.handler)
+      );
+      if (route) return { fnName: routeToFunctionName(route.method, route.path), method: 'DELETE' };
+    } else {
+      // PUT — find update route matching the model
+      const route = expandedRoutes.find(r =>
+        r.method === 'PUT' && r.path.includes(`/${modelPlural}`) && /~db\.\w+\.update/.test(r.handler)
+      );
+      if (route) return { fnName: routeToFunctionName(route.method, route.path), method: 'PUT' };
+    }
+  }
+
   // Try matching PUT routes with :id param for update-style actions
   const putIdRoute = expandedRoutes.find(r =>
     r.method === 'PUT' && /~db\.\w+\.update/.test(r.handler)
@@ -469,6 +508,57 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`  }`);
         lines.push('};');
       }
+    } else if (name === 'forgotPassword' || name === 'resetPassword') {
+      // T1.4: Forgot password flow — form-based mutation
+      if (match) {
+        lines.push(`const ${name} = async (e) => {`);
+        lines.push(`  e?.preventDefault?.();`);
+        if (hasLoading) lines.push(`  setLoading(true);`);
+        if (hasAuth) lines.push(`  setAuthError(null);`);
+        else if (hasError) lines.push(`  setError(null);`);
+        lines.push(`  try {`);
+        lines.push(`    const formData = e?.target ? Object.fromEntries(new FormData(e.target)) : {};`);
+        lines.push(`    if (!formData.email) {`);
+        if (hasAuth) lines.push(`      setAuthError('Please enter your email address');`);
+        else if (hasError) lines.push(`      setError('Please enter your email address');`);
+        lines.push(`      return;`);
+        lines.push(`    }`);
+        lines.push(`    await api.${match.fnName}(formData);`);
+        // Set success message via a local state or authError pattern
+        if (hasAuth) lines.push(`    setAuthError(null);`);
+        lines.push(`    if (typeof setSuccessMsg === 'function') setSuccessMsg('If an account exists for that email, a reset link has been sent.');`);
+        lines.push(`  } catch (err) {`);
+        if (hasAuth) lines.push(`    setAuthError(err.message || 'Something went wrong. Please try again.');`);
+        else if (hasError) lines.push(`    setError(err.message || 'Something went wrong. Please try again.');`);
+        if (hasLoading) {
+          lines.push(`  } finally {`);
+          lines.push(`    setLoading(false);`);
+        }
+        lines.push(`  }`);
+        lines.push('};');
+      } else {
+        // No matching route — generate a stub that shows the success message
+        lines.push(`const ${name} = async (e) => {`);
+        lines.push(`  e?.preventDefault?.();`);
+        if (hasAuth) lines.push(`  setAuthError(null);`);
+        lines.push(`  const formData = e?.target ? Object.fromEntries(new FormData(e.target)) : {};`);
+        lines.push(`  if (!formData.email) {`);
+        if (hasAuth) lines.push(`    setAuthError('Please enter your email address');`);
+        lines.push(`    return;`);
+        lines.push(`  }`);
+        lines.push(`  if (typeof setSuccessMsg === 'function') setSuccessMsg('If an account exists for that email, a reset link has been sent.');`);
+        lines.push('};');
+      }
+    } else if (name === 'cancel' || name === 'cancelLogin' || name === 'goBack') {
+      // T1.6: Cancel / go back mutation — form reset + optional page navigation
+      lines.push(`const ${name} = (e) => {`);
+      lines.push(`  e?.target?.closest?.('form')?.reset?.();`);
+      if (hasAuth) lines.push(`  setAuthError(null);`);
+      // Navigate to login page by default for cancel on auth forms
+      if (name === 'cancelLogin' || name === 'goBack') {
+        lines.push(`  setCurrentPage('login');`);
+      }
+      lines.push('};');
     } else if (name === 'updateProfile') {
       // Form-based mutation: extract data from form, send to user update endpoint
       if (match) {

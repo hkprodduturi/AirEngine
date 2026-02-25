@@ -6,9 +6,11 @@
  */
 
 export { parse } from './parser/index.js';
-export { validate } from './validator/index.js';
+export { validate, diagnose } from './validator/index.js';
 export { transpile } from './transpiler/index.js';
 export { AirParseError, AirLexError } from './parser/errors.js';
+export type { Diagnostic, DiagnosticResult } from './diagnostics.js';
+export { buildResult, hashSource, wrapParseError, sortDiagnostics, formatDiagnosticCLI, SCHEMA_VERSION } from './diagnostics.js';
 export type {
   AirAST,
   AirApp,

@@ -45,8 +45,10 @@ import { readFileSync } from 'fs';
 import { createHash } from 'crypto';
 import { join } from 'path';
 import { parse } from '../parser/index.js';
-import { validate } from '../validator/index.js';
+import { validate, diagnose } from '../validator/index.js';
 import { transpile } from '../transpiler/index.js';
+import { wrapParseError, buildResult } from '../diagnostics.js';
+import type { DiagnosticResult } from '../diagnostics.js';
 import { extractContext } from '../transpiler/context.js';
 import { analyzeUI } from '../transpiler/normalize-ui.js';
 import { AirParseError, AirLexError } from '../parser/errors.js';
@@ -209,15 +211,15 @@ function loadExamples(): Record<string, string> {
 // ---- Helpers ----
 
 /** Safely parse AIR source, returning AST or structured error */
-function safeParse(source: string): { ast: AirAST } | { error: string; line?: number; col?: number } {
+function safeParse(source: string): { ast: AirAST } | { error: string; line?: number; col?: number; parseError?: AirParseError | AirLexError } {
   try {
     return { ast: parse(source) };
   } catch (err) {
     if (err instanceof AirParseError) {
-      return { error: err.message, line: err.line, col: err.col };
+      return { error: err.message, line: err.line, col: err.col, parseError: err };
     }
     if (err instanceof AirLexError) {
-      return { error: err.message, line: err.line, col: err.col };
+      return { error: err.message, line: err.line, col: err.col, parseError: err };
     }
     return { error: err instanceof Error ? err.message : String(err) };
   }
@@ -334,15 +336,30 @@ Generate the AIR code now:`;
   // Tool: Validate AIR source
   server.tool(
     'air_validate',
-    'Validate AIR source code for correctness. Checks syntax, block structure, state references, and operator usage.',
+    'Validate AIR source code for correctness. Checks syntax, block structure, state references, and operator usage. Use format="v2" for structured DiagnosticResult.',
     {
       source: z.string().describe('AIR source code to validate'),
+      format: z.enum(['v1', 'v2']).optional().default('v1').describe('Output format: v1 (legacy) or v2 (DiagnosticResult)'),
     },
-    async ({ source }) => {
+    async ({ source, format }) => {
       // Use cache for parse + context
       const parseResult = safeParse(source);
 
       if ('error' in parseResult) {
+        if (format === 'v2') {
+          // Wrap parse error into DiagnosticResult
+          const parseErr = parseResult.parseError;
+          const diag = parseErr ? wrapParseError(parseErr) : {
+            code: 'AIR-P001',
+            severity: 'error' as const,
+            message: parseResult.error,
+            category: 'syntax' as const,
+          };
+          const result = buildResult([diag], hashSource(source));
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
         return {
           content: [{
             type: 'text' as const,
@@ -364,6 +381,15 @@ Generate the AIR code now:`;
         }
       })();
 
+      if (format === 'v2') {
+        const diagnostics = diagnose(ast);
+        const result = buildResult(diagnostics, hashSource(source));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      // Legacy v1 format
       const validation = validate(ast);
 
       const blockCount = ast.app.blocks.length;
@@ -589,14 +615,28 @@ Generate the AIR code now:`;
   // Tool: Lint AIR source (5C)
   server.tool(
     'air_lint',
-    'Detect common issues in AIR source before transpiling. Checks for unused state, missing API routes, ambiguous relations, and other patterns.',
+    'Detect common issues in AIR source before transpiling. Checks for unused state, missing API routes, ambiguous relations, and other patterns. Use format="v2" for structured DiagnosticResult.',
     {
       source: z.string().describe('AIR source code to lint'),
+      format: z.enum(['v1', 'v2']).optional().default('v1').describe('Output format: v1 (legacy hints) or v2 (DiagnosticResult)'),
     },
-    async ({ source }) => {
+    async ({ source, format }) => {
       const parseResult = safeParse(source);
 
       if ('error' in parseResult) {
+        if (format === 'v2') {
+          const parseErr = parseResult.parseError;
+          const diag = parseErr ? wrapParseError(parseErr) : {
+            code: 'AIR-P001',
+            severity: 'error' as const,
+            message: parseResult.error,
+            category: 'syntax' as const,
+          };
+          const result = buildResult([diag], hashSource(source));
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
         return {
           content: [{
             type: 'text' as const,
@@ -609,6 +649,35 @@ Generate the AIR code now:`;
 
       try {
         const { ast, ctx } = getCachedOrParse(source);
+
+        if (format === 'v2') {
+          // Use the centralized diagnose() function + ambiguous relation check
+          const diagnostics = diagnose(ast);
+
+          // Additional lint: ambiguous relations (requires transpiler context)
+          if (ctx.db) {
+            const { resolveRelations } = await import('../transpiler/prisma.js');
+            const { ambiguous } = resolveRelations(ctx.db);
+            for (const a of ambiguous) {
+              diagnostics.push({
+                code: 'AIR-W003',
+                severity: 'warning',
+                message: `Ambiguous relation ${a.from}<>${a.to}: ${a.reason}`,
+                block: '@db',
+                path: `${a.from}<>${a.to}`,
+                category: 'semantic',
+                fix: { description: 'Add explicit @relation to clarify the foreign key direction' },
+              });
+            }
+          }
+
+          const result = buildResult(diagnostics, hashSource(source));
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
+
+        // Legacy v1 format
         const hints: Array<{ level: 'info' | 'warn' | 'error'; message: string }> = [];
 
         // Check: unused state fields (state fields not referenced in @ui)

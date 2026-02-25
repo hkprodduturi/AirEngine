@@ -1,0 +1,3 @@
+@app:broken
+@state{items:[{id:int,text:str}]
+@ui(h1>"hello")

@@ -9,10 +9,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { parse } from '../src/parser/index.js';
-import { validate } from '../src/validator/index.js';
+import { validate, diagnose } from '../src/validator/index.js';
 import { transpile } from '../src/transpiler/index.js';
 import { extractContext } from '../src/transpiler/context.js';
 import { AirParseError, AirLexError } from '../src/parser/errors.js';
+import { wrapParseError, buildResult, hashSource } from '../src/diagnostics.js';
 import type { AirAST } from '../src/parser/types.js';
 
 // ---- Helpers (same as MCP server) ----
@@ -303,6 +304,104 @@ describe('air_generate tool logic', () => {
 });
 
 // ---- Batch 5: MCP session cache ----
+
+// ---- OV-1.4: MCP Parity (v2 DiagnosticResult shape) ----
+
+describe('MCP v2 format parity', () => {
+  it('air_validate v2: valid source returns DiagnosticResult shape', () => {
+    const source = readExample('todo');
+    const ast = parse(source);
+    const diags = diagnose(ast);
+    const result = buildResult(diags, hashSource(source));
+
+    // Shape checks
+    expect(result).toHaveProperty('valid', true);
+    expect(result).toHaveProperty('diagnostics');
+    expect(Array.isArray(result.diagnostics)).toBe(true);
+    expect(result).toHaveProperty('summary');
+    expect(result.summary).toHaveProperty('errors');
+    expect(result.summary).toHaveProperty('warnings');
+    expect(result.summary).toHaveProperty('info');
+    expect(result).toHaveProperty('source_hash');
+    expect(result.source_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(result).toHaveProperty('schema_version', '1.0');
+    expect(result).toHaveProperty('airengine_version');
+  });
+
+  it('air_validate v2: parse error returns DiagnosticResult with AIR-P code', () => {
+    const source = 'not valid air';
+    const parseResult = safeParse(source);
+    expect('error' in parseResult).toBe(true);
+
+    // Simulate MCP v2 parse error path
+    const diag = wrapParseError(new AirParseError('Unexpected token', { line: 1, col: 1 }));
+    const result = buildResult([diag], hashSource(source));
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0].code).toMatch(/^AIR-P/);
+    expect(result.diagnostics[0].severity).toBe('error');
+    expect(result.diagnostics[0].category).toBe('syntax');
+    expect(result.schema_version).toBe('1.0');
+  });
+
+  it('air_lint v2: returns same DiagnosticResult shape as air_validate v2', () => {
+    const source = readExample('fullstack-todo');
+    const ast = parse(source);
+
+    // Simulate validate v2 path
+    const validateResult = buildResult(diagnose(ast), hashSource(source));
+
+    // Simulate lint v2 path (same diagnose + potential ambiguous relations)
+    const lintResult = buildResult(diagnose(ast), hashSource(source));
+
+    // Both should have identical shape
+    const validateKeys = Object.keys(validateResult).sort();
+    const lintKeys = Object.keys(lintResult).sort();
+    expect(validateKeys).toEqual(lintKeys);
+
+    // Both have required envelope fields
+    for (const result of [validateResult, lintResult]) {
+      expect(typeof result.valid).toBe('boolean');
+      expect(Array.isArray(result.diagnostics)).toBe(true);
+      expect(typeof result.summary.errors).toBe('number');
+      expect(typeof result.summary.warnings).toBe('number');
+      expect(typeof result.summary.info).toBe('number');
+      expect(result.schema_version).toBe('1.0');
+    }
+  });
+
+  it('v2 diagnostic items all have required fields', () => {
+    const source = readExample('fullstack-todo');
+    const ast = parse(source);
+    const result = buildResult(diagnose(ast), hashSource(source));
+
+    for (const d of result.diagnostics) {
+      expect(d).toHaveProperty('code');
+      expect(d.code).toMatch(/^AIR-[PEWL]\d{3}$/);
+      expect(d).toHaveProperty('severity');
+      expect(['error', 'warning', 'info']).toContain(d.severity);
+      expect(d).toHaveProperty('message');
+      expect(typeof d.message).toBe('string');
+      expect(d).toHaveProperty('category');
+      expect(['syntax', 'structural', 'semantic', 'style', 'performance']).toContain(d.category);
+    }
+  });
+
+  it('v2 summary counts match actual diagnostic array', () => {
+    // Use a source that triggers multiple severity levels
+    const source = '@app:test\n@state{x:int,unused:str}\n@ui(h1>#x)';
+    const ast = parse(source);
+    const result = buildResult(diagnose(ast), hashSource(source));
+
+    const actualErrors = result.diagnostics.filter((d: any) => d.severity === 'error').length;
+    const actualWarnings = result.diagnostics.filter((d: any) => d.severity === 'warning').length;
+    const actualInfo = result.diagnostics.filter((d: any) => d.severity === 'info').length;
+
+    expect(result.summary.errors).toBe(actualErrors);
+    expect(result.summary.warnings).toBe(actualWarnings);
+    expect(result.summary.info).toBe(actualInfo);
+  });
+});
 
 describe('Batch 5A: session-level AST cache', () => {
   it('getCachedOrParse returns cached=false on first call', () => {

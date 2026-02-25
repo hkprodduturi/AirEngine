@@ -1,0 +1,5 @@
+@app:badref
+@state{x:int}
+@db{Item{id:int:primary:auto,name:str}}
+@api(GET:/tasks>~db.Task.findMany)
+@ui(h1>"hello")

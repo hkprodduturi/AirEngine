@@ -282,7 +282,14 @@ export function generateElementJSX(
       const authAlertForm = isAuthFormAction && hasAuthRoutesForm
         ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{authError}</div>}`
         : '';
-      return `${pad}<form${classAttr(mapping.className)}${onSubmitAttr}>${authAlertForm}\n${childJsx}\n${pad}</form>`;
+      // T1.4: Inject "Forgot Password?" link after login forms when forgot-password route exists
+      const hasForgotRoute = ctx.hasBackend && ctx.expandedRoutes.some(r =>
+        r.method === 'POST' && (r.path.endsWith('/forgot-password') || r.path.endsWith('/reset-password'))
+      );
+      const forgotPasswordLink = (firstAction === 'login' && hasForgotRoute)
+        ? `\n${pad}  <div className="text-center mt-2"><button type="button" className="text-sm text-[var(--accent)] hover:underline" onClick={() => setCurrentPage('forgotPassword')}>Forgot Password?</button></div>`
+        : '';
+      return `${pad}<form${classAttr(mapping.className)}${onSubmitAttr}>${authAlertForm}\n${childJsx}\n${pad}</form>${forgotPasswordLink}`;
     }
 
     const childScope = scope;

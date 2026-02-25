@@ -10,8 +10,8 @@ import { mapElement } from '../element-map.js';
 
 // ---- Auth Detection Helpers ----
 
-export const AUTH_PAGE_NAMES = new Set(['login', 'signup', 'register', 'auth']);
-export const AUTH_MUTATION_NAMES = new Set(['login', 'logout', 'signup', 'register']);
+export const AUTH_PAGE_NAMES = new Set(['login', 'signup', 'register', 'auth', 'forgotPassword', 'resetPassword']);
+export const AUTH_MUTATION_NAMES = new Set(['login', 'logout', 'signup', 'register', 'forgotPassword', 'resetPassword', 'cancel', 'cancelLogin', 'goBack']);
 
 export function isAuthPageName(name: string): boolean {
   return AUTH_PAGE_NAMES.has(name);
