@@ -18,6 +18,8 @@
     "dev": "tsc --watch",
     "start": "node dist/cli/index.js",
     "test": "vitest",
+    "test:complex-baseline": "vitest run tests/complex-app-baseline.test.ts",
+    "test:complex-gaps": "vitest run --config vitest.config.gaps.ts",
     "lint": "eslint src/",
     "generate": "node dist/cli/index.js generate",
     "transpile": "node dist/cli/index.js transpile",

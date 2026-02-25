@@ -48,7 +48,7 @@ function saveGolden(data: GoldenData): void {
   writeFileSync(SNAPSHOT_FILE, JSON.stringify(data, null, 2) + '\n');
 }
 
-const EXAMPLES = ['todo', 'expense-tracker', 'auth', 'dashboard', 'landing', 'fullstack-todo', 'projectflow'];
+const EXAMPLES = ['todo', 'expense-tracker', 'auth', 'dashboard', 'landing', 'fullstack-todo', 'projectflow', 'helpdesk'];
 
 describe('Golden output snapshots', () => {
   const currentData: GoldenData = {};
