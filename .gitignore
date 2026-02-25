@@ -1,6 +1,5 @@
 node_modules/
-dist/
-!gallery/dist/
+/dist/
 test-output*/
 package-lock.json
 *.tsbuildinfo
