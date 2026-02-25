@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/loop-result/1.0",
+  "title": "AirEngine Loop Result",
+  "description": "Structured result from the AirEngine agent loop (MCP air_loop tool / CLI loop command). Schema version 1.0.",
+  "type": "object",
+  "required": ["schema_version", "success", "stages", "diagnostics"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for this payload format"
+    },
+    "success": {
+      "type": "boolean",
+      "description": "Overall loop success. True when all stages pass (repair pass compensates validate fail)."
+    },
+    "stages": {
+      "type": "array",
+      "description": "Ordered list of pipeline stages with status and timing",
+      "items": {
+        "$ref": "#/$defs/stage"
+      }
+    },
+    "diagnostics": {
+      "oneOf": [
+        { "$ref": "#/$defs/diagnosticResult" },
+        { "type": "null" }
+      ],
+      "description": "Effective diagnostics (post-repair if repair was attempted, otherwise original). Null on catastrophic failure."
+    },
+    "repair_result": {
+      "oneOf": [
+        { "$ref": "#/$defs/repairResult" },
+        { "type": "null" }
+      ],
+      "description": "Repair engine result. Null/absent when repair was skipped (no errors or repair_mode=none)."
+    },
+    "transpile_summary": {
+      "oneOf": [
+        { "$ref": "#/$defs/transpileSummary" },
+        { "type": "null" }
+      ],
+      "description": "Transpile output summary. Absent if transpile was not reached."
+    },
+    "smoke_summary": {
+      "oneOf": [
+        { "$ref": "#/$defs/smokeSummary" },
+        { "type": "null" }
+      ],
+      "description": "Smoke test summary. Absent if smoke was not reached."
+    },
+    "determinism": {
+      "$ref": "#/$defs/determinismCheck",
+      "description": "Determinism verification: source hash, output hashes, deterministic flag."
+    },
+    "artifact_dir": {
+      "type": "string",
+      "description": "Path to audit artifacts directory. Absent when write_artifacts=false."
+    },
+    "output_dir": {
+      "type": "string",
+      "description": "Path to generated output directory."
+    },
+    "error": {
+      "type": "string",
+      "description": "Catastrophic error message (only on unexpected failures, not on validation/repair failures)."
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "required": ["name", "status", "durationMs"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": ["validate", "repair", "transpile", "smoke", "determinism"],
+          "description": "Stage name"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "skip"],
+          "description": "Stage outcome"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Stage duration in milliseconds"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Stage-specific details"
+        }
+      }
+    },
+    "diagnosticResult": {
+      "type": "object",
+      "required": ["valid", "diagnostics", "summary", "source_hash", "schema_version"],
+      "properties": {
+        "valid": { "type": "boolean" },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnostic" }
+        },
+        "summary": {
+          "type": "object",
+          "required": ["errors", "warnings", "info"],
+          "properties": {
+            "errors": { "type": "number", "minimum": 0 },
+            "warnings": { "type": "number", "minimum": 0 },
+            "info": { "type": "number", "minimum": 0 }
+          }
+        },
+        "source_hash": { "type": "string" },
+        "airengine_version": { "type": "string" },
+        "schema_version": { "type": "string" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "message", "category"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^AIR-[PEWL]\\d{3}$" },
+        "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+        "message": { "type": "string" },
+        "category": { "type": "string", "enum": ["syntax", "structural", "semantic", "style", "performance"] },
+        "location": {
+          "type": "object",
+          "properties": {
+            "line": { "type": "number" },
+            "col": { "type": "number" },
+            "endLine": { "type": "number" },
+            "endCol": { "type": "number" },
+            "sourceLine": { "type": "string" }
+          }
+        },
+        "block": { "type": "string" },
+        "path": { "type": "string" },
+        "fix": {
+          "type": "object",
+          "properties": {
+            "description": { "type": "string" },
+            "suggestion": { "type": "string" },
+            "pattern": { "type": "string" }
+          }
+        }
+      }
+    },
+    "repairResult": {
+      "type": "object",
+      "required": ["status", "attempted", "source_changed", "applied_count", "skipped_count"],
+      "properties": {
+        "status": { "type": "string", "enum": ["noop", "repaired", "partial", "failed"] },
+        "attempted": { "type": "boolean" },
+        "source_changed": { "type": "boolean" },
+        "applied_count": { "type": "number", "minimum": 0 },
+        "skipped_count": { "type": "number", "minimum": 0 },
+        "applied_actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule", "kind", "description"],
+            "properties": {
+              "rule": { "type": "string" },
+              "kind": { "type": "string", "enum": ["prepend", "append"] },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "skipped_actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule", "description"],
+            "properties": {
+              "rule": { "type": "string" },
+              "description": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "transpileSummary": {
+      "type": "object",
+      "required": ["file_count", "output_lines"],
+      "properties": {
+        "file_count": { "type": "number", "minimum": 0 },
+        "output_lines": { "type": "number", "minimum": 0 },
+        "compression_ratio": { "type": "number" }
+      }
+    },
+    "smokeSummary": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+        "checks": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "determinismCheck": {
+      "type": "object",
+      "required": ["sourceHash", "deterministic"],
+      "properties": {
+        "sourceHash": { "type": "string" },
+        "outputHashes": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "deterministic": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -120,6 +120,7 @@ function stageRepair(
   source: string,
   diagnostics: DiagnosticResult,
   artifactDir: string,
+  writeArtifacts: boolean = true,
 ): {
   stage: LoopStage;
   updatedSource: string;
@@ -162,9 +163,11 @@ function stageRepair(
     repairedFile: null,
   };
 
-  // Always write audit artifacts when repair is attempted
-  writeFileSync(join(artifactDir, 'repair-actions.json'), JSON.stringify(repairRes.actions, null, 2));
-  writeFileSync(join(artifactDir, 'diagnostics-before.json'), JSON.stringify(diagnostics, null, 2));
+  // Always write audit artifacts when repair is attempted (if enabled)
+  if (writeArtifacts) {
+    writeFileSync(join(artifactDir, 'repair-actions.json'), JSON.stringify(repairRes.actions, null, 2));
+    writeFileSync(join(artifactDir, 'diagnostics-before.json'), JSON.stringify(diagnostics, null, 2));
+  }
 
   if (!repairRes.sourceChanged) {
     // No repairs could be applied
@@ -187,8 +190,10 @@ function stageRepair(
   }
 
   // Source was modified — write repaired source, re-parse, re-diagnose
-  writeFileSync(join(artifactDir, 'repaired.air'), repairRes.repairedSource);
-  repairResultPayload.repairedFile = join(artifactDir, 'repaired.air');
+  if (writeArtifacts) {
+    writeFileSync(join(artifactDir, 'repaired.air'), repairRes.repairedSource);
+    repairResultPayload.repairedFile = join(artifactDir, 'repaired.air');
+  }
 
   // Re-parse repaired source
   let newAst: ReturnType<typeof parse> | null = null;
@@ -203,7 +208,7 @@ function stageRepair(
     newAst = null;
   }
 
-  writeFileSync(join(artifactDir, 'diagnostics-after.json'), JSON.stringify(afterDiagnostics, null, 2));
+  if (writeArtifacts) writeFileSync(join(artifactDir, 'diagnostics-after.json'), JSON.stringify(afterDiagnostics, null, 2));
   repairResultPayload.afterDiagnostics = afterDiagnostics;
 
   const afterErrors = afterDiagnostics?.summary.errors ?? 0;
@@ -333,14 +338,34 @@ function stageDeterminism(ast: ReturnType<typeof parse>, source: string, firstHa
   };
 }
 
-// ---- Main Loop ----
+// ---- Options ----
 
-export async function runLoop(file: string, outputDir: string): Promise<LoopResult> {
+export interface LoopOptions {
+  /** Repair mode: 'deterministic' (A3b rules) or 'none' (skip repair) */
+  repairMode?: 'deterministic' | 'none';
+  /** Whether to write artifacts to disk (default: true) */
+  writeArtifacts?: boolean;
+}
+
+// ---- Main Loop (source-based) ----
+
+/**
+ * Run the full loop pipeline from source string.
+ * Primary entry point for both CLI and MCP.
+ */
+export async function runLoopFromSource(
+  source: string,
+  outputDir: string,
+  opts?: LoopOptions & { file?: string },
+): Promise<LoopResult> {
+  const repairMode = opts?.repairMode ?? 'deterministic';
+  const writeArtifacts = opts?.writeArtifacts ?? true;
+  const file = opts?.file ?? '<source>';
+
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const artifactDir = join('.air-artifacts', timestamp);
-  mkdirSync(artifactDir, { recursive: true });
+  if (writeArtifacts) mkdirSync(artifactDir, { recursive: true });
 
-  const source = readFileSync(file, 'utf-8');
   const stages: LoopStage[] = [];
 
   // Stage 1: Validate
@@ -348,22 +373,37 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
   stages.push(validateStage);
 
   // Log diagnostics artifact
-  writeFileSync(join(artifactDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));
+  if (writeArtifacts) writeFileSync(join(artifactDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));
 
   // Stage 2: Repair
-  const {
-    stage: repairStage,
-    updatedSource,
-    updatedAst,
-    postRepairDiagnostics,
-    repairResult: repairPayload,
-  } = stageRepair(source, diagnostics, artifactDir);
-  stages.push(repairStage);
+  let repairPayload: LoopResult['repairResult'];
+  let effectiveAst = ast;
+  let effectiveDiagnostics = diagnostics;
+  let effectiveSource = source;
 
-  // Use post-repair state if repair was attempted, otherwise original
-  const effectiveAst = updatedAst ?? ast;
-  const effectiveDiagnostics = postRepairDiagnostics ?? diagnostics;
-  const effectiveSource = updatedAst ? updatedSource : source;
+  if (repairMode === 'none' || diagnostics.summary.errors === 0) {
+    // Skip repair
+    stages.push({
+      name: 'repair',
+      status: 'skip',
+      durationMs: 0,
+      details: { reason: repairMode === 'none' ? 'Repair disabled' : 'No errors to repair' },
+    });
+  } else {
+    const {
+      stage: repairStage,
+      updatedSource,
+      updatedAst,
+      postRepairDiagnostics,
+      repairResult: rp,
+    } = stageRepair(source, diagnostics, artifactDir, writeArtifacts);
+    stages.push(repairStage);
+    repairPayload = rp;
+
+    effectiveAst = updatedAst ?? ast;
+    effectiveDiagnostics = postRepairDiagnostics ?? diagnostics;
+    effectiveSource = updatedAst ? updatedSource : source;
+  }
 
   // If validation still fails after repair (or no AST), stop here
   if (!effectiveAst || effectiveDiagnostics.summary.errors > 0) {
@@ -381,7 +421,7 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
       },
       repairResult: repairPayload,
     };
-    writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(result, null, 2));
+    if (writeArtifacts) writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(result, null, 2));
     return result;
   }
 
@@ -404,7 +444,7 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
       },
       repairResult: repairPayload,
     };
-    writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(result, null, 2));
+    if (writeArtifacts) writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(result, null, 2));
     return result;
   }
 
@@ -425,8 +465,10 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
   }
 
   // Log artifacts
-  writeFileSync(join(artifactDir, 'output-hashes.json'), JSON.stringify(outputHashes, null, 2));
-  writeFileSync(join(artifactDir, 'stage-report.json'), JSON.stringify(stages, null, 2));
+  if (writeArtifacts) {
+    writeFileSync(join(artifactDir, 'output-hashes.json'), JSON.stringify(outputHashes, null, 2));
+    writeFileSync(join(artifactDir, 'stage-report.json'), JSON.stringify(stages, null, 2));
+  }
 
   const loopResult: LoopResult = {
     file,
@@ -439,9 +481,16 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
     determinismCheck: deterCheck,
     repairResult: repairPayload,
   };
-  writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(loopResult, null, 2));
+  if (writeArtifacts) writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(loopResult, null, 2));
 
   return loopResult;
+}
+
+// ---- File-based entry point (CLI) ----
+
+export async function runLoop(file: string, outputDir: string): Promise<LoopResult> {
+  const source = readFileSync(file, 'utf-8');
+  return runLoopFromSource(source, outputDir, { file });
 }
 
 // ---- CLI Formatter ----

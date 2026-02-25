@@ -1,22 +1,22 @@
 {
-  "timestamp": "2026-02-25T12:35:29.678Z",
+  "timestamp": "2026-02-25T13:23:30.973Z",
   "airengineVersion": "0.2.0",
   "nodeVersion": "v20.17.0",
   "platform": "darwin",
   "benchmarks": [
     {
       "file": "todo.air",
-      "totalMs": 0.46,
+      "totalMs": 0.43,
       "hashStable": true
     },
     {
       "file": "expense-tracker.air",
-      "totalMs": 0.48,
+      "totalMs": 0.5,
       "hashStable": true
     },
     {
       "file": "auth.air",
-      "totalMs": 0.6,
+      "totalMs": 0.68,
       "hashStable": true
     },
     {
@@ -26,23 +26,23 @@
     },
     {
       "file": "landing.air",
-      "totalMs": 0.57,
+      "totalMs": 0.63,
       "hashStable": true
     },
     {
       "file": "fullstack-todo.air",
-      "totalMs": 0.62,
+      "totalMs": 0.63,
       "hashStable": true
     },
     {
       "file": "projectflow.air",
-      "totalMs": 2.5,
+      "totalMs": 2.6,
       "hashStable": true
     }
   ],
   "aggregate": {
-    "totalMs": 5.85,
-    "maxMs": 2.5,
+    "totalMs": 6.09,
+    "maxMs": 2.6,
     "allUnder200ms": true,
     "cumulativeUnder500ms": true,
     "allHashStable": true

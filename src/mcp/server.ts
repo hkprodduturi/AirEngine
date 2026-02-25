@@ -788,6 +788,100 @@ Generate the AIR code now:`;
     }
   );
 
+  // Tool: Full agent loop (A3c)
+  server.tool(
+    'air_loop',
+    'Run the full AirEngine agent loop: validate → repair → transpile → smoke → determinism. Returns structured results for each stage. Supports deterministic single-pass repair of AIR-E001 (missing @app) and AIR-E002 (missing @ui).',
+    {
+      source: z.string().describe('AIR source code to process'),
+      output_dir: z.string().optional().default('./output').describe('Directory to write generated files'),
+      repair_mode: z.enum(['deterministic', 'none']).optional().default('deterministic')
+        .describe('Repair mode: "deterministic" (A3b rule-based) or "none" (skip repair)'),
+      write_artifacts: z.boolean().optional().default(true)
+        .describe('Write audit artifacts (.air-artifacts/) to disk'),
+    },
+    async ({ source, output_dir, repair_mode, write_artifacts }) => {
+      try {
+        const { runLoopFromSource } = await import('../cli/loop.js');
+        const result = await runLoopFromSource(source, output_dir, {
+          repairMode: repair_mode,
+          writeArtifacts: write_artifacts,
+        });
+
+        // Determine overall success: repair(pass) compensates validate(fail)
+        const repairStage = result.stages.find(s => s.name === 'repair');
+        const success = !result.stages.some(s => {
+          if (s.name === 'validate' && repairStage?.status === 'pass') return false;
+          return s.status === 'fail';
+        });
+
+        // Build structured response (machine-friendly, no text-only errors)
+        const response: Record<string, unknown> = {
+          schema_version: '1.0',
+          success,
+          stages: result.stages,
+          diagnostics: result.repairResult?.afterDiagnostics ?? result.diagnostics,
+          determinism: result.determinismCheck,
+        };
+
+        if (result.repairResult) {
+          response.repair_result = {
+            status: result.repairResult.status,
+            attempted: result.repairResult.attempted,
+            source_changed: result.repairResult.sourceChanged,
+            applied_count: result.repairResult.appliedActions.length,
+            skipped_count: result.repairResult.skippedActions.length,
+            applied_actions: result.repairResult.appliedActions.map(a => ({
+              rule: a.rule, kind: a.kind, description: a.description,
+            })),
+            skipped_actions: result.repairResult.skippedActions.map(a => ({
+              rule: a.rule, description: a.description, reason: a.reason,
+            })),
+          };
+        }
+
+        if (result.transpileResult) {
+          response.transpile_summary = {
+            file_count: result.transpileResult.files.length,
+            output_lines: result.transpileResult.stats.outputLines,
+            compression_ratio: result.transpileResult.stats.compressionRatio,
+          };
+        }
+
+        // Smoke summary
+        const smokeStage = result.stages.find(s => s.name === 'smoke');
+        if (smokeStage) {
+          response.smoke_summary = {
+            status: smokeStage.status,
+            checks: smokeStage.details,
+          };
+        }
+
+        if (write_artifacts) {
+          response.artifact_dir = result.artifactDir;
+        }
+        response.output_dir = result.outputDir;
+
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(response, null, 2) }],
+        };
+      } catch (err) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              schema_version: '1.0',
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+              stages: [],
+              diagnostics: null,
+            }, null, 2),
+          }],
+        };
+      }
+    }
+  );
+
   // ============================================
   // PROMPTS
   // ============================================
@@ -830,7 +924,7 @@ First generate the .air file, then use the air_transpile tool to create the work
 
   // Log to stderr (stdout is reserved for MCP protocol)
   console.error('AirEngine MCP Server running');
-  console.error('   Tools: air_generate, air_validate, air_transpile, air_explain, air_lint, air_capabilities');
+  console.error('   Tools: air_generate, air_validate, air_transpile, air_explain, air_lint, air_capabilities, air_loop');
   console.error('   Resources: air://spec, air://examples');
 }
 

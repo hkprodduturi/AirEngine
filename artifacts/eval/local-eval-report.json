@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-02-25T12:35:29.678Z",
+  "timestamp": "2026-02-25T13:23:30.973Z",
   "airengineVersion": "0.2.0",
   "nodeVersion": "v20.17.0",
   "platform": "darwin",
@@ -8,7 +8,7 @@
       "name": "diagnostics-schema-validation",
       "category": "diagnostics",
       "status": "pass",
-      "durationMs": 19,
+      "durationMs": 9,
       "details": {
         "testCases": 5,
         "errors": []
@@ -28,7 +28,7 @@
       "name": "corpus-smoke",
       "category": "corpus",
       "status": "pass",
-      "durationMs": 45,
+      "durationMs": 37,
       "details": {
         "validFiles": 13,
         "invalidFiles": 5,
@@ -43,7 +43,7 @@
       "name": "transpile-determinism",
       "category": "determinism",
       "status": "pass",
-      "durationMs": 11,
+      "durationMs": 10,
       "details": {
         "filesChecked": 5,
         "failures": []
@@ -53,7 +53,7 @@
       "name": "loop-mvp-smoke",
       "category": "loop",
       "status": "pass",
-      "durationMs": 4,
+      "durationMs": 3,
       "details": {
         "valid": {
           "file": "examples/todo.air",
@@ -90,7 +90,7 @@
             },
             {
               "name": "repair",
-              "status": "skip"
+              "status": "fail"
             }
           ]
         },
@@ -104,7 +104,7 @@
       "durationMs": 12,
       "details": {
         "examples": 7,
-        "totalMs": 5.85,
+        "totalMs": 6.09,
         "allUnder200ms": true,
         "cumulativeUnder500ms": true,
         "allHashStable": true,
@@ -117,7 +117,7 @@
     "total": 6,
     "passed": 6,
     "failed": 0,
-    "durationMs": 94
+    "durationMs": 76
   },
   "commands": [
     "npx tsx scripts/eval-local.ts"

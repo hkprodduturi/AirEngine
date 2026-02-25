@@ -7,13 +7,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import { parse } from '../src/parser/index.js';
 import { validate, diagnose } from '../src/validator/index.js';
 import { transpile } from '../src/transpiler/index.js';
 import { extractContext } from '../src/transpiler/context.js';
 import { AirParseError, AirLexError } from '../src/parser/errors.js';
 import { wrapParseError, buildResult, hashSource } from '../src/diagnostics.js';
+import { runLoopFromSource } from '../src/cli/loop.js';
 import type { AirAST } from '../src/parser/types.js';
 
 // ---- Helpers (same as MCP server) ----
@@ -480,5 +482,249 @@ describe('Batch 5D: air_capabilities tool logic', () => {
     for (const block of blocks) {
       expect(serverSource).toContain(`'${block}'`);
     }
+  });
+});
+
+// ---- A3c: air_loop MCP tool ----
+
+describe('air_loop tool logic', () => {
+  // Helper: simulate MCP tool response shape from runLoopFromSource
+  async function callAirLoop(source: string, opts?: {
+    output_dir?: string;
+    repair_mode?: 'deterministic' | 'none';
+    write_artifacts?: boolean;
+  }) {
+    const result = await runLoopFromSource(source, opts?.output_dir ?? '.eval-tmp/mcp-loop-test', {
+      repairMode: opts?.repair_mode ?? 'deterministic',
+      writeArtifacts: opts?.write_artifacts ?? true,
+    });
+
+    // Build the same structured response the MCP tool returns
+    const repairStage = result.stages.find(s => s.name === 'repair');
+    const success = !result.stages.some(s => {
+      if (s.name === 'validate' && repairStage?.status === 'pass') return false;
+      return s.status === 'fail';
+    });
+
+    const response: Record<string, unknown> = {
+      schema_version: '1.0',
+      success,
+      stages: result.stages,
+      diagnostics: result.repairResult?.afterDiagnostics ?? result.diagnostics,
+      determinism: result.determinismCheck,
+    };
+
+    if (result.repairResult) {
+      response.repair_result = {
+        status: result.repairResult.status,
+        attempted: result.repairResult.attempted,
+        source_changed: result.repairResult.sourceChanged,
+        applied_count: result.repairResult.appliedActions.length,
+        skipped_count: result.repairResult.skippedActions.length,
+        applied_actions: result.repairResult.appliedActions.map(a => ({
+          rule: a.rule, kind: a.kind, description: a.description,
+        })),
+        skipped_actions: result.repairResult.skippedActions.map(a => ({
+          rule: a.rule, description: a.description, reason: a.reason,
+        })),
+      };
+    }
+
+    if (result.transpileResult) {
+      response.transpile_summary = {
+        file_count: result.transpileResult.files.length,
+        output_lines: result.transpileResult.stats.outputLines,
+        compression_ratio: result.transpileResult.stats.compressionRatio,
+      };
+    }
+
+    const smokeStage = result.stages.find(s => s.name === 'smoke');
+    if (smokeStage) {
+      response.smoke_summary = { status: smokeStage.status, checks: smokeStage.details };
+    }
+
+    if (opts?.write_artifacts !== false) {
+      response.artifact_dir = result.artifactDir;
+    }
+    response.output_dir = result.outputDir;
+
+    return { response, rawResult: result };
+  }
+
+  it('valid source → loop succeeds with all stages pass', async () => {
+    const source = readExample('todo');
+    const { response } = await callAirLoop(source);
+
+    expect(response.success).toBe(true);
+    expect(response.schema_version).toBe('1.0');
+
+    const stages = response.stages as any[];
+    expect(stages.find((s: any) => s.name === 'validate')!.status).toBe('pass');
+    expect(stages.find((s: any) => s.name === 'repair')!.status).toBe('skip');
+    expect(stages.find((s: any) => s.name === 'transpile')!.status).toBe('pass');
+    expect(stages.find((s: any) => s.name === 'smoke')!.status).toBe('pass');
+    expect(stages.find((s: any) => s.name === 'determinism')!.status).toBe('pass');
+
+    // No repair result when skipped
+    expect(response.repair_result).toBeUndefined();
+
+    // Transpile summary present
+    const ts = response.transpile_summary as any;
+    expect(ts.file_count).toBeGreaterThan(0);
+    expect(ts.output_lines).toBeGreaterThan(0);
+  });
+
+  it('repairable invalid source (E001+E002) → repair succeeds → loop succeeds', async () => {
+    const source = '@state{x:int}';
+    const { response } = await callAirLoop(source);
+
+    expect(response.success).toBe(true);
+
+    const stages = response.stages as any[];
+    expect(stages.find((s: any) => s.name === 'validate')!.status).toBe('fail');
+    expect(stages.find((s: any) => s.name === 'repair')!.status).toBe('pass');
+    expect(stages.find((s: any) => s.name === 'transpile')!.status).toBe('pass');
+
+    // Repair result present and successful
+    const rr = response.repair_result as any;
+    expect(rr.status).toBe('repaired');
+    expect(rr.attempted).toBe(true);
+    expect(rr.source_changed).toBe(true);
+    expect(rr.applied_count).toBe(2);
+
+    // Transpile summary present
+    expect(response.transpile_summary).toBeDefined();
+    expect((response.transpile_summary as any).file_count).toBeGreaterThan(0);
+  });
+
+  it('unrepairable invalid source → loop fails gracefully with structured output', async () => {
+    // This source has a lex error that can't be repaired
+    const source = '@app:test\n@state{"unterminated';
+    const { response } = await callAirLoop(source);
+
+    expect(response.success).toBe(false);
+    expect(response.schema_version).toBe('1.0');
+
+    // Stages present
+    const stages = response.stages as any[];
+    expect(stages.length).toBeGreaterThan(0);
+    expect(stages.find((s: any) => s.name === 'validate')!.status).toBe('fail');
+
+    // Diagnostics present and structured
+    const diags = response.diagnostics as any;
+    expect(diags).toBeDefined();
+    expect(diags.valid).toBe(false);
+    expect(diags.diagnostics.length).toBeGreaterThan(0);
+    expect(diags.summary.errors).toBeGreaterThan(0);
+
+    // No transpile summary (never reached)
+    expect(response.transpile_summary).toBeUndefined();
+  });
+
+  it('returned diagnostics conform to diagnostics contract shape', async () => {
+    const source = readExample('fullstack-todo');
+    const { response } = await callAirLoop(source);
+
+    const diags = response.diagnostics as any;
+    expect(diags).toHaveProperty('valid');
+    expect(diags).toHaveProperty('diagnostics');
+    expect(diags).toHaveProperty('summary');
+    expect(diags).toHaveProperty('source_hash');
+    expect(diags).toHaveProperty('schema_version', '1.0');
+    expect(diags).toHaveProperty('airengine_version');
+
+    expect(typeof diags.valid).toBe('boolean');
+    expect(Array.isArray(diags.diagnostics)).toBe(true);
+    expect(typeof diags.summary.errors).toBe('number');
+    expect(typeof diags.summary.warnings).toBe('number');
+    expect(typeof diags.summary.info).toBe('number');
+  });
+
+  it('returned loop result conforms to loop-result.schema.json required fields', async () => {
+    const source = readExample('todo');
+    const { response } = await callAirLoop(source);
+
+    // Top-level required fields
+    expect(response).toHaveProperty('schema_version', '1.0');
+    expect(response).toHaveProperty('success');
+    expect(typeof response.success).toBe('boolean');
+    expect(response).toHaveProperty('stages');
+    expect(Array.isArray(response.stages)).toBe(true);
+    expect(response).toHaveProperty('diagnostics');
+
+    // Stage shape
+    for (const stage of response.stages as any[]) {
+      expect(stage).toHaveProperty('name');
+      expect(stage).toHaveProperty('status');
+      expect(stage).toHaveProperty('durationMs');
+      expect(['pass', 'fail', 'skip']).toContain(stage.status);
+      expect(typeof stage.durationMs).toBe('number');
+    }
+
+    // Determinism
+    expect(response).toHaveProperty('determinism');
+    const det = response.determinism as any;
+    expect(det).toHaveProperty('sourceHash');
+    expect(det).toHaveProperty('deterministic');
+    expect(typeof det.deterministic).toBe('boolean');
+  });
+
+  it('repair_mode=none skips repair', async () => {
+    const source = '@state{x:int}'; // Would normally trigger repair
+    const { response } = await callAirLoop(source, { repair_mode: 'none' });
+
+    expect(response.success).toBe(false); // No repair → validation errors remain
+
+    const stages = response.stages as any[];
+    expect(stages.find((s: any) => s.name === 'repair')!.status).toBe('skip');
+    expect(stages.find((s: any) => s.name === 'repair')!.details).toHaveProperty('reason', 'Repair disabled');
+
+    // No repair_result when skipped
+    expect(response.repair_result).toBeUndefined();
+  });
+
+  it('artifact directory created when write_artifacts=true', async () => {
+    const source = readExample('todo');
+    const { rawResult } = await callAirLoop(source);
+    expect(existsSync(rawResult.artifactDir)).toBe(true);
+  });
+
+  it('repair artifacts included on attempted repair', async () => {
+    const source = '@state{x:int}';
+    const { rawResult } = await callAirLoop(source);
+
+    expect(existsSync(join(rawResult.artifactDir, 'repair-actions.json'))).toBe(true);
+    expect(existsSync(join(rawResult.artifactDir, 'diagnostics-before.json'))).toBe(true);
+    expect(existsSync(join(rawResult.artifactDir, 'repaired.air'))).toBe(true);
+    expect(existsSync(join(rawResult.artifactDir, 'diagnostics-after.json'))).toBe(true);
+  });
+
+  it('deterministic flag and hash surfaced in response', async () => {
+    const source = readExample('todo');
+    const { response } = await callAirLoop(source);
+
+    const det = response.determinism as any;
+    expect(det.deterministic).toBe(true);
+    expect(det.sourceHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(Object.keys(det.outputHashes).length).toBeGreaterThan(0);
+  });
+
+  it('no hidden text-only errors (always structured)', async () => {
+    // Even for broken source, response is valid JSON with required fields
+    const source = '@state{x:int}'; // triggers parse error on missing @app
+    const { response } = await callAirLoop(source);
+
+    // Response should be a structured object, not a plain error string
+    expect(typeof response).toBe('object');
+    expect(response).toHaveProperty('schema_version');
+    expect(response).toHaveProperty('success');
+    expect(response).toHaveProperty('stages');
+    expect(response).toHaveProperty('diagnostics');
+  });
+
+  it('MCP server registers air_loop tool', () => {
+    const serverSource = readFileSync('src/mcp/server.ts', 'utf-8');
+    expect(serverSource).toContain("'air_loop'");
+    expect(serverSource).toContain('runLoopFromSource');
   });
 });
