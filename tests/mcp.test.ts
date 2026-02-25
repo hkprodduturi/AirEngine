@@ -276,28 +276,28 @@ describe('air_explain tool logic', () => {
 
 describe('air_generate tool logic', () => {
   it('spec includes backend block types', () => {
-    // Read the MCP server source and verify spec content
-    const serverSource = readFileSync('src/mcp/server.ts', 'utf-8');
-    expect(serverSource).toContain('@db{...}');
-    expect(serverSource).toContain('@cron(...)');
-    expect(serverSource).toContain('@webhook(...)');
-    expect(serverSource).toContain('@queue(...)');
-    expect(serverSource).toContain('@email(...)');
-    expect(serverSource).toContain('@env(...)');
-    expect(serverSource).toContain('@deploy(...)');
+    // AIR_SPEC now lives in src/generator.ts (shared export)
+    const specSource = readFileSync('src/generator.ts', 'utf-8');
+    expect(specSource).toContain('@db{...}');
+    expect(specSource).toContain('@cron(...)');
+    expect(specSource).toContain('@webhook(...)');
+    expect(specSource).toContain('@queue(...)');
+    expect(specSource).toContain('@email(...)');
+    expect(specSource).toContain('@env(...)');
+    expect(specSource).toContain('@deploy(...)');
   });
 
   it('spec includes datetime type', () => {
-    const serverSource = readFileSync('src/mcp/server.ts', 'utf-8');
-    expect(serverSource).toContain('datetime');
+    const specSource = readFileSync('src/generator.ts', 'utf-8');
+    expect(specSource).toContain('datetime');
   });
 
   it('spec includes db field modifiers', () => {
-    const serverSource = readFileSync('src/mcp/server.ts', 'utf-8');
-    expect(serverSource).toContain(':primary');
-    expect(serverSource).toContain(':required');
-    expect(serverSource).toContain(':auto');
-    expect(serverSource).toContain(':default');
+    const specSource = readFileSync('src/generator.ts', 'utf-8');
+    expect(specSource).toContain(':primary');
+    expect(specSource).toContain(':required');
+    expect(specSource).toContain(':auto');
+    expect(specSource).toContain(':default');
   });
 
   it('examples list includes fullstack-todo.air', () => {

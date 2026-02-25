@@ -6,15 +6,18 @@
  * and end-to-end prompt→loop integration.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
 import { createHash } from 'crypto';
 import {
   createReplayAdapter,
   createNoopGeneratorAdapter,
+  createClaudeAdapter,
   listReplayFixtures,
+  extractAirSource,
+  tryParseAir,
 } from '../src/generator.js';
-import type { GeneratorAdapter, GeneratorResult } from '../src/generator.js';
+import type { GeneratorAdapter, GeneratorResult, ClaudeAdapterOptions } from '../src/generator.js';
 import { runLoopFromSource } from '../src/cli/loop.js';
 import { validateJsonSchema } from './schema-validator.js';
 
@@ -338,4 +341,276 @@ describe('prompt-replay-result schema conformance', () => {
       expect(errors).toEqual([]);
     }
   });
+});
+
+// ---- extractAirSource ----
+
+describe('extractAirSource', () => {
+  it('extracts from fenced ```air code block', () => {
+    const raw = 'Here is the code:\n```air\n@app:test\n@state{x:int}\n@style(theme:dark)\n@ui(text>"hello")\n```\nDone.';
+    const source = extractAirSource(raw);
+    expect(source).toBe('@app:test\n@state{x:int}\n@style(theme:dark)\n@ui(text>"hello")');
+  });
+
+  it('extracts from fenced ``` code block without language', () => {
+    const raw = '```\n@app:test\n@state{x:int}\n@style(theme:dark)\n@ui(text>"hello")\n```';
+    const source = extractAirSource(raw);
+    expect(source).toBe('@app:test\n@state{x:int}\n@style(theme:dark)\n@ui(text>"hello")');
+  });
+
+  it('returns trimmed raw text when no code block', () => {
+    const raw = '  @app:test\n@state{x:int}\n@style(theme:dark)\n@ui(text>"hello")  ';
+    const source = extractAirSource(raw);
+    expect(source).toBe('@app:test\n@state{x:int}\n@style(theme:dark)\n@ui(text>"hello")');
+  });
+});
+
+// ---- tryParseAir ----
+
+describe('tryParseAir', () => {
+  it('returns valid:true for parseable .air source', () => {
+    const source = '@app:test\n@state{x:int}\n@style(theme:dark)\n@ui(text>"hello")';
+    expect(tryParseAir(source)).toEqual({ valid: true });
+  });
+
+  it('returns valid:false with error for invalid source', () => {
+    const result = tryParseAir('not valid air code at all');
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBeTruthy();
+    }
+  });
+});
+
+// ---- Claude Adapter (mocked fetch) ----
+
+const VALID_AIR = '@app:test\n@state{x:int}\n@style(theme:dark)\n@ui(text>"hello")';
+
+function mockClaudeResponse(text: string, status = 200, usage?: { input_tokens: number; output_tokens: number }) {
+  return vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => ({
+      content: [{ type: 'text', text }],
+      usage: usage ?? { input_tokens: 100, output_tokens: 50 },
+    }),
+  });
+}
+
+function mockClaudeErrorResponse(status: number) {
+  return vi.fn().mockResolvedValue({
+    ok: false,
+    status,
+    json: async () => ({ error: { type: 'error', message: 'error' } }),
+  });
+}
+
+describe('ClaudeAdapter', () => {
+  const baseOpts: ClaudeAdapterOptions = {
+    apiKey: 'test-key-123',
+    maxRetries: 1,
+    timeoutMs: 5000,
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('has name "claude"', () => {
+    const adapter = createClaudeAdapter(baseOpts);
+    expect(adapter.name).toBe('claude');
+  });
+
+  it('returns success for valid .air response', async () => {
+    vi.stubGlobal('fetch', mockClaudeResponse(VALID_AIR));
+    const adapter = createClaudeAdapter(baseOpts);
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(true);
+    expect(result.source).toBe(VALID_AIR);
+    expect(result.metadata.adapter).toBe('claude');
+    expect(result.metadata.attempts).toBe(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('extracts .air from fenced code block in response', async () => {
+    const wrappedAir = '```air\n' + VALID_AIR + '\n```';
+    vi.stubGlobal('fetch', mockClaudeResponse(wrappedAir));
+    const adapter = createClaudeAdapter(baseOpts);
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(true);
+    expect(result.source).toBe(VALID_AIR);
+    vi.unstubAllGlobals();
+  });
+
+  it('extracts .air from raw text without backticks', async () => {
+    vi.stubGlobal('fetch', mockClaudeResponse(VALID_AIR));
+    const adapter = createClaudeAdapter(baseOpts);
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(true);
+    expect(result.source).toBe(VALID_AIR);
+    vi.unstubAllGlobals();
+  });
+
+  it('retries on parse failure and succeeds', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [{ type: 'text', text: 'not valid air' }],
+          usage: { input_tokens: 50, output_tokens: 20 },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [{ type: 'text', text: VALID_AIR }],
+          usage: { input_tokens: 80, output_tokens: 40 },
+        }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = createClaudeAdapter(baseOpts);
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(true);
+    expect(result.metadata.attempts).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
+  it('returns failure after exhausting retries', async () => {
+    vi.stubGlobal('fetch', mockClaudeResponse('garbage output'));
+    const adapter = createClaudeAdapter({ ...baseOpts, maxRetries: 1 });
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('failed after');
+    expect(result.metadata.attempts).toBe(2);
+    vi.unstubAllGlobals();
+  });
+
+  it('handles HTTP 429 with retry', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [{ type: 'text', text: VALID_AIR }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = createClaudeAdapter(baseOpts);
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(true);
+    expect(result.metadata.attempts).toBe(2);
+    vi.unstubAllGlobals();
+  });
+
+  it('handles HTTP 401 without retry', async () => {
+    vi.stubGlobal('fetch', mockClaudeErrorResponse(401));
+    const adapter = createClaudeAdapter(baseOpts);
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Authentication error');
+    expect(result.metadata.attempts).toBe(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('handles timeout error', async () => {
+    const timeoutErr = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    Object.defineProperty(timeoutErr, 'name', { value: 'TimeoutError' });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(timeoutErr));
+    const adapter = createClaudeAdapter({ ...baseOpts, maxRetries: 0 });
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('timed out');
+    vi.unstubAllGlobals();
+  });
+
+  it('handles empty response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ content: [{ type: 'text', text: '' }], usage: {} }),
+    }));
+    const adapter = createClaudeAdapter({ ...baseOpts, maxRetries: 0 });
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Empty response');
+    vi.unstubAllGlobals();
+  });
+
+  it('includes correct promptHash', async () => {
+    vi.stubGlobal('fetch', mockClaudeResponse(VALID_AIR));
+    const adapter = createClaudeAdapter(baseOpts);
+    const prompt = 'build a counter';
+    const result = await adapter.generate(prompt);
+    expect(result.metadata.promptHash).toBe(hashString(prompt));
+    vi.unstubAllGlobals();
+  });
+
+  it('includes token usage in metadata', async () => {
+    vi.stubGlobal('fetch', mockClaudeResponse(VALID_AIR, 200, { input_tokens: 200, output_tokens: 150 }));
+    const adapter = createClaudeAdapter(baseOpts);
+    const result = await adapter.generate('build a counter');
+    expect(result.metadata.inputTokens).toBe(200);
+    expect(result.metadata.outputTokens).toBe(150);
+    vi.unstubAllGlobals();
+  });
+
+  it('respects custom model option', async () => {
+    const fetchMock = mockClaudeResponse(VALID_AIR);
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = createClaudeAdapter({ ...baseOpts, model: 'claude-haiku-4-5-20251001' });
+    await adapter.generate('build a counter');
+    const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(callBody.model).toBe('claude-haiku-4-5-20251001');
+    vi.unstubAllGlobals();
+  });
+
+  it('durationMs reflects total wall time across retries', async () => {
+    // First call fails with invalid source, second succeeds
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [{ type: 'text', text: 'invalid' }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [{ type: 'text', text: VALID_AIR }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = createClaudeAdapter(baseOpts);
+    const result = await adapter.generate('build a counter');
+    expect(result.success).toBe(true);
+    expect(result.metadata.durationMs).toBeGreaterThanOrEqual(0);
+    vi.unstubAllGlobals();
+  });
+});
+
+// ---- Claude Adapter Live Integration (env-gated) ----
+
+describe('ClaudeAdapter live integration', () => {
+  it.skipIf(!process.env.ANTHROPIC_API_KEY)('generates valid .air from live API', async () => {
+    const adapter = createClaudeAdapter({
+      apiKey: process.env.ANTHROPIC_API_KEY!,
+      maxRetries: 2,
+      timeoutMs: 60000,
+    });
+    const result = await adapter.generate('build a simple counter app with increment and decrement buttons');
+    expect(result.success).toBe(true);
+    expect(result.source.length).toBeGreaterThan(0);
+    // Verify it actually parses
+    const parseCheck = tryParseAir(result.source);
+    expect(parseCheck.valid).toBe(true);
+  }, 60000);
 });

@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createHash } from 'crypto';
-import { createReplayAdapter, createNoopGeneratorAdapter, listReplayFixtures } from '../src/generator.js';
+import { createReplayAdapter, createNoopGeneratorAdapter, createClaudeAdapter, listReplayFixtures } from '../src/generator.js';
 import { runLoopFromSource } from '../src/cli/loop.js';
 import type { GeneratorAdapter, GeneratorResult } from '../src/generator.js';
 import type { LoopResult } from '../src/cli/loop.js';
@@ -99,12 +99,23 @@ function log(msg: string) {
 
 // ---- CLI arg parsing ----
 
-function parseArgs(): { prompt?: string; fixtureId?: string; listFixtures: boolean; adapter: string } {
+function parseArgs(): {
+  prompt?: string;
+  fixtureId?: string;
+  listFixtures: boolean;
+  adapter: string;
+  model?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
+} {
   const args = process.argv.slice(2);
   let prompt: string | undefined;
   let fixtureId: string | undefined;
   let listFixtures = false;
   let adapter = 'replay';
+  let model: string | undefined;
+  let timeoutMs: number | undefined;
+  let maxRetries: number | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--prompt' && i + 1 < args.length) {
@@ -115,10 +126,16 @@ function parseArgs(): { prompt?: string; fixtureId?: string; listFixtures: boole
       listFixtures = true;
     } else if (args[i] === '--adapter' && i + 1 < args.length) {
       adapter = args[++i];
+    } else if (args[i] === '--model' && i + 1 < args.length) {
+      model = args[++i];
+    } else if (args[i] === '--timeout-ms' && i + 1 < args.length) {
+      timeoutMs = parseInt(args[++i], 10);
+    } else if (args[i] === '--max-retries' && i + 1 < args.length) {
+      maxRetries = parseInt(args[++i], 10);
     }
   }
 
-  return { prompt, fixtureId, listFixtures, adapter };
+  return { prompt, fixtureId, listFixtures, adapter, model, timeoutMs, maxRetries };
 }
 
 // ---- Main ----
@@ -168,19 +185,51 @@ async function main() {
 
   const totalStart = performance.now();
 
-  // Select adapter
-  const adapter: GeneratorAdapter = cliArgs.adapter === 'noop'
-    ? createNoopGeneratorAdapter()
-    : createReplayAdapter();
-
-  // Prepare artifact dir
+  // Prepare artifact dir (before adapter selection so missing-key can write a report)
   const artifactDir = 'artifacts/prompt-replay';
   mkdirSync(artifactDir, { recursive: true });
+
+  // Select adapter
+  let adapter: GeneratorAdapter;
+  if (cliArgs.adapter === 'claude') {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      const errorMsg = 'ANTHROPIC_API_KEY environment variable required for --adapter claude';
+      log(`  FAIL  ${errorMsg}`);
+
+      const result: PromptReplayResult = {
+        schema_version: '1.0',
+        success: false,
+        timestamp: new Date().toISOString(),
+        prompt: { text: prompt, hash: hashString(prompt), source: 'cli_arg' },
+        generator: { adapter: 'claude', prompt_hash: hashString(prompt), duration_ms: 0 },
+        generated_air: null,
+        loop_result: null,
+        timing: { generate_ms: 0, loop_ms: 0, total_ms: 0 },
+        artifacts: { report: join(artifactDir, 'prompt-replay-result.json') },
+        error: errorMsg,
+      };
+
+      writeFileSync(join(artifactDir, 'prompt-replay-result.json'), JSON.stringify(result, null, 2));
+      log(`\n  Report: ${join(artifactDir, 'prompt-replay-result.json')}\n`);
+      process.exit(1);
+    }
+    adapter = createClaudeAdapter({
+      apiKey,
+      ...(cliArgs.model ? { model: cliArgs.model } : {}),
+      ...(cliArgs.timeoutMs ? { timeoutMs: cliArgs.timeoutMs } : {}),
+      ...(cliArgs.maxRetries !== undefined ? { maxRetries: cliArgs.maxRetries } : {}),
+    });
+  } else if (cliArgs.adapter === 'noop') {
+    adapter = createNoopGeneratorAdapter();
+  } else {
+    adapter = createReplayAdapter();
+  }
 
   // Step 1: Generate .air source
   log('\n  Step 1: Generate .air source...');
   const genStart = performance.now();
-  const genResult: GeneratorResult = adapter.generate(prompt, {
+  const genResult: GeneratorResult = await adapter.generate(prompt, {
     fixtureId: cliArgs.fixtureId,
   });
   const generateMs = Math.round(performance.now() - genStart);
@@ -227,6 +276,11 @@ async function main() {
   const generatedAirPath = join(artifactDir, 'generated.air');
   writeFileSync(generatedAirPath, genResult.source);
   log(`  PASS  Generated ${genResult.source.split('\n').length} lines`);
+  if (genResult.metadata.model) log(`  Model:    ${genResult.metadata.model}`);
+  if (genResult.metadata.attempts && genResult.metadata.attempts > 1) log(`  Attempts: ${genResult.metadata.attempts}`);
+  if (genResult.metadata.inputTokens || genResult.metadata.outputTokens) {
+    log(`  Tokens:   ${genResult.metadata.inputTokens ?? 0} in / ${genResult.metadata.outputTokens ?? 0} out`);
+  }
   log(`  Saved: ${generatedAirPath}`);
 
   const generatedAirSummary: GeneratedAirSummary = {

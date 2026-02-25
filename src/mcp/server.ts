@@ -55,6 +55,7 @@ import { AirParseError, AirLexError } from '../parser/errors.js';
 import type { AirAST } from '../parser/types.js';
 import type { TranspileContext } from '../transpiler/context.js';
 import type { TranspileResult } from '../transpiler/index.js';
+import { AIR_SPEC } from '../generator.js';
 
 const ROOT = join(__dirname, '..', '..');
 
@@ -99,94 +100,6 @@ function getCachedOrParse(source: string): { ast: AirAST; ctx: TranspileContext;
   astCache.set(hash, { ast, ctx, result, timestamp: Date.now() });
   return { ast, ctx, result, cached: false };
 }
-
-// ---- AIR Language Spec (embedded for the LLM context) ----
-
-const AIR_SPEC = `
-AIR (AI-native Intermediate Representation) Language Reference v0.1
-
-TYPES: str, int, float, bool, date, datetime, enum(v1,v2), [type], {key:type}, ?type, #ref
-
-OPERATORS:
-  >  flow (input>items.push = on input, push to items)
-  |  pipe (items|filter = pipe through filter)
-  +  compose (text+btn = text AND button)
-  :  bind (theme:dark)
-  ?  conditional (?auth>dash:login)
-  *  iterate (*item(card) = for each item)
-  !  mutate (!delete(id))
-  #  reference (#user.name)
-  ~  async (~api.get(/users))
-  ^  emit (^notify("saved"))
-
-BLOCKS:
-  @app:name           — declare app
-  @state{...}         — reactive state
-  @style(...)         — theme/design tokens
-  @ui(...)            — component tree + behavior
-  @api(...)           — backend routes (GET, POST, PUT, DELETE, CRUD)
-  @auth(...)          — authentication
-  @nav(...)           — routing
-  @persist:method     — data persistence
-  @hook(...)          — lifecycle/side effects
-  @db{...}            — database models with field modifiers (:primary, :required, :auto, :default(val))
-  @cron(...)          — scheduled jobs
-  @webhook(...)       — incoming webhook endpoints
-  @queue(...)         — background job queues
-  @email(...)         — email templates
-  @env(...)           — environment variables
-  @deploy(...)        — deployment config
-
-DB FIELD MODIFIERS:
-  :primary   — primary key
-  :required  — non-nullable
-  :auto      — auto-increment (int) or auto-timestamp (datetime)
-  :default(v) — default value
-
-UI ELEMENTS:
-  header, footer, main, sidebar, row, grid, grid:N, grid:responsive
-  input:text, input:number, input:email, select, tabs, toggle
-  btn, btn:primary, btn:ghost, btn:icon
-  text, h1, h2, p, list, table, card, badge, alert
-  chart:line, chart:bar, stat, progress:bar, spinner, img, icon
-  search:input, pagination, daterange, form
-  @section:name(...), @page:name(...)
-
-EXAMPLE — Todo App:
-  @app:todo
-    @state{items:[{id:int,text:str,done:bool}],filter:enum(all,active,done)}
-    @style(theme:dark,accent:#6366f1,radius:12,font:sans)
-    @ui(
-      header>"Todo App"+badge:#items.length
-      input:text>!add({text:#val,done:false})
-      list>items|filter>*item(check:#item.done+text:#item.text+btn:!del(#item.id))
-      tabs>filter.set(all,active,done)
-      footer>"#items|!done.length items left"
-    )
-    @persist:localStorage(items)
-
-EXAMPLE — Fullstack Todo (with DB + API):
-  @app:fullstack-todo
-    @state{items:[{id:int,text:str,done:bool}],filter:enum(all,active,done)}
-    @style(theme:dark,accent:#6366f1,radius:12,font:sans)
-    @db{
-      Todo{id:int:primary:auto,text:str:required,done:bool:default(false),created_at:datetime:auto}
-    }
-    @api(
-      GET:/todos>~db.Todo.findMany
-      POST:/todos(text:str)>~db.Todo.create
-      PUT:/todos/:id(done:bool)>~db.Todo.update
-      DELETE:/todos/:id>~db.Todo.delete
-    )
-    @ui(
-      header>"Todo App"+badge:#items.length
-      input:text>!add({text:#val,done:false})
-      list>items|filter>*item(check:#item.done+text:#item.text+btn:icon:!del(#item.id))
-      tabs>filter.set(all,active,done)
-      footer>"#items|!done.length items left"
-    )
-    @persist:localStorage(items)
-`;
 
 // ---- Load example files ----
 
