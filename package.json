@@ -28,7 +28,8 @@
     "foundation-check": "node --import tsx scripts/foundation-check.ts",
     "benchmark-compare": "node --import tsx scripts/benchmark-compare.ts",
     "demo-canonical": "node --import tsx scripts/demo-canonical.ts",
-    "demo-prompt-replay": "node --import tsx scripts/demo-prompt-replay.ts"
+    "demo-prompt-replay": "node --import tsx scripts/demo-prompt-replay.ts",
+    "eval-online": "node --import tsx scripts/eval-online.ts"
   },
   "keywords": [
     "ai",

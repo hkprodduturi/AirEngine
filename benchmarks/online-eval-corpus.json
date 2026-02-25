@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0",
+  "corpus_id": "online-eval-v1",
+  "entries": [
+    {
+      "id": "simple-todo",
+      "prompt": "Build a simple todo list app where users can add tasks, mark them as done, and delete them.",
+      "category": "crud",
+      "complexity": "simple"
+    },
+    {
+      "id": "simple-counter",
+      "prompt": "Create a click counter app with increment, decrement, and reset buttons that shows the current count.",
+      "category": "ui",
+      "complexity": "simple"
+    },
+    {
+      "id": "simple-landing",
+      "prompt": "Build a landing page for a SaaS product with a hero section, features grid, pricing cards, and a contact form.",
+      "category": "content",
+      "complexity": "simple"
+    },
+    {
+      "id": "medium-expense",
+      "prompt": "Build an expense tracker where users can add expenses with amount, category, and date. Show a summary of total spending and a list of all expenses with edit and delete.",
+      "category": "crud",
+      "complexity": "medium"
+    },
+    {
+      "id": "medium-blog",
+      "prompt": "Create a fullstack blog platform with a posts database. Users can create, edit, and delete blog posts with a title and body. The home page lists all posts with newest first.",
+      "category": "fullstack",
+      "complexity": "medium"
+    },
+    {
+      "id": "medium-inventory",
+      "prompt": "Build a fullstack inventory management app with a products database. Each product has a name, SKU, quantity, and price. Support CRUD operations and show low-stock alerts for items under 10 units.",
+      "category": "fullstack",
+      "complexity": "medium"
+    },
+    {
+      "id": "complex-dashboard",
+      "prompt": "Create an analytics dashboard with stat cards showing total users, revenue, and active sessions. Include a data table of recent transactions and a sidebar navigation between overview and reports pages.",
+      "category": "dashboard",
+      "complexity": "complex"
+    },
+    {
+      "id": "complex-auth-app",
+      "prompt": "Build a fullstack notes app with user authentication. Users register and log in, then can create, edit, and delete their own private notes. Include a profile page showing the user's email and note count.",
+      "category": "auth",
+      "complexity": "complex"
+    },
+    {
+      "id": "complex-project",
+      "prompt": "Build a fullstack project management tool with projects and tasks databases. Each project has multiple tasks with title, status, and assignee. Support creating projects, adding tasks, and filtering tasks by status.",
+      "category": "fullstack",
+      "complexity": "complex"
+    },
+    {
+      "id": "complex-ecommerce",
+      "prompt": "Create a fullstack e-commerce storefront with products and orders databases. Products have name, price, description, and stock. Users can browse products, add to cart, and place orders. Include an admin page to manage products.",
+      "category": "fullstack",
+      "complexity": "complex"
+    }
+  ]
+}
