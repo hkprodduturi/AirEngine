@@ -13,8 +13,8 @@ frontend:
         - npx tsx scripts/build-gallery.ts
         # 3. Inject embedded template showcase cards into the site
         - npx tsx scripts/inject-showcase.ts ./site gallery/catalog.json
-        # 4. Vite build the site
-        - cd site && npm install && npx vite build
+        # 4. Vite build the site (subshell preserves working directory)
+        - (cd site && npm install && npx vite build)
         # 5. Copy gallery into site output
         - cp -r gallery/dist site/dist/gallery
   artifacts:
