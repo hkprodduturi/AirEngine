@@ -169,6 +169,58 @@ export function applyRepairs(source: string, actions: RepairAction[]): string {
   return result;
 }
 
+// ---- Adapter Interface (A3d) ----
+
+/**
+ * Context passed to repair adapters for retry-aware repair.
+ */
+export interface RepairContext {
+  attemptNumber: number;       // 1-based
+  maxAttempts: number;
+  previousHashes: string[];    // SHA-256 of prior repaired sources
+}
+
+/**
+ * Pluggable repair adapter interface.
+ * Enables future LLM-based or hybrid repair without changing the loop.
+ */
+export interface RepairAdapter {
+  readonly name: string;
+  repair(source: string, diagnostics: Diagnostic[], context?: RepairContext): RepairResult;
+}
+
+/**
+ * Creates an adapter wrapping the deterministic rule-based repair engine.
+ */
+export function createDeterministicAdapter(): RepairAdapter {
+  return {
+    name: 'deterministic',
+    repair(source: string, diagnostics: Diagnostic[], _context?: RepairContext): RepairResult {
+      return repair(source, diagnostics);
+    },
+  };
+}
+
+/**
+ * Creates a no-op adapter that never modifies source.
+ */
+export function createNoopAdapter(): RepairAdapter {
+  return {
+    name: 'noop',
+    repair(source: string, _diagnostics: Diagnostic[], _context?: RepairContext): RepairResult {
+      return {
+        status: 'noop',
+        originalSource: source,
+        repairedSource: source,
+        sourceChanged: false,
+        actions: [],
+        appliedCount: 0,
+        skippedCount: 0,
+      };
+    },
+  };
+}
+
 /**
  * Full repair pipeline: plan → apply → determine status.
  * Single-pass only — no iterative retries.

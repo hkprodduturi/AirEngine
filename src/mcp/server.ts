@@ -799,13 +799,16 @@ Generate the AIR code now:`;
         .describe('Repair mode: "deterministic" (A3b rule-based) or "none" (skip repair)'),
       write_artifacts: z.boolean().optional().default(true)
         .describe('Write audit artifacts (.air-artifacts/) to disk'),
+      max_repair_attempts: z.number().int().min(1).max(5).optional().default(1)
+        .describe('Maximum repair attempts (1=single-pass, >1 enables retry loop with stop conditions)'),
     },
-    async ({ source, output_dir, repair_mode, write_artifacts }) => {
+    async ({ source, output_dir, repair_mode, write_artifacts, max_repair_attempts }) => {
       try {
         const { runLoopFromSource } = await import('../cli/loop.js');
         const result = await runLoopFromSource(source, output_dir, {
           repairMode: repair_mode,
           writeArtifacts: write_artifacts,
+          maxRepairAttempts: max_repair_attempts,
         });
 
         // Determine overall success: repair(pass) compensates validate(fail)
@@ -823,6 +826,17 @@ Generate the AIR code now:`;
           diagnostics: result.repairResult?.afterDiagnostics ?? result.diagnostics,
           determinism: result.determinismCheck,
         };
+
+        if (result.repairAttempts) {
+          response.repair_attempts = result.repairAttempts.map(a => ({
+            attempt: a.attemptNumber,
+            errors_before: a.errorsBefore,
+            errors_after: a.errorsAfter,
+            source_hash: a.sourceHash,
+            duration_ms: a.durationMs,
+            ...(a.stopReason ? { stop_reason: a.stopReason } : {}),
+          }));
+        }
 
         if (result.repairResult) {
           response.repair_result = {

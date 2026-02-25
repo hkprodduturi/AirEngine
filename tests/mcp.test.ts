@@ -493,10 +493,12 @@ describe('air_loop tool logic', () => {
     output_dir?: string;
     repair_mode?: 'deterministic' | 'none';
     write_artifacts?: boolean;
+    max_repair_attempts?: number;
   }) {
     const result = await runLoopFromSource(source, opts?.output_dir ?? '.eval-tmp/mcp-loop-test', {
       repairMode: opts?.repair_mode ?? 'deterministic',
       writeArtifacts: opts?.write_artifacts ?? true,
+      maxRepairAttempts: opts?.max_repair_attempts ?? 1,
     });
 
     // Build the same structured response the MCP tool returns
@@ -513,6 +515,17 @@ describe('air_loop tool logic', () => {
       diagnostics: result.repairResult?.afterDiagnostics ?? result.diagnostics,
       determinism: result.determinismCheck,
     };
+
+    if (result.repairAttempts) {
+      response.repair_attempts = result.repairAttempts.map(a => ({
+        attempt: a.attemptNumber,
+        errors_before: a.errorsBefore,
+        errors_after: a.errorsAfter,
+        source_hash: a.sourceHash,
+        duration_ms: a.durationMs,
+        ...(a.stopReason ? { stop_reason: a.stopReason } : {}),
+      }));
+    }
 
     if (result.repairResult) {
       response.repair_result = {
@@ -726,5 +739,40 @@ describe('air_loop tool logic', () => {
     const serverSource = readFileSync('src/mcp/server.ts', 'utf-8');
     expect(serverSource).toContain("'air_loop'");
     expect(serverSource).toContain('runLoopFromSource');
+  });
+
+  // ---- A3d: Retry MCP parity tests ----
+
+  it('max_repair_attempts defaults to 1 (no repair_attempts in response)', async () => {
+    const source = readExample('todo');
+    const { response } = await callAirLoop(source);
+    // Default max_repair_attempts=1 → no repair_attempts in response
+    expect(response.repair_attempts).toBeUndefined();
+  });
+
+  it('repair_attempts absent for single attempt on repairable source', async () => {
+    const source = '@state{x:int}';
+    const { response } = await callAirLoop(source, { max_repair_attempts: 1 });
+    expect(response.repair_attempts).toBeUndefined();
+    // repair_result still present
+    expect(response.repair_result).toBeDefined();
+  });
+
+  it('max_repair_attempts > 1 includes repair_attempts in response', async () => {
+    const source = '@state{x:int}';
+    const { response } = await callAirLoop(source, { max_repair_attempts: 2 });
+    expect(response.repair_attempts).toBeDefined();
+    expect(Array.isArray(response.repair_attempts)).toBe(true);
+    const attempts = response.repair_attempts as any[];
+    expect(attempts.length).toBeGreaterThan(0);
+    // Each attempt has schema-required snake_case fields
+    for (const attempt of attempts) {
+      expect(typeof attempt.attempt).toBe('number');
+      expect(typeof attempt.source_hash).toBe('string');
+      expect(typeof attempt.errors_before).toBe('number');
+      expect(typeof attempt.duration_ms).toBe('number');
+    }
+    // Last attempt should have a stop_reason
+    expect(attempts[attempts.length - 1].stop_reason).toBeDefined();
   });
 });

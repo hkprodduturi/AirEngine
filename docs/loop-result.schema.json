@@ -62,6 +62,13 @@
       "type": "string",
       "description": "Path to generated output directory."
     },
+    "repair_attempts": {
+      "type": "array",
+      "description": "Per-attempt repair details when max_repair_attempts > 1. Absent for single-attempt runs.",
+      "items": {
+        "$ref": "#/$defs/repairAttempt"
+      }
+    },
     "error": {
       "type": "string",
       "description": "Catastrophic error message (only on unexpected failures, not on validation/repair failures)."
@@ -209,6 +216,27 @@
           "additionalProperties": { "type": "string" }
         },
         "deterministic": { "type": "boolean" }
+      }
+    },
+    "repairAttempt": {
+      "type": "object",
+      "required": ["attempt", "errors_before", "source_hash", "duration_ms"],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1, "description": "1-based attempt number" },
+        "errors_before": { "type": "integer", "minimum": 0 },
+        "errors_after": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "source_hash": { "type": "string", "description": "SHA-256 of repaired source after this attempt" },
+        "stop_reason": {
+          "type": "string",
+          "enum": ["success", "noop", "no_improvement", "cycle_detected", "max_attempts"],
+          "description": "Why the retry loop stopped at this attempt (only on final attempt)"
+        },
+        "duration_ms": { "type": "number", "minimum": 0 }
       }
     }
   }

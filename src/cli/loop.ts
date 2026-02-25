@@ -23,8 +23,8 @@ import { transpile } from '../transpiler/index.js';
 import { buildResult, hashSource, formatDiagnosticCLI, wrapParseError } from '../diagnostics.js';
 import type { DiagnosticResult } from '../diagnostics.js';
 import type { TranspileResult, OutputFile } from '../transpiler/index.js';
-import { repair } from '../repair.js';
-import type { RepairAction, RepairStatus } from '../repair.js';
+import { repair, createDeterministicAdapter, createNoopAdapter } from '../repair.js';
+import type { RepairAction, RepairStatus, RepairAdapter, RepairContext } from '../repair.js';
 
 // ---- Types ----
 
@@ -33,6 +33,15 @@ export interface LoopStage {
   status: 'pass' | 'fail' | 'skip';
   durationMs: number;
   details?: Record<string, unknown>;
+}
+
+export interface RepairAttempt {
+  attemptNumber: number;
+  sourceHash: string;
+  errorsBefore: number;
+  errorsAfter: number | null;
+  durationMs: number;
+  stopReason?: 'success' | 'noop' | 'no_improvement' | 'cycle_detected' | 'max_attempts';
 }
 
 export interface LoopResult {
@@ -58,6 +67,7 @@ export interface LoopResult {
     sourceChanged: boolean;
     repairedFile: string | null;
   };
+  repairAttempts?: RepairAttempt[];
 }
 
 // ---- Hash Helpers ----
@@ -121,6 +131,7 @@ function stageRepair(
   diagnostics: DiagnosticResult,
   artifactDir: string,
   writeArtifacts: boolean = true,
+  adapter?: RepairAdapter,
 ): {
   stage: LoopStage;
   updatedSource: string;
@@ -147,8 +158,10 @@ function stageRepair(
     };
   }
 
-  // Run repair engine
-  const repairRes = repair(source, diagnostics.diagnostics);
+  // Run repair engine (use adapter if provided, otherwise raw repair())
+  const repairRes = adapter
+    ? adapter.repair(source, diagnostics.diagnostics)
+    : repair(source, diagnostics.diagnostics);
   const appliedActions = repairRes.actions.filter(a => a.applied);
   const skippedActions = repairRes.actions.filter(a => !a.applied);
 
@@ -345,6 +358,10 @@ export interface LoopOptions {
   repairMode?: 'deterministic' | 'none';
   /** Whether to write artifacts to disk (default: true) */
   writeArtifacts?: boolean;
+  /** Maximum repair attempts (default: 1). >1 enables retry loop with adapter. */
+  maxRepairAttempts?: number;
+  /** Override repair adapter (takes precedence over repairMode) */
+  repairAdapter?: RepairAdapter;
 }
 
 // ---- Main Loop (source-based) ----
@@ -361,6 +378,13 @@ export async function runLoopFromSource(
   const repairMode = opts?.repairMode ?? 'deterministic';
   const writeArtifacts = opts?.writeArtifacts ?? true;
   const file = opts?.file ?? '<source>';
+  const maxRepairAttempts = opts?.maxRepairAttempts ?? 1;
+
+  // Resolve adapter from options
+  const adapter: RepairAdapter | undefined = opts?.repairAdapter
+    ?? (repairMode === 'none' ? undefined
+      : maxRepairAttempts > 1 ? createDeterministicAdapter()
+      : undefined);
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const artifactDir = join('.air-artifacts', timestamp);
@@ -380,6 +404,7 @@ export async function runLoopFromSource(
   let effectiveAst = ast;
   let effectiveDiagnostics = diagnostics;
   let effectiveSource = source;
+  let repairAttempts: RepairAttempt[] | undefined;
 
   if (repairMode === 'none' || diagnostics.summary.errors === 0) {
     // Skip repair
@@ -389,14 +414,138 @@ export async function runLoopFromSource(
       durationMs: 0,
       details: { reason: repairMode === 'none' ? 'Repair disabled' : 'No errors to repair' },
     });
+  } else if (maxRepairAttempts > 1 && adapter) {
+    // Multi-attempt retry loop (A3d)
+    const retryStart = performance.now();
+    repairAttempts = [];
+    const previousHashes: string[] = [];
+    let currentSource = source;
+    let currentDiagnostics = diagnostics;
+    let lastRepairPayload: LoopResult['repairResult'];
+    let lastAst = ast;
+    let lastDiags = diagnostics;
+    let lastSource = source;
+
+    for (let attempt = 1; attempt <= maxRepairAttempts; attempt++) {
+      const attemptStart = performance.now();
+      const attemptDir = join(artifactDir, `attempt-${attempt}`);
+      if (writeArtifacts) mkdirSync(attemptDir, { recursive: true });
+
+      const context: RepairContext = {
+        attemptNumber: attempt,
+        maxAttempts: maxRepairAttempts,
+        previousHashes: [...previousHashes],
+      };
+
+      const {
+        stage: repairStage,
+        updatedSource,
+        updatedAst,
+        postRepairDiagnostics,
+        repairResult: rp,
+      } = stageRepair(currentSource, currentDiagnostics, attemptDir, writeArtifacts, adapter);
+
+      lastRepairPayload = rp;
+      const attemptDurationMs = Math.round(performance.now() - attemptStart);
+      const errorsBefore = currentDiagnostics.summary.errors;
+      const errorsAfter = postRepairDiagnostics?.summary.errors ?? null;
+      const sourceHash = hashContent(updatedSource);
+
+      const attemptRecord: RepairAttempt = {
+        attemptNumber: attempt,
+        sourceHash,
+        errorsBefore,
+        errorsAfter,
+        durationMs: attemptDurationMs,
+      };
+
+      // Check stop conditions
+      if (repairStage.status === 'skip' || !rp?.sourceChanged) {
+        // (a) noop — adapter didn't change anything
+        attemptRecord.stopReason = 'noop';
+        repairAttempts.push(attemptRecord);
+        break;
+      }
+
+      if (errorsAfter === 0 && updatedAst) {
+        // (b) success — no errors remain
+        attemptRecord.stopReason = 'success';
+        repairAttempts.push(attemptRecord);
+        lastAst = updatedAst;
+        lastDiags = postRepairDiagnostics!;
+        lastSource = updatedSource;
+        break;
+      }
+
+      if (errorsAfter !== null && errorsAfter >= errorsBefore) {
+        // (c) no improvement — errors not decreased
+        attemptRecord.stopReason = 'no_improvement';
+        repairAttempts.push(attemptRecord);
+        break;
+      }
+
+      if (previousHashes.includes(sourceHash)) {
+        // (d) cycle detected — hash seen before
+        attemptRecord.stopReason = 'cycle_detected';
+        repairAttempts.push(attemptRecord);
+        break;
+      }
+
+      previousHashes.push(sourceHash);
+
+      if (attempt === maxRepairAttempts) {
+        // (e) max attempts reached
+        attemptRecord.stopReason = 'max_attempts';
+        repairAttempts.push(attemptRecord);
+        // Still use the best result so far
+        if (updatedAst) {
+          lastAst = updatedAst;
+          lastDiags = postRepairDiagnostics ?? currentDiagnostics;
+          lastSource = updatedSource;
+        }
+        break;
+      }
+
+      // Continue to next attempt
+      repairAttempts.push(attemptRecord);
+      currentSource = updatedSource;
+      currentDiagnostics = postRepairDiagnostics ?? currentDiagnostics;
+      if (updatedAst) {
+        lastAst = updatedAst;
+        lastDiags = postRepairDiagnostics!;
+        lastSource = updatedSource;
+      }
+    }
+
+    const retryDurationMs = Math.round(performance.now() - retryStart);
+    const finalErrors = lastDiags.summary.errors;
+    const repairStatus = finalErrors === 0 && lastAst ? 'pass' : 'fail';
+
+    stages.push({
+      name: 'repair',
+      status: repairStatus,
+      durationMs: retryDurationMs,
+      details: {
+        attempts: repairAttempts.length,
+        maxAttempts: maxRepairAttempts,
+        finalErrors,
+        stopReason: repairAttempts[repairAttempts.length - 1]?.stopReason,
+      },
+    });
+
+    repairPayload = lastRepairPayload;
+    effectiveAst = lastAst;
+    effectiveDiagnostics = lastDiags;
+    effectiveSource = lastAst ? lastSource : source;
   } else {
+    // Single-attempt (default path — identical to prior A3c behavior)
     const {
       stage: repairStage,
       updatedSource,
       updatedAst,
       postRepairDiagnostics,
       repairResult: rp,
-    } = stageRepair(source, diagnostics, artifactDir, writeArtifacts);
+    } = stageRepair(source, diagnostics, artifactDir, writeArtifacts, adapter);
     stages.push(repairStage);
     repairPayload = rp;
 
@@ -420,6 +569,7 @@ export async function runLoopFromSource(
         deterministic: true,
       },
       repairResult: repairPayload,
+      ...(repairAttempts ? { repairAttempts } : {}),
     };
     if (writeArtifacts) writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(result, null, 2));
     return result;
@@ -443,6 +593,7 @@ export async function runLoopFromSource(
         deterministic: true,
       },
       repairResult: repairPayload,
+      ...(repairAttempts ? { repairAttempts } : {}),
     };
     if (writeArtifacts) writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(result, null, 2));
     return result;
@@ -480,6 +631,7 @@ export async function runLoopFromSource(
     artifactDir,
     determinismCheck: deterCheck,
     repairResult: repairPayload,
+    ...(repairAttempts ? { repairAttempts } : {}),
   };
   if (writeArtifacts) writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(loopResult, null, 2));
 

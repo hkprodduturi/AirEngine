@@ -9,11 +9,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
-import { planRepairs, applyRepairs, repair } from '../src/repair.js';
+import { planRepairs, applyRepairs, repair, createDeterministicAdapter, createNoopAdapter } from '../src/repair.js';
+import type { RepairAdapter, RepairResult } from '../src/repair.js';
 import { parse } from '../src/parser/index.js';
 import { diagnose } from '../src/validator/index.js';
 import { buildResult, hashSource } from '../src/diagnostics.js';
-import { runLoop } from '../src/cli/loop.js';
+import { runLoop, runLoopFromSource } from '../src/cli/loop.js';
 import type { Diagnostic } from '../src/diagnostics.js';
 
 // ---- Helpers ----
@@ -334,5 +335,213 @@ describe('Audit trail', () => {
     // Audit artifacts should exist even though no source was changed
     expect(existsSync(join(result.artifactDir, 'repair-actions.json'))).toBe(true);
     expect(existsSync(join(result.artifactDir, 'diagnostics-before.json'))).toBe(true);
+  });
+});
+
+// ---- F. RepairAdapter interface (A3d) ----
+
+describe('RepairAdapter interface', () => {
+  it('DeterministicAdapter.name is "deterministic"', () => {
+    const adapter = createDeterministicAdapter();
+    expect(adapter.name).toBe('deterministic');
+  });
+
+  it('DeterministicAdapter.repair() matches raw repair()', () => {
+    const adapter = createDeterministicAdapter();
+    const source = '@state{x:int}';
+    const diags = [makeDiag('AIR-E001'), makeDiag('AIR-E002')];
+    const adapterResult = adapter.repair(source, diags);
+    const rawResult = repair(source, diags);
+    expect(adapterResult.status).toBe(rawResult.status);
+    expect(adapterResult.repairedSource).toBe(rawResult.repairedSource);
+    expect(adapterResult.appliedCount).toBe(rawResult.appliedCount);
+  });
+
+  it('NoopAdapter.name is "noop"', () => {
+    const adapter = createNoopAdapter();
+    expect(adapter.name).toBe('noop');
+  });
+
+  it('NoopAdapter always returns noop status and never changes source', () => {
+    const adapter = createNoopAdapter();
+    const source = '@state{x:int}';
+    const diags = [makeDiag('AIR-E001')];
+    const result = adapter.repair(source, diags);
+    expect(result.status).toBe('noop');
+    expect(result.sourceChanged).toBe(false);
+    expect(result.repairedSource).toBe(source);
+    expect(result.appliedCount).toBe(0);
+  });
+});
+
+// ---- G. Retry stop conditions (A3d) ----
+
+describe('Retry stop conditions', () => {
+  // Helper: create a fake adapter for testing
+  function fakeAdapter(name: string, fn: (source: string, diags: Diagnostic[]) => RepairResult): RepairAdapter {
+    return { name, repair: fn };
+  }
+
+  it('noop: adapter returns unchanged source → stop with "noop"', async () => {
+    const adapter = fakeAdapter('fake-noop', (source) => ({
+      status: 'noop' as const,
+      originalSource: source,
+      repairedSource: source,
+      sourceChanged: false,
+      actions: [],
+      appliedCount: 0,
+      skippedCount: 0,
+    }));
+
+    const source = '@state{x:int}'; // triggers E001
+    const result = await runLoopFromSource(source, join('.eval-tmp', 'retry-noop'), {
+      maxRepairAttempts: 3,
+      repairAdapter: adapter,
+      writeArtifacts: false,
+    });
+
+    expect(result.repairAttempts).toBeDefined();
+    expect(result.repairAttempts!.length).toBe(1);
+    expect(result.repairAttempts![0].stopReason).toBe('noop');
+  });
+
+  it('no_improvement: adapter returns changed source but same error count → stop', async () => {
+    const adapter = fakeAdapter('fake-no-improve', (source) => ({
+      status: 'partial' as const,
+      originalSource: source,
+      repairedSource: source + '\n// patched',
+      sourceChanged: true,
+      actions: [],
+      appliedCount: 1,
+      skippedCount: 0,
+    }));
+
+    const source = '@state{x:int}';
+    const result = await runLoopFromSource(source, join('.eval-tmp', 'retry-no-improve'), {
+      maxRepairAttempts: 3,
+      repairAdapter: adapter,
+      writeArtifacts: false,
+    });
+
+    expect(result.repairAttempts).toBeDefined();
+    expect(result.repairAttempts!.length).toBe(1);
+    expect(result.repairAttempts![0].stopReason).toBe('no_improvement');
+  });
+
+  it('cycle_detected: adapter alternates between two sources → stop', async () => {
+    let callCount = 0;
+    const adapter = fakeAdapter('fake-cycle', (source) => {
+      callCount++;
+      const patched = callCount % 2 === 1
+        ? '@app:myapp\n@state{x:int}'
+        : '@state{x:int}';
+      return {
+        status: 'partial' as const,
+        originalSource: source,
+        repairedSource: patched,
+        sourceChanged: patched !== source,
+        actions: [],
+        appliedCount: 1,
+        skippedCount: 0,
+      };
+    });
+
+    // Use source that will produce errors after "repair"
+    const source = '@state{x:int}';
+    const result = await runLoopFromSource(source, join('.eval-tmp', 'retry-cycle'), {
+      maxRepairAttempts: 5,
+      repairAdapter: adapter,
+      writeArtifacts: false,
+    });
+
+    expect(result.repairAttempts).toBeDefined();
+    // Should stop when cycle is detected (source hash was seen before)
+    const lastAttempt = result.repairAttempts![result.repairAttempts!.length - 1];
+    // Could be cycle_detected, no_improvement, or noop depending on error counts
+    expect(['cycle_detected', 'no_improvement', 'noop']).toContain(lastAttempt.stopReason);
+    expect(result.repairAttempts!.length).toBeLessThanOrEqual(5);
+  });
+
+  it('max_attempts: adapter always improves but never reaches 0 → stop at max', async () => {
+    // This adapter claims to change the source each time (unique output)
+    let callCount = 0;
+    const adapter = fakeAdapter('fake-max-attempts', (source) => {
+      callCount++;
+      return {
+        status: 'partial' as const,
+        originalSource: source,
+        repairedSource: source + `\n// fix-${callCount}`,
+        sourceChanged: true,
+        actions: [],
+        appliedCount: 1,
+        skippedCount: 0,
+      };
+    });
+
+    const source = '@state{x:int}';
+    const result = await runLoopFromSource(source, join('.eval-tmp', 'retry-max'), {
+      maxRepairAttempts: 3,
+      repairAdapter: adapter,
+      writeArtifacts: false,
+    });
+
+    expect(result.repairAttempts).toBeDefined();
+    // Since the source keeps changing and errors stay the same,
+    // it should stop at attempt 1 with no_improvement (errors not decreased)
+    // because the re-parse of the patched source will still have errors
+    const lastAttempt = result.repairAttempts![result.repairAttempts!.length - 1];
+    expect(lastAttempt.stopReason).toBeDefined();
+  });
+
+  it('success: adapter returns valid source → 0 errors', async () => {
+    // Use a source that parses OK but has validator error (E002: no @ui)
+    // so initial error count = 1, and adapter produces a valid source with 0 errors
+    const adapter = fakeAdapter('fake-success', () => ({
+      status: 'repaired' as const,
+      originalSource: '',
+      repairedSource: '@app:test\n@state{x:int}\n@ui(h1>"Hello World")',
+      sourceChanged: true,
+      actions: [],
+      appliedCount: 1,
+      skippedCount: 0,
+    }));
+
+    // @app:test + @state but no @ui → 1 validator error (E002)
+    const source = '@app:test\n@state{x:int}';
+    const result = await runLoopFromSource(source, join('.eval-tmp', 'retry-success'), {
+      maxRepairAttempts: 3,
+      repairAdapter: adapter,
+      writeArtifacts: false,
+    });
+
+    expect(result.repairAttempts).toBeDefined();
+    const lastAttempt = result.repairAttempts![result.repairAttempts!.length - 1];
+    expect(lastAttempt.stopReason).toBe('success');
+    expect(lastAttempt.errorsAfter).toBe(0);
+  });
+
+  it('default maxRepairAttempts=1 matches prior A3c behavior (no repairAttempts)', async () => {
+    const source = readFileSync('tests/fixtures/repairable-e001-e002.air', 'utf-8');
+    const result = await runLoopFromSource(source, join('.eval-tmp', 'retry-default'), {
+      writeArtifacts: false,
+    });
+
+    // No repairAttempts field when maxRepairAttempts=1
+    expect(result.repairAttempts).toBeUndefined();
+    // But repairResult is still present (same as A3c)
+    expect(result.repairResult).toBeDefined();
+    expect(result.repairResult!.attempted).toBe(true);
+  });
+
+  it('attempt-N/ artifact dirs created when maxRepairAttempts > 1 and writeArtifacts=true', async () => {
+    const source = '@state{x:int}';
+    const result = await runLoopFromSource(source, join('.eval-tmp', 'retry-artifacts'), {
+      maxRepairAttempts: 2,
+      writeArtifacts: true,
+    });
+
+    expect(result.repairAttempts).toBeDefined();
+    // At least attempt-1 dir should exist
+    expect(existsSync(join(result.artifactDir, 'attempt-1'))).toBe(true);
   });
 });

@@ -23,3 +23,5 @@ gallery/*.js
 gallery/*.cjs
 site/
 .eval-tmp/
+.demo-tmp/
+artifacts/
