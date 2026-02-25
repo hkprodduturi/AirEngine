@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/quality-gate-result.schema.json",
+  "title": "QualityGateResult",
+  "description": "Schema for AirEngine unified quality gate report.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "mode",
+    "effective_mode",
+    "run_metadata",
+    "steps",
+    "offline_summary",
+    "online_summary",
+    "regression_summary",
+    "verdict",
+    "skipped_reasons",
+    "artifact_paths"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "mode": { "$ref": "#/$defs/gateMode" },
+    "effective_mode": { "$ref": "#/$defs/gateMode" },
+    "run_metadata": { "$ref": "#/$defs/runMetadata" },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/gateStep" }
+    },
+    "offline_summary": { "$ref": "#/$defs/gateSummary" },
+    "online_summary": {
+      "oneOf": [
+        { "$ref": "#/$defs/gateSummary" },
+        { "type": "null" }
+      ]
+    },
+    "regression_summary": { "$ref": "#/$defs/regressionSummary" },
+    "verdict": { "type": "string", "enum": ["pass", "fail"] },
+    "skipped_reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "artifact_paths": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "gateMode": {
+      "type": "string",
+      "enum": ["offline", "online", "nightly", "auto"]
+    },
+    "runMetadata": {
+      "type": "object",
+      "required": ["airengine_version", "node_version", "platform"],
+      "properties": {
+        "airengine_version": { "type": "string" },
+        "node_version": { "type": "string" },
+        "platform": { "type": "string" },
+        "git_commit": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "gateStep": {
+      "type": "object",
+      "required": ["name", "command", "status", "exit_code", "duration_ms"],
+      "properties": {
+        "name": { "type": "string" },
+        "command": { "type": "string" },
+        "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+        "exit_code": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "null" }
+          ]
+        },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "skip_reason": { "type": "string" },
+        "details": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "gateSummary": {
+      "type": "object",
+      "required": ["total", "passed", "failed", "skipped"],
+      "properties": {
+        "total": { "type": "number", "minimum": 0 },
+        "passed": { "type": "number", "minimum": 0 },
+        "failed": { "type": "number", "minimum": 0 },
+        "skipped": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "regressionSummary": {
+      "type": "object",
+      "properties": {
+        "online_compare_verdict": { "type": "string", "enum": ["pass", "fail", "skip"] },
+        "benchmark_compare_verdict": { "type": "string", "enum": ["pass", "fail", "skip"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}
