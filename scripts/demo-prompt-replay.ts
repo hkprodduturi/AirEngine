@@ -194,8 +194,8 @@ async function main() {
   if (cliArgs.adapter === 'claude') {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      const errorMsg = 'ANTHROPIC_API_KEY environment variable required for --adapter claude';
-      log(`  FAIL  ${errorMsg}`);
+      const errorMsg = 'ANTHROPIC_API_KEY not set. Use --adapter replay for offline fallback.';
+      log(`  ERROR: ${errorMsg}`);
 
       const result: PromptReplayResult = {
         schema_version: '1.0',
@@ -400,4 +400,7 @@ async function main() {
   process.exit(overallSuccess ? 0 : 1);
 }
 
-main();
+main().catch(err => {
+  console.error('ERROR:', err.message ?? err);
+  process.exit(1);
+});

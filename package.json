@@ -32,7 +32,8 @@
     "eval-online": "node --import tsx scripts/eval-online.ts",
     "eval-online-compare": "node --import tsx scripts/eval-online-compare.ts",
     "quality-gate": "node --import tsx scripts/quality-gate.ts",
-    "demo-live-canonical": "node --import tsx scripts/demo-live-canonical.ts"
+    "demo-live-canonical": "node --import tsx scripts/demo-live-canonical.ts",
+    "doctor": "node --import tsx scripts/doctor.ts"
   },
   "keywords": [
     "ai",

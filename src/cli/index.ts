@@ -52,7 +52,7 @@ program
     console.log(`\n  ⚡ AirEngine Transpile\n`);
 
     if (options.framework !== 'react') {
-      console.error(`  ❌ Unsupported framework '${options.framework}'. Only 'react' is currently supported.\n`);
+      console.error(`  ERROR: Unsupported framework '${options.framework}'. Only 'react' is currently supported.\n`);
       process.exit(1);
     }
 
@@ -62,7 +62,7 @@ program
       const validation = validate(ast);
 
       if (!validation.valid) {
-        console.log('  ❌ Validation failed:\n');
+        console.log('  FAIL: Validation failed:\n');
         validation.errors.forEach(e => console.log(`     ${e.code}: ${e.message}`));
         process.exit(1);
       }
@@ -110,7 +110,7 @@ program
       console.log(`     → ${result.stats.outputLines} lines from ${result.stats.inputLines} source lines (${result.stats.compressionRatio}x)`);
       console.log(`     → ${result.stats.timing.totalMs}ms total (extract: ${result.stats.timing.extractMs}ms, analyze: ${result.stats.timing.analyzeMs}ms, client: ${result.stats.timing.clientGenMs}ms, server: ${result.stats.timing.serverGenMs}ms)\n`);
     } catch (err) {
-      console.error(`  ❌ ${err}\n`);
+      console.error(`  ERROR: ${err instanceof Error ? err.message : err}\n`);
       process.exit(1);
     }
   });
@@ -129,7 +129,7 @@ program
       if (result.valid) {
         console.log(`  ✅ ${file} is valid\n`);
       } else {
-        console.log(`  ❌ ${file} has errors:\n`);
+        console.log(`  FAIL: ${file} has errors:\n`);
         result.errors.forEach(e => console.log(`     ${e.code}: ${e.message}`));
       }
 
@@ -139,7 +139,7 @@ program
       }
       console.log('');
     } catch (err) {
-      console.error(`  ❌ ${err}\n`);
+      console.error(`  ERROR: ${err instanceof Error ? err.message : err}\n`);
       process.exit(1);
     }
   });
@@ -226,7 +226,8 @@ program
 
     // Early fail if Claude mode without API key
     if (repairMode === 'claude' && !process.env.ANTHROPIC_API_KEY) {
-      console.error('  ❌ --repair-mode claude requires ANTHROPIC_API_KEY environment variable\n');
+      console.error('  ERROR: ANTHROPIC_API_KEY not set. Required for --repair-mode claude.');
+      console.error('  Hint: Use --repair-mode deterministic for offline repair.\n');
       process.exit(1);
     }
 
@@ -258,7 +259,7 @@ program
         console.log(`\n  Loop completed successfully → ${options.output}/\n`);
       }
     } catch (err) {
-      console.error(`  ❌ ${err}\n`);
+      console.error(`  ERROR: ${err instanceof Error ? err.message : err}\n`);
       process.exit(1);
     }
   });
@@ -275,9 +276,9 @@ program
     const { runDoctorChecks } = await import('./doctor.js');
     const checks = await runDoctorChecks(file);
 
-    const icons = { pass: '✅', fail: '❌', warn: '⚠️' };
+    const labels = { pass: 'PASS', fail: 'FAIL', warn: 'WARN' } as const;
     for (const check of checks) {
-      console.log(`  ${icons[check.status]} ${check.name}: ${check.message}`);
+      console.log(`  ${labels[check.status].padEnd(4)} ${check.name}: ${check.message}`);
     }
 
     const fails = checks.filter(c => c.status === 'fail').length;

@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "description": "Curated showcase of AirEngine example applications",
+  "examples": [
+    {
+      "id": "todo",
+      "file": "examples/todo.air",
+      "name": "Todo App",
+      "description": "Minimal todo list with add/delete/toggle. Frontend only with localStorage persistence.",
+      "complexity": "simple",
+      "category": "crud",
+      "lines": 11,
+      "blocks": ["@app", "@state", "@style", "@ui", "@persist"],
+      "features": ["localStorage", "list rendering", "mutations"]
+    },
+    {
+      "id": "expense-tracker",
+      "file": "examples/expense-tracker.air",
+      "name": "Expense Tracker",
+      "description": "Budget tracker with income/expense categories, filtering, and balance computation.",
+      "complexity": "simple",
+      "category": "crud",
+      "lines": 32,
+      "blocks": ["@app", "@state", "@style", "@ui", "@persist"],
+      "features": ["localStorage", "filtering", "computed values"]
+    },
+    {
+      "id": "landing",
+      "file": "examples/landing.air",
+      "name": "Landing Page",
+      "description": "Marketing landing page with hero, features, pricing, and CTA sections.",
+      "complexity": "simple",
+      "category": "content",
+      "lines": 31,
+      "blocks": ["@app", "@state", "@style", "@ui", "@nav"],
+      "features": ["multi-section layout", "navigation", "responsive design"]
+    },
+    {
+      "id": "auth",
+      "file": "examples/auth.air",
+      "name": "Auth App",
+      "description": "Login and registration with role-based access control. Fullstack with JWT auth.",
+      "complexity": "medium",
+      "category": "auth",
+      "lines": 24,
+      "blocks": ["@app", "@state", "@style", "@ui", "@auth", "@api"],
+      "features": ["JWT auth", "role gating", "login/register pages"]
+    },
+    {
+      "id": "dashboard",
+      "file": "examples/dashboard.air",
+      "name": "Analytics Dashboard",
+      "description": "Multi-page dashboard with stats, charts, and data tables. Auth-gated with backend API.",
+      "complexity": "medium",
+      "category": "dashboard",
+      "lines": 37,
+      "blocks": ["@app", "@state", "@style", "@ui", "@auth", "@api", "@nav"],
+      "features": ["auth gating", "stat cards", "data tables", "multi-page"]
+    },
+    {
+      "id": "fullstack-todo",
+      "file": "examples/fullstack-todo.air",
+      "name": "Fullstack Todo",
+      "description": "Todo app with Prisma database, Express API, and auth. The canonical demo fixture.",
+      "complexity": "medium",
+      "category": "fullstack",
+      "lines": 20,
+      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth"],
+      "features": ["Prisma ORM", "Express API", "JWT auth", "CRUD endpoints"]
+    },
+    {
+      "id": "projectflow",
+      "file": "examples/projectflow.air",
+      "name": "ProjectFlow",
+      "description": "Project management suite with 5 models, relations, cron jobs, and email notifications.",
+      "complexity": "complex",
+      "category": "fullstack",
+      "lines": 301,
+      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@cron", "@email", "@deploy"],
+      "features": ["5 data models", "relations", "cron jobs", "email", "deployment config"]
+    }
+  ]
+}

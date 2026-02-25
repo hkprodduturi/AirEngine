@@ -463,7 +463,9 @@ async function main(): Promise<void> {
       getGitCommit(),
     );
     writeFileSync(resolve(args.output), JSON.stringify(failReport, null, 2));
-    console.error('ERROR: ANTHROPIC_API_KEY not set. Structured failure report written.');
+    console.error('ERROR: ANTHROPIC_API_KEY not set.');
+    console.error('Hint: Set ANTHROPIC_API_KEY or use --dry-run to validate corpus without API calls.');
+    console.error(`Structured failure report: ${args.output}`);
     process.exit(1);
   }
 
