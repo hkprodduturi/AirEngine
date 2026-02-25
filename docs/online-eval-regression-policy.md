@@ -84,3 +84,63 @@ Monitor these for trends:
 - `generation_failed_invalid_air` increasing: generator quality declining
 - `loop_failed_transpile` increasing: transpiler regression (should be caught by offline gates)
 - `generation_failed_provider` increasing: provider reliability issue (not our regression)
+
+---
+
+## Committed Baseline
+
+The committed alpha baseline lives at `benchmarks/online-eval-baseline-alpha.json`. This file is checked into the repository and serves as the reference for regression comparison during release rehearsals.
+
+The baseline conforms to the `OnlineEvalReport` schema (v1.0) with an additional `_provenance` envelope that records when and from which report the baseline was frozen. The `_provenance` field is ignored by `loadReport()` in `eval-online-compare.ts`.
+
+## When Baseline Can Be Refreshed
+
+The committed baseline should only be refreshed when one of the following conditions is met:
+
+1. **Pipeline change**: A change to the generator, repair adapter, loop logic, or transpiler that intentionally alters eval outcomes
+2. **Model upgrade**: The upstream Claude model version changes (e.g., Sonnet 4 → Sonnet 4.5)
+3. **Corpus change**: Prompts are added, removed, or modified in `benchmarks/online-eval-corpus.json`
+4. **Confirmed improvement**: A new eval run shows strictly better metrics across the board (not just noise)
+
+The baseline must **not** be refreshed to mask a regression.
+
+## Approval Process
+
+1. Run a full release rehearsal: `npm run release-rehearsal -- --mode full`
+2. The online eval stage runs all corpus entries against the live provider
+3. If a baseline exists and is valid, the comparator checks for regressions
+4. If the new results are acceptable, copy the eval report to the baseline:
+   ```bash
+   cp artifacts/eval/online-eval-report.json benchmarks/online-eval-baseline-alpha.json
+   ```
+5. Add `_provenance` metadata to the baseline file (the rehearsal script does this automatically during a baseline-freeze stage)
+6. Commit the updated baseline with a clear commit message referencing the eval metrics
+7. Request peer review — the reviewer should verify the metrics represent genuine improvement
+
+## Acceptable Variance
+
+Online eval results are inherently noisy due to external LLM provider behavior. The following variance bands are considered acceptable and do not constitute a regression:
+
+| Metric | Acceptable variance |
+|--------|-------------------|
+| Success rate (prompt_to_running_app) | ±10 percentage points |
+| Success rate (prompt_to_air) | ±10 percentage points |
+| Timing (avg/p50/p95) | up to 2x AND +1000ms absolute (both must exceed) |
+| Token usage (avg_input/avg_output) | up to 2x (soft warning, not hard fail) |
+
+These thresholds mirror the comparator's hard/soft gate policy defined above.
+
+## One-Off Failure vs Regression Trend
+
+A single eval run may show noise-induced variance. Use the following decision table:
+
+| Scenario | Action |
+|----------|--------|
+| First run after baseline freeze — rate drops 5pp | Rerun once to confirm; if consistent, investigate |
+| Single metric crosses hard threshold by small margin | Rerun 2-3 times; if 2/3 runs regress, treat as real regression |
+| Multiple metrics regress simultaneously | Likely real regression — investigate pipeline changes |
+| Rate drops but timing improves | May be acceptable trade-off — document and decide per-case |
+| Provider error rate spikes (generation_failed_provider) | Not our regression — rerun when provider stabilizes |
+| Consistent regression across 3+ runs | Update code, do NOT update baseline to hide regression |
+
+When in doubt, rerun and compare trends rather than refreshing the baseline.

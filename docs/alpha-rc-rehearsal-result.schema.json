@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/alpha-rc-rehearsal-result.schema.json",
+  "title": "AlphaRCRehearsalResult",
+  "description": "Schema for AirEngine alpha RC rehearsal report.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "mode",
+    "effective_mode",
+    "run_metadata",
+    "steps",
+    "stage_summaries",
+    "baseline",
+    "verdict",
+    "go_no_go",
+    "skipped_reasons",
+    "artifact_paths",
+    "total_duration_ms"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "mode": { "$ref": "#/$defs/rehearsalMode" },
+    "effective_mode": { "$ref": "#/$defs/rehearsalMode" },
+    "run_metadata": { "$ref": "#/$defs/runMetadata" },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rehearsalStep" }
+    },
+    "stage_summaries": { "$ref": "#/$defs/stageSummaries" },
+    "baseline": {
+      "oneOf": [
+        { "$ref": "#/$defs/baselineValidation" },
+        { "type": "null" }
+      ]
+    },
+    "verdict": { "type": "string", "enum": ["pass", "fail"] },
+    "go_no_go": { "type": "string", "enum": ["GO", "NO-GO"] },
+    "skipped_reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "artifact_paths": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "total_duration_ms": { "type": "number", "minimum": 0 }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "rehearsalMode": {
+      "type": "string",
+      "enum": ["offline", "full"]
+    },
+    "runMetadata": {
+      "type": "object",
+      "required": ["airengine_version", "node_version", "platform"],
+      "properties": {
+        "airengine_version": { "type": "string" },
+        "node_version": { "type": "string" },
+        "platform": { "type": "string" },
+        "git_commit": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "rehearsalStep": {
+      "type": "object",
+      "required": ["name", "command", "status", "exit_code", "duration_ms"],
+      "properties": {
+        "name": { "type": "string" },
+        "command": { "type": "string" },
+        "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+        "exit_code": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "null" }
+          ]
+        },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "skip_reason": { "type": "string" },
+        "details": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "stageSummary": {
+      "type": "object",
+      "required": ["total", "passed", "failed", "skipped"],
+      "properties": {
+        "total": { "type": "number", "minimum": 0 },
+        "passed": { "type": "number", "minimum": 0 },
+        "failed": { "type": "number", "minimum": 0 },
+        "skipped": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "stageSummaries": {
+      "type": "object",
+      "required": [
+        "doctor",
+        "offline_gates",
+        "canonical_demo",
+        "online_eval",
+        "online_compare",
+        "baseline_freeze"
+      ],
+      "properties": {
+        "doctor": { "$ref": "#/$defs/stageSummary" },
+        "offline_gates": { "$ref": "#/$defs/stageSummary" },
+        "canonical_demo": { "$ref": "#/$defs/stageSummary" },
+        "online_eval": {
+          "oneOf": [
+            { "$ref": "#/$defs/stageSummary" },
+            { "type": "null" }
+          ]
+        },
+        "online_compare": {
+          "oneOf": [
+            { "$ref": "#/$defs/stageSummary" },
+            { "type": "null" }
+          ]
+        },
+        "baseline_freeze": {
+          "oneOf": [
+            { "$ref": "#/$defs/stageSummary" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "baselineProvenance": {
+      "type": "object",
+      "required": ["frozen_at", "source_report"],
+      "properties": {
+        "frozen_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+        "git_commit": { "type": "string" },
+        "source_report": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "baselineValidation": {
+      "type": "object",
+      "required": ["path", "exists", "valid"],
+      "properties": {
+        "path": { "type": "string" },
+        "exists": { "type": "boolean" },
+        "valid": { "type": "boolean" },
+        "schema_version": { "type": "string" },
+        "provenance": { "$ref": "#/$defs/baselineProvenance" },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

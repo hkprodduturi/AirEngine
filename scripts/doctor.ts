@@ -67,6 +67,9 @@ const REQUIRED_FILES = [
   'scripts/quality-gate.ts',
   'scripts/eval-online.ts',
   'scripts/demo-live-canonical.ts',
+  'scripts/release-alpha-rehearsal.ts',
+  'docs/alpha-rc-rehearsal-result.schema.json',
+  'benchmarks/online-eval-baseline-alpha.json',
 ];
 
 // ---- Exported Functions ----

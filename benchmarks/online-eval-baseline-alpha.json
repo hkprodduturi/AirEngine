@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-02-25T00:00:00.000Z",
+  "run_metadata": {
+    "airengine_version": "0.2.0",
+    "node_version": "v22.0.0",
+    "platform": "darwin"
+  },
+  "config": {
+    "generator_model": "claude-sonnet-4-20250514",
+    "repair_mode": "deterministic",
+    "max_repair_attempts": 1,
+    "timeout_ms": 30000,
+    "provider_retries": 2
+  },
+  "corpus": {
+    "path": "benchmarks/online-eval-corpus.json",
+    "total_entries": 0,
+    "limit_applied": null,
+    "corpus_id": "stub"
+  },
+  "cases": [],
+  "metrics": {
+    "total_cases": 0,
+    "completed_cases": 0,
+    "success_count": 0,
+    "prompt_to_air_success_rate": 0,
+    "prompt_to_running_app_success_rate": 0,
+    "timing": {
+      "avg_total_ms": 0,
+      "p50_total_ms": 0,
+      "p95_total_ms": 0,
+      "avg_generation_ms": 0,
+      "avg_loop_ms": 0
+    },
+    "tokens": {
+      "total_input": 0,
+      "total_output": 0,
+      "avg_input": 0,
+      "avg_output": 0
+    },
+    "retries": {
+      "avg_generation_attempts": 0,
+      "avg_repair_attempts": 0
+    },
+    "failure_breakdown": {}
+  },
+  "artifact_dir": "artifacts/eval",
+  "_provenance": {
+    "frozen_at": "2026-02-25T00:00:00.000Z",
+    "source_report": "stub — initial baseline, zero metrics"
+  }
+}
