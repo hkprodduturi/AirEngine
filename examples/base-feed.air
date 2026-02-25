@@ -1,0 +1,217 @@
+# ================================================================
+# Community Feed — Social Feed / Discussion Forum (Base Template)
+# ================================================================
+# Bottom-tabs navigation, card-feed surface, tab-switch flow.
+# Vertical card feed, compose box, like/react, notifications.
+# Demonstrates: bottom-tabs nav, card-feed surface, compose-react interaction.
+# AIR risk: LOW — all native elements (list, card, form, badge, footer nav).
+# ================================================================
+
+@app:communityFeed
+
+@style(theme:light,accent:#f43f5e,radius:12,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,email:str,avatarUrl:?str},
+  posts:[{id:int,author:str,content:str,likes:int,commentCount:int,createdAt:str}],
+  trendingPosts:[{id:int,author:str,content:str,likes:int,commentCount:int,createdAt:str}],
+  comments:[{id:int,author:str,content:str,createdAt:str}],
+  notifications:[{id:int,message:str,read:bool,createdAt:str}],
+  newPostContent:str,
+  newCommentContent:str,
+  activePost:?int,
+  postSuccess:bool,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,avatar_url:?str,created_at:datetime:auto}
+  Post{id:int:primary:auto,content:str:required,likes:int:default(0),user_id:int:required,created_at:datetime:auto}
+  Comment{id:int:primary:auto,content:str:required,user_id:int:required,post_id:int:required,created_at:datetime:auto}
+  Notification{id:int:primary:auto,message:str:required,read:bool:default(false),user_id:int:required,created_at:datetime:auto}
+  Follow{id:int:primary:auto,follower_id:int:required,following_id:int:required,created_at:datetime:auto}
+  @relation(User.posts<>Post.user)
+  @relation(Post.comments<>Comment.post)
+  @relation(User.comments<>Comment.user)
+  @relation(User.notifications<>Notification.user)
+  @index(User.email:unique)
+  @index(Post.created_at)
+  @index(Follow.follower_id+Follow.following_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/posts>~db.Post.findMany
+  POST:/posts(content:str)>~db.Post.create
+  PUT:/posts/:id/like>~db.Post.update
+  GET:/posts/:id/comments>~db.Comment.findMany
+  POST:/posts/:id/comments(content:str)>~db.Comment.create
+  GET:/notifications>~db.Notification.findMany
+  PUT:/notifications/:id/read>~db.Notification.update
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>feed:login
+  /trending>?user>trending:login
+  /notifications>?user>notifs:login
+  /profile>?user>profile:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.posts+~api.notifications
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Community"
+        p:"muted">"Share and connect"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:feed(
+    ?loading>spinner
+    ?error>alert:error>#error
+    ?postSuccess>alert:success>"Post published!"
+
+    card(
+      form(
+        input:text>#newPostContent
+        btn:primary>"Post">!createPost
+      )
+    )
+
+    ?!posts>card(
+      h2>"No posts yet"
+      p:"muted">"Be the first to share something"
+    )
+
+    list>posts>*post(
+      card(
+        row(text>#post.author+text:"muted">#post.createdAt)
+        p>#post.content
+        row(
+          btn:ghost>"Like "+text>#post.likes>!likePost(#post.id)
+          btn:ghost>"Comment "+text>#post.commentCount>!viewComments(#post.id)
+        )
+      )
+    )
+
+    ?activePost>@section:commentThread(
+      h3>"Comments"
+      ?!comments>p:"muted">"No comments yet"
+      list>comments>*comment(
+        card(
+          row(text>#comment.author+text:"muted">#comment.createdAt)
+          p>#comment.content
+        )
+      )
+      form(
+        input:text>#newCommentContent
+        btn:primary>"Reply">!addComment(#activePost)
+      )
+    )
+
+    footer(
+      nav(
+        btn:ghost>"Feed"
+        btn:ghost>"Trending"
+        btn:ghost>"Notifications"
+        btn:ghost>"Profile"
+      )
+    )
+  )
+  @page:trending(
+    h2>"Trending"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!trendingPosts>card(
+      h2>"Nothing trending"
+      p:"muted">"Check back later for popular posts"
+    )
+
+    list>trendingPosts>*post(
+      card(
+        row(text>#post.author+text:"muted">#post.createdAt)
+        p>#post.content
+        row(stat:"Likes">#post.likes+stat:"Comments">#post.commentCount)
+      )
+    )
+
+    footer(
+      nav(
+        btn:ghost>"Feed"
+        btn:ghost>"Trending"
+        btn:ghost>"Notifications"
+        btn:ghost>"Profile"
+      )
+    )
+  )
+  @page:notifs(
+    h2>"Notifications"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!notifications>card(
+      h2>"No notifications"
+      p:"muted">"You're all caught up"
+    )
+
+    list>notifications>*notif(
+      card(
+        row(?!notif.read>badge:"new"+text>#notif.message+text:"muted">#notif.createdAt)
+        ?!notif.read>btn:ghost>"Mark Read">!markRead(#notif.id)
+      )
+    )
+
+    footer(
+      nav(
+        btn:ghost>"Feed"
+        btn:ghost>"Trending"
+        btn:ghost>"Notifications"
+        btn:ghost>"Profile"
+      )
+    )
+  )
+  @page:profile(
+    h2>"Profile"
+
+    card(
+      h3>#user.name
+      text:"muted">#user.email
+    )
+
+    btn:ghost>"Sign Out">!logout
+
+    footer(
+      nav(
+        btn:ghost>"Feed"
+        btn:ghost>"Trending"
+        btn:ghost>"Notifications"
+        btn:ghost>"Profile"
+      )
+    )
+  )
+)

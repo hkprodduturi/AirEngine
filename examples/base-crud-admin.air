@@ -1,0 +1,179 @@
+# ================================================================
+# CRUD Admin — Generic Data Management Panel (Base Template)
+# ================================================================
+# Sidebar navigation, data table primary surface, list-detail flow.
+# Search/filter, inline forms, entity CRUD operations.
+# Demonstrates: sidebar nav, data-table surface, crud-forms interaction.
+# AIR risk: LOW — all native elements (sidebar, table, form, search).
+# ================================================================
+
+@app:crudAdmin
+
+@style(theme:light,accent:#3b82f6,radius:8,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  entities:[{id:int,name:str,email:str,status:str,category:str,createdAt:str}],
+  stats:{totalEntities:int,activeCount:int,archivedCount:int},
+  selectedEntity:?{id:int,name:str,email:str,status:str,category:str,createdAt:str},
+  showCreateForm:bool,
+  search:str,
+  categoryFilter:str,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(viewer,editor,admin):default(editor),created_at:datetime:auto}
+  Entity{id:int:primary:auto,name:str:required,email:str:required,status:enum(active,archived,draft):default(active),category:enum(general,vip,partner,internal):default(general),user_id:int:required,created_at:datetime:auto}
+  @relation(User.entities<>Entity.user)
+  @index(User.email:unique)
+  @index(Entity.status+Entity.category)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/entities>~db.Entity.findMany
+  POST:/entities(name:str,email:str,category:str)>~db.Entity.create
+  PUT:/entities/:id(name:str,email:str,status:str,category:str)>~db.Entity.update
+  DELETE:/entities/:id>~db.Entity.delete
+)
+
+@auth(required,role:enum(viewer,editor,admin),redirect:/login)
+
+@nav(
+  />?user>dashboard:login
+  /entities>?user>entities:login
+  /settings>?user>settings:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.entities
+  onChange:categoryFilter>~api.entities
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Admin Panel"
+        p:"muted">"Manage your data"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      h2>"Admin"
+      nav(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Entities"
+        btn:ghost>"Settings"
+      )
+    )+main(
+      h1>"Dashboard"
+
+      ?loading>spinner
+      ?error>alert:error>#error
+
+      grid:3(
+        stat:"Total">#stats.totalEntities
+        stat:"Active">#stats.activeCount
+        stat:"Archived">#stats.archivedCount
+      )
+
+      h3>"Recent Entities"
+      ?!entities>card(
+        h2>"No entities yet"
+        p:"muted">"Create your first entity to get started"
+      )
+      table>entities>*entity(
+        text>#entity.name
+        text>#entity.email
+        badge:#entity.status
+        badge:#entity.category
+        text:"muted">#entity.createdAt
+      )
+    )
+  )
+  @page:entities(
+    sidebar(
+      h2>"Admin"
+      nav(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Entities"
+        btn:ghost>"Settings"
+      )
+    )+main(
+      header>h1>"Entities"+btn:primary>"+ Create">!toggleCreateForm
+      search:input>#search
+      tabs>categoryFilter.set(all,general,vip,partner,internal)
+
+      ?loading>spinner
+      ?error>alert:error>#error
+
+      ?showCreateForm>card(
+        h2>"New Entity"
+        form(
+          input:text>#entity.name
+          input:email>#entity.email
+          select>#entity.category
+          row(btn:primary>"Create">!createEntity,btn:ghost>"Cancel">!toggleCreateForm)
+        )
+      )
+
+      ?!entities>card(
+        h2>"No entities found"
+        p:"muted">"Try a different search or create a new entity"
+      )
+
+      table>entities|search|categoryFilter>*entity(
+        text>#entity.name
+        text>#entity.email
+        badge:#entity.status
+        badge:#entity.category
+        text:"muted">#entity.createdAt
+        row(btn:ghost>"Edit">!editEntity(#entity.id),btn:ghost>"Delete">!deleteEntity(#entity.id))
+      )
+
+      ?selectedEntity>card(
+        h2>"Entity Detail"
+        row(text>"Name: "+text>#selectedEntity.name)
+        row(text>"Email: "+text>#selectedEntity.email)
+        row(text>"Status: "+badge:#selectedEntity.status)
+        row(text>"Category: "+badge:#selectedEntity.category)
+        row(btn:primary>"Save">!updateEntity(#selectedEntity.id),btn:ghost>"Close">!deselectEntity)
+      )
+    )
+  )
+  @page:settings(
+    sidebar(
+      h2>"Admin"
+      nav(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Entities"
+        btn:ghost>"Settings"
+      )
+    )+main(
+      h1>"Settings"
+      card(
+        h3>#user.name
+        text>#user.email
+        badge:#user.role
+      )
+      btn:ghost>"Sign Out">!logout
+    )
+  )
+)

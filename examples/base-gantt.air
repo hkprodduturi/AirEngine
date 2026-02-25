@@ -1,0 +1,206 @@
+# ================================================================
+# Gantt Planner — Project Timeline Tracker (Base Template)
+# ================================================================
+# Top-tabs navigation, progress-rows surface, split-view flow.
+# Task list with progress bars, milestone badges, expand/collapse.
+# Demonstrates: top-tabs nav, progress-rows surface, move-organize interaction.
+# AIR risk: MEDIUM — dependency arrows unsupported, expand/collapse via details.
+# ================================================================
+
+@app:ganttPlanner
+
+@style(theme:light,accent:#f59e0b,radius:8,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  projects:[{id:int,name:str,taskCount:int,completedCount:int}],
+  tasks:[{id:int,name:str,status:str,priority:str,progress:int,startDate:str,endDate:str,assignee:?str}],
+  milestones:[{id:int,name:str,date:str,status:str}],
+  team:[{id:int,name:str,email:str,taskCount:int}],
+  currentProject:?int,
+  showCreateForm:bool,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Project{id:int:primary:auto,name:str:required,user_id:int:required,created_at:datetime:auto}
+  Task{id:int:primary:auto,name:str:required,status:enum(not_started,in_progress,completed,blocked):default(not_started),priority:enum(low,medium,high):default(medium),progress:int:default(0),start_date:date:required,end_date:date:required,project_id:int:required,assignee_id:?int,created_at:datetime:auto}
+  Milestone{id:int:primary:auto,name:str:required,date:date:required,status:enum(pending,reached):default(pending),project_id:int:required,created_at:datetime:auto}
+  @relation(User.projects<>Project.user)
+  @relation(Project.tasks<>Task.project)
+  @relation(User.tasks<>Task.assignee)
+  @relation(Project.milestones<>Milestone.project)
+  @index(User.email:unique)
+  @index(Task.project_id+Task.start_date)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/projects>~db.Project.findMany
+  POST:/projects(name:str)>~db.Project.create
+  GET:/projects/:id/tasks>~db.Task.findMany
+  POST:/projects/:id/tasks(name:str,start_date:str,end_date:str,priority:str)>~db.Task.create
+  PUT:/tasks/:id(name:str,status:str,progress:int)>~db.Task.update
+  DELETE:/tasks/:id>~db.Task.delete
+  GET:/projects/:id/milestones>~db.Milestone.findMany
+  POST:/projects/:id/milestones(name:str,date:str)>~db.Milestone.create
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>timeline:login
+  /tasks>?user>taskList:login
+  /milestones>?user>milestones:login
+  /team>?user>team:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.projects
+  onChange:currentProject>~api.tasks+~api.milestones
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Gantt Planner"
+        p:"muted">"Track project timelines and milestones"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:timeline(
+    header>row(
+      select>#currentProject
+      btn:primary>"+ New Project">!createProject
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!tasks>card(
+      h2>"No tasks yet"
+      p:"muted">"Select a project and add tasks to see the timeline"
+    )
+
+    sidebar(
+      h3>"Tasks"
+      list>tasks>*task(
+        btn:ghost>#task.name+badge:#task.status
+      )>!selectTask(#task.id)
+    )+main(
+      h2>"Timeline"
+      list>tasks>*task(
+        row(
+          text>#task.name
+          badge:#task.priority
+          text:"muted">#task.startDate
+          text:"muted">#task.endDate
+          progress:bar>#task.progress
+        )
+      )
+
+      h3>"Milestones"
+      ?!milestones>p:"muted">"No milestones set"
+      list>milestones>*ms(
+        row(badge:#ms.date+text>#ms.name+badge:#ms.status)
+      )
+    )
+  )
+  @page:taskList(
+    header>h1>"Tasks"+btn:primary>"+ Add Task">!toggleCreateForm
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?showCreateForm>card(
+      h2>"New Task"
+      form(
+        input:text>#task.name
+        input:date>#task.startDate
+        input:date>#task.endDate
+        select>#task.priority
+        row(btn:primary>"Create">!createTask,btn:ghost>"Cancel">!toggleCreateForm)
+      )
+    )
+
+    ?!tasks>card(
+      h2>"No tasks"
+      p:"muted">"Create your first task to get started"
+    )
+
+    table>tasks>*task(
+      text>#task.name
+      badge:#task.status
+      badge:#task.priority
+      text>#task.startDate
+      text>#task.endDate
+      progress:bar>#task.progress
+      ?task.assignee>text:"muted">#task.assignee
+      row(btn:ghost>"Edit">!editTask(#task.id),btn:ghost>"Delete">!deleteTask(#task.id))
+    )
+  )
+  @page:milestones(
+    header>h1>"Milestones"+btn:primary>"+ Add Milestone">!toggleCreateForm
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?showCreateForm>card(
+      h2>"New Milestone"
+      form(
+        input:text>#milestone.name
+        input:date>#milestone.date
+        row(btn:primary>"Create">!createMilestone,btn:ghost>"Cancel">!toggleCreateForm)
+      )
+    )
+
+    ?!milestones>card(
+      h2>"No milestones"
+      p:"muted">"Add milestones to mark key project dates"
+    )
+
+    list>milestones>*ms(
+      card(
+        row(h3>#ms.name+badge:#ms.status)
+        text>"Due: "+text>#ms.date
+      )
+    )
+  )
+  @page:team(
+    header>h1>"Team"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!team>card(
+      h2>"No team members"
+      p:"muted">"Team members will appear when assigned to tasks"
+    )
+
+    grid:3>team>*member(
+      card(
+        h3>#member.name
+        text:"muted">#member.email
+        stat:"Tasks">#member.taskCount
+      )
+    )
+  )
+)

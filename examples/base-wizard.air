@@ -1,0 +1,160 @@
+# ================================================================
+# Onboarding Wizard — Multi-Step Registration Flow (Base Template)
+# ================================================================
+# Step-indicator navigation, centered-form surface, sequential flow.
+# 4 steps with Back/Next, progress bar, review-before-submit.
+# Demonstrates: step-indicator nav, centered-form surface, step-submit interaction.
+# AIR risk: MEDIUM — no native stepper, use badge row + separate pages per step.
+# ================================================================
+
+@app:onboardingWizard
+
+@style(theme:light,accent:#0ea5e9,radius:12,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  accountEmail:str,
+  accountPassword:str,
+  profileName:str,
+  profileBio:str,
+  profileAvatar:?str,
+  prefTheme:str,
+  prefNotifications:bool,
+  prefLanguage:str,
+  registrationSuccess:bool,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,bio:?str,avatar:?str,theme:enum(light,dark,system):default(system),notifications:bool:default(true),language:enum(en,es,fr,de,ja):default(en),created_at:datetime:auto}
+  @index(User.email:unique)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/register(name:str,email:str,password:str,bio:str,theme:str,language:str)>auth.register
+  POST:/auth/login(email:str,password:str)>auth.login
+)
+
+@auth(optional,redirect:/login)
+
+@nav(
+  />step1
+  /step2>step2
+  /step3>step3
+  /step4>step4
+  /confirmation>?user>confirmation:step1
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Welcome Back"
+        p:"muted">"Sign in to your account"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"New here? "+btn:ghost>"Create Account">!goToStep1
+        )
+      )
+    )
+  )
+  @page:step1(
+    main>grid:1(
+      row(badge:"1"+text>" — "+text>"2"+text>" — "+text>"3"+text>" — "+text>"4")
+
+      card(
+        h1>"Create Account"
+        h3>"Step 1: Account Details"
+
+        ?loading>spinner
+        ?error>alert:error>#error
+
+        ?!accountEmail>p:"muted">"Enter your email and password to begin"
+
+        form(
+          input:email>#accountEmail
+          input:password>#accountPassword
+          row(btn:primary>"Next">!goToStep2)
+        )
+      )
+    )
+  )
+  @page:step2(
+    main>grid:1(
+      row(text>"1"+text>" — "+badge:"2"+text>" — "+text>"3"+text>" — "+text>"4")
+
+      card(
+        h1>"Your Profile"
+        h3>"Step 2: Profile Information"
+
+        ?error>alert:error>#error
+
+        form(
+          input:text>#profileName
+          input:text>#profileBio
+          row(btn:ghost>"Back">!goToStep1,btn:primary>"Next">!goToStep3)
+        )
+      )
+    )
+  )
+  @page:step3(
+    main>grid:1(
+      row(text>"1"+text>" — "+text>"2"+text>" — "+badge:"3"+text>" — "+text>"4")
+
+      card(
+        h1>"Preferences"
+        h3>"Step 3: Customize Your Experience"
+
+        ?error>alert:error>#error
+
+        form(
+          select>#prefTheme
+          select>#prefLanguage
+          row(btn:ghost>"Back">!goToStep2,btn:primary>"Next">!goToStep4)
+        )
+      )
+    )
+  )
+  @page:step4(
+    main>grid:1(
+      row(text>"1"+text>" — "+text>"2"+text>" — "+text>"3"+text>" — "+badge:"4")
+
+      card(
+        h1>"Review"
+        h3>"Step 4: Confirm Your Details"
+
+        ?loading>spinner
+        ?error>alert:error>#error
+
+        row(text>"Email: "+text>#accountEmail)
+        row(text>"Name: "+text>#profileName)
+        row(text>"Bio: "+text>#profileBio)
+        row(text>"Theme: "+badge:#prefTheme)
+        row(text>"Language: "+badge:#prefLanguage)
+
+        row(btn:ghost>"Back">!goToStep3,btn:primary>"Create Account">!submitRegistration)
+      )
+    )
+  )
+  @page:confirmation(
+    main>grid:1(
+      card(
+        h1>"Welcome!"
+        ?registrationSuccess>alert:success>"Your account has been created successfully"
+        p>"You're all set, "+text>#user.name
+        btn:primary>"Get Started">!goToDashboard
+      )
+    )
+  )
+)

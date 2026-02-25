@@ -1,0 +1,220 @@
+# ================================================================
+# Customer Portal — Self-Service Support / Knowledge Base (Base Template)
+# ================================================================
+# Top-bar navigation, mixed-sections surface, section-browse flow.
+# Hero banner, feature cards, FAQ accordion, support ticket form.
+# Demonstrates: top-bar nav, mixed-sections surface, navigate-consume interaction.
+# AIR risk: LOW — all native elements (header nav, grid, card, details, form).
+# ================================================================
+
+@app:customerPortal
+
+@style(theme:light,accent:#2563eb,radius:10,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  articles:[{id:int,title:str,summary:str,category:str}],
+  tickets:[{id:int,subject:str,status:str,createdAt:str}],
+  faqs:[{id:int,question:str,answer:str}],
+  ticketSubject:str,
+  ticketDescription:str,
+  ticketSuccess:bool,
+  search:str,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Article{id:int:primary:auto,title:str:required,summary:str:required,content:str:required,category:enum(getting_started,api,billing,troubleshooting):required,created_at:datetime:auto}
+  Ticket{id:int:primary:auto,subject:str:required,description:str:required,status:enum(open,in_progress,resolved,closed):default(open),user_id:int:required,created_at:datetime:auto}
+  Faq{id:int:primary:auto,question:str:required,answer:str:required,order_num:int:required}
+  @relation(User.tickets<>Ticket.user)
+  @index(User.email:unique)
+  @index(Article.category)
+  @index(Ticket.user_id+Ticket.status)
+  @index(Faq.order_num)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/articles>~db.Article.findMany
+  GET:/faqs>~db.Faq.findMany
+  GET:/tickets>~db.Ticket.findMany
+  POST:/tickets(subject:str,description:str)>~db.Ticket.create
+)
+
+@auth(optional,redirect:/login)
+
+@nav(
+  />home
+  /support>?user>support:login
+  /kb>knowledgeBase
+  /account>?user>account:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.articles+~api.faqs
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Customer Portal"
+        p:"muted">"Get help and find answers"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:home(
+    header(
+      nav(
+        h2>"Support Portal"
+        btn:ghost>"Home"
+        btn:ghost>"Knowledge Base"
+        btn:ghost>"Support"
+        btn:ghost>"Account"
+      )
+    )
+
+    @section:hero(
+      h1>"How can we help?"
+      p:"muted">"Search our knowledge base or submit a ticket"
+      search:input>#search
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    grid:3(
+      card(
+        h3>"Getting Started"
+        p:"muted">"Quick start guides and tutorials"
+        btn:ghost>"Browse">!filterArticles
+      )
+      card(
+        h3>"API Documentation"
+        p:"muted">"Reference docs and examples"
+        btn:ghost>"Browse">!filterArticles
+      )
+      card(
+        h3>"FAQ"
+        p:"muted">"Frequently asked questions"
+        btn:ghost>"View FAQ">!goToFaq
+      )
+    )
+
+    h2>"Frequently Asked Questions"
+    ?!faqs>card(
+      p:"muted">"No FAQs available"
+    )
+    list>faqs>*faq(
+      card(
+        h3>#faq.question
+        p>#faq.answer
+      )
+    )
+  )
+  @page:knowledgeBase(
+    header(
+      nav(
+        h2>"Support Portal"
+        btn:ghost>"Home"
+        btn:ghost>"Knowledge Base"
+        btn:ghost>"Support"
+        btn:ghost>"Account"
+      )
+    )
+
+    h1>"Knowledge Base"
+    search:input>#search
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!articles>card(
+      h2>"No articles found"
+      p:"muted">"Try a different search term"
+    )
+
+    list>articles|search>*article(
+      card(
+        h3>#article.title
+        p:"muted">#article.summary
+        badge:#article.category
+        btn:ghost>"Read More">!viewArticle(#article.id)
+      )
+    )
+  )
+  @page:support(
+    header(
+      nav(
+        h2>"Support Portal"
+        btn:ghost>"Home"
+        btn:ghost>"Knowledge Base"
+        btn:ghost>"Support"
+        btn:ghost>"Account"
+      )
+    )
+
+    h1>"Submit a Ticket"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+    ?ticketSuccess>alert:success>"Ticket submitted successfully"
+
+    card(
+      form(
+        input:text>#ticketSubject
+        input:text>#ticketDescription
+        btn:primary>"Submit Ticket">!submitTicket
+      )
+    )
+
+    h2>"My Tickets"
+    ?!tickets>card(
+      p:"muted">"No tickets submitted"
+    )
+
+    table>tickets>*ticket(
+      text>#ticket.subject
+      badge:#ticket.status
+      text:"muted">#ticket.createdAt
+    )
+  )
+  @page:account(
+    header(
+      nav(
+        h2>"Support Portal"
+        btn:ghost>"Home"
+        btn:ghost>"Knowledge Base"
+        btn:ghost>"Support"
+        btn:ghost>"Account"
+      )
+    )
+
+    h1>"My Account"
+
+    card(
+      h3>#user.name
+      text:"muted">#user.email
+    )
+
+    btn:ghost>"Sign Out">!logout
+  )
+)

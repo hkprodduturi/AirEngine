@@ -1,0 +1,144 @@
+# ================================================================
+# Marketplace Search — Search-First Discovery Platform (Base Template)
+# ================================================================
+# Search-bar navigation, card-grid surface, search-browse flow.
+# Hero search, faceted filters, product grid, tag chips, sort.
+# Demonstrates: search-bar nav, card-grid surface, filter-drill interaction.
+# AIR risk: LOW — all native elements (search, grid, card, badge, select).
+# ================================================================
+
+@app:marketplace
+
+@style(theme:light,accent:#ec4899,radius:12,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  listings:[{id:int,title:str,description:str,price:float,category:str,seller:str,rating:float,imageUrl:?str}],
+  savedItems:[{id:int,title:str,price:float,category:str}],
+  categories:[{id:int,name:str,count:int}],
+  selectedListing:?{id:int,title:str,description:str,price:float,category:str,seller:str,rating:float},
+  search:str,
+  categoryFilter:str,
+  sortBy:str,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Listing{id:int:primary:auto,title:str:required,description:str:required,price:float:required,category:enum(electronics,clothing,home,books,services,other):required,rating:float:default(0),seller_id:int:required,created_at:datetime:auto}
+  SavedItem{id:int:primary:auto,user_id:int:required,listing_id:int:required,created_at:datetime:auto}
+  @relation(User.listings<>Listing.seller)
+  @relation(User.savedItems<>SavedItem.user)
+  @relation(Listing.savedBy<>SavedItem.listing)
+  @index(User.email:unique)
+  @index(Listing.category+Listing.price)
+  @index(SavedItem.user_id+SavedItem.listing_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/listings>~db.Listing.findMany
+  GET:/listings/:id>~db.Listing.findOne
+  POST:/listings(title:str,description:str,price:float,category:str)>~db.Listing.create
+  GET:/saved>~db.SavedItem.findMany
+  POST:/saved(listing_id:int)>~db.SavedItem.create
+  DELETE:/saved/:id>~db.SavedItem.delete
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>explore:login
+  /saved>?user>saved:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.listings
+  onChange:categoryFilter>~api.listings
+  onChange:search>~api.listings
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Marketplace"
+        p:"muted">"Discover and save great finds"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:explore(
+    @section:hero(
+      h1>"Find anything"
+      search:input>#search
+    )
+
+    header>row(
+      tabs>categoryFilter.set(all,electronics,clothing,home,books,services)
+      select>#sortBy
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!listings>card(
+      h2>"No listings found"
+      p:"muted">"Try a different search or category"
+    )
+
+    grid:3>listings|search|categoryFilter>*item(
+      card(
+        h3>#item.title
+        p:"muted">#item.description
+        text:amount:$#item.price
+        row(badge:#item.category+text:"muted">#item.seller)
+        row(btn:primary>"View">!viewListing(#item.id),btn:ghost>"Save">!saveListing(#item.id))
+      )
+    )
+
+    ?selectedListing>card(
+      h2>#selectedListing.title
+      p>#selectedListing.description
+      text:amount:$#selectedListing.price
+      row(badge:#selectedListing.category+text>"Seller: "+text>#selectedListing.seller)
+      stat:"Rating">#selectedListing.rating
+      row(btn:primary>"Save">!saveListing(#selectedListing.id),btn:ghost>"Close">!closeListing)
+    )
+  )
+  @page:saved(
+    header>h1>"Saved Items"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!savedItems>card(
+      h2>"No saved items"
+      p:"muted">"Save listings from the explore page"
+    )
+
+    grid:3>savedItems>*item(
+      card(
+        h3>#item.title
+        text:amount:$#item.price
+        badge:#item.category
+        row(btn:ghost>"View">!viewListing(#item.id),btn:ghost>"Remove">!unsaveListing(#item.id))
+      )
+    )
+  )
+)

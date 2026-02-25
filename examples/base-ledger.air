@@ -1,0 +1,202 @@
+# ================================================================
+# Finance Ledger — Double-Entry Bookkeeping (Base Template)
+# ================================================================
+# Top-bar navigation, data-table surface, filter-driven flow.
+# Full-width ledger table, account filter tabs, date range, summary.
+# Demonstrates: top-bar nav, data-table surface, crud-forms interaction.
+# AIR risk: LOW — all native elements (table, tabs, stat, form).
+# ================================================================
+
+@app:financeLedger
+
+@style(theme:light,accent:#059669,radius:6,font:mono)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  transactions:[{id:int,date:str,description:str,debit:float,credit:float,balance:float,account:str}],
+  accounts:[{id:int,name:str,type:str,balance:float}],
+  totalDebits:float,
+  totalCredits:float,
+  netBalance:float,
+  accountFilter:str,
+  startDate:str,
+  endDate:str,
+  showEntryForm:bool,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Account{id:int:primary:auto,name:str:required,type:enum(assets,liabilities,revenue,expenses,equity):required,balance:float:default(0),user_id:int:required,created_at:datetime:auto}
+  Transaction{id:int:primary:auto,date:date:required,description:str:required,debit:float:default(0),credit:float:default(0),account_id:int:required,user_id:int:required,created_at:datetime:auto}
+  @relation(User.accounts<>Account.user)
+  @relation(Account.transactions<>Transaction.account)
+  @relation(User.transactions<>Transaction.user)
+  @index(User.email:unique)
+  @index(Account.user_id+Account.type)
+  @index(Transaction.date+Transaction.account_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/accounts>~db.Account.findMany
+  POST:/accounts(name:str,type:str)>~db.Account.create
+  GET:/transactions>~db.Transaction.findMany
+  POST:/transactions(date:str,description:str,debit:float,credit:float,account_id:int)>~db.Transaction.create
+  PUT:/transactions/:id(description:str,debit:float,credit:float)>~db.Transaction.update
+  DELETE:/transactions/:id>~db.Transaction.delete
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>ledger:login
+  /accounts>?user>accounts:login
+  /reports>?user>reports:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.transactions+~api.accounts
+  onChange:accountFilter>~api.transactions
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Finance Ledger"
+        p:"muted">"Double-entry bookkeeping"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:ledger(
+    header(
+      nav(
+        h2>"Ledger"
+        btn:ghost>"Ledger"
+        btn:ghost>"Accounts"
+        btn:ghost>"Reports"
+      )
+    )
+
+    row(
+      tabs>accountFilter.set(all,assets,liabilities,revenue,expenses)
+      row(input:date>#startDate+input:date>#endDate)
+      btn:primary>"+ Entry">!toggleEntryForm
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?showEntryForm>card(
+      h3>"New Transaction"
+      form(
+        row(
+          input:date>#txn.date
+          input:text>#txn.description
+          input:number>#txn.debit
+          input:number>#txn.credit
+          select>#txn.account
+          btn:primary>"Add">!createTransaction
+          btn:ghost>"Cancel">!toggleEntryForm
+        )
+      )
+    )
+
+    ?!transactions>card(
+      h2>"No transactions"
+      p:"muted">"Add your first transaction to get started"
+    )
+
+    table>transactions|accountFilter>*txn(
+      text>#txn.date
+      text>#txn.description
+      text:amount:$#txn.debit
+      text:amount:$#txn.credit
+      text:amount:$#txn.balance
+      text:#txn.account
+      row(btn:ghost>"Edit">!editTransaction(#txn.id),btn:ghost>"Delete">!deleteTransaction(#txn.id))
+    )
+
+    footer(
+      row(
+        stat:"Total Debits">#totalDebits
+        stat:"Total Credits">#totalCredits
+        stat:"Net Balance">#netBalance
+      )
+    )
+  )
+  @page:accounts(
+    header(
+      nav(
+        h2>"Ledger"
+        btn:ghost>"Ledger"
+        btn:ghost>"Accounts"
+        btn:ghost>"Reports"
+      )
+    )
+
+    h1>"Chart of Accounts"
+    btn:primary>"+ New Account">!createAccount
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!accounts>card(
+      h2>"No accounts"
+      p:"muted">"Create accounts to organize your transactions"
+    )
+
+    table>accounts>*acct(
+      text>#acct.name
+      badge:#acct.type
+      text:amount:$#acct.balance
+    )
+  )
+  @page:reports(
+    header(
+      nav(
+        h2>"Ledger"
+        btn:ghost>"Ledger"
+        btn:ghost>"Accounts"
+        btn:ghost>"Reports"
+      )
+    )
+
+    h1>"Reports"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    grid:2(
+      card(
+        h3>"Income vs Expenses"
+        chart:bar>#transactions
+      )
+      card(
+        h3>"Balance Trend"
+        chart:line>#transactions
+      )
+    )
+
+    row(
+      stat:"Total Debits">#totalDebits
+      stat:"Total Credits">#totalCredits
+      stat:"Net Balance">#netBalance
+    )
+  )
+)

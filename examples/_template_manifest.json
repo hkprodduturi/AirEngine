@@ -1,18 +1,50 @@
 [
   {
-    "base_id": "scheduler",
+    "base_id": "command-center",
     "variant_id": "base",
-    "air_file": "base-scheduler.air",
-    "layout_signature": "nav:date-controls|surface:date-grid|flow:calendar-drill|interact:step-submit|mobile:simplify-view",
+    "air_file": "base-command-center.air",
+    "layout_signature": "nav:top-tabs|surface:stat-dashboard|flow:tab-switch|interact:monitor-ack|mobile:stack-vertical",
     "canonical": {
-      "nav_family": "date-controls",
-      "surface_family": "date-grid",
-      "flow_family": "calendar-drill",
-      "interaction_family": "step-submit",
-      "mobile_family": "simplify-view"
+      "nav_family": "top-tabs",
+      "surface_family": "stat-dashboard",
+      "flow_family": "tab-switch",
+      "interaction_family": "monitor-ack",
+      "mobile_family": "stack-vertical"
     },
-    "screens": ["login", "calendar", "myEvents"],
-    "air_risk_level": "high",
+    "screens": ["login", "overview", "systems", "alerts", "logs"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "crud-admin",
+    "variant_id": "base",
+    "air_file": "base-crud-admin.air",
+    "layout_signature": "nav:sidebar|surface:data-table|flow:list-detail|interact:crud-forms|mobile:collapse-nav",
+    "canonical": {
+      "nav_family": "sidebar",
+      "surface_family": "data-table",
+      "flow_family": "list-detail",
+      "interaction_family": "crud-forms",
+      "mobile_family": "collapse-nav"
+    },
+    "screens": ["login", "dashboard", "entities", "settings"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "kanban",
+    "variant_id": "base",
+    "air_file": "base-kanban.air",
+    "layout_signature": "nav:dropdown-header|surface:column-layout|flow:board-centric|interact:move-organize|mobile:stack-vertical",
+    "canonical": {
+      "nav_family": "dropdown-header",
+      "surface_family": "column-layout",
+      "flow_family": "board-centric",
+      "interaction_family": "move-organize",
+      "mobile_family": "stack-vertical"
+    },
+    "screens": ["login", "boardList", "board"],
+    "air_risk_level": "medium",
     "version": "1.0.0"
   },
   {
@@ -32,18 +64,114 @@
     "version": "1.0.0"
   },
   {
-    "base_id": "kanban",
+    "base_id": "scheduler",
     "variant_id": "base",
-    "air_file": "base-kanban.air",
-    "layout_signature": "nav:dropdown-header|surface:column-layout|flow:board-centric|interact:move-organize|mobile:stack-vertical",
+    "air_file": "base-scheduler.air",
+    "layout_signature": "nav:date-controls|surface:date-grid|flow:calendar-drill|interact:step-submit|mobile:simplify-view",
     "canonical": {
-      "nav_family": "dropdown-header",
-      "surface_family": "column-layout",
-      "flow_family": "board-centric",
+      "nav_family": "date-controls",
+      "surface_family": "date-grid",
+      "flow_family": "calendar-drill",
+      "interaction_family": "step-submit",
+      "mobile_family": "simplify-view"
+    },
+    "screens": ["login", "calendar", "myEvents"],
+    "air_risk_level": "high",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "gantt",
+    "variant_id": "base",
+    "air_file": "base-gantt.air",
+    "layout_signature": "nav:top-tabs|surface:progress-rows|flow:split-view|interact:move-organize|mobile:simplify-view",
+    "canonical": {
+      "nav_family": "top-tabs",
+      "surface_family": "progress-rows",
+      "flow_family": "split-view",
       "interaction_family": "move-organize",
+      "mobile_family": "simplify-view"
+    },
+    "screens": ["login", "timeline", "taskList", "milestones", "team"],
+    "air_risk_level": "medium",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "analytics",
+    "variant_id": "base",
+    "air_file": "base-analytics.air",
+    "layout_signature": "nav:toolbar|surface:chart-grid|flow:filter-driven|interact:filter-drill|mobile:stack-vertical",
+    "canonical": {
+      "nav_family": "toolbar",
+      "surface_family": "chart-grid",
+      "flow_family": "filter-driven",
+      "interaction_family": "filter-drill",
       "mobile_family": "stack-vertical"
     },
-    "screens": ["login", "boardList", "board"],
+    "screens": ["login", "dashboard", "reports"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "noc",
+    "variant_id": "base",
+    "air_file": "base-noc.air",
+    "layout_signature": "nav:none|surface:tile-wall|flow:single-screen|interact:monitor-ack|mobile:stack-vertical",
+    "canonical": {
+      "nav_family": "none",
+      "surface_family": "tile-wall",
+      "flow_family": "single-screen",
+      "interaction_family": "monitor-ack",
+      "mobile_family": "stack-vertical"
+    },
+    "screens": ["login", "wall"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "doc-editor",
+    "variant_id": "base",
+    "air_file": "base-doc-editor.air",
+    "layout_signature": "nav:toolbar|surface:content-canvas|flow:select-edit|interact:toolbar-edit|mobile:collapse-nav",
+    "canonical": {
+      "nav_family": "toolbar",
+      "surface_family": "content-canvas",
+      "flow_family": "select-edit",
+      "interaction_family": "toolbar-edit",
+      "mobile_family": "collapse-nav"
+    },
+    "screens": ["login", "editor", "documentList"],
+    "air_risk_level": "medium",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "marketplace",
+    "variant_id": "base",
+    "air_file": "base-marketplace.air",
+    "layout_signature": "nav:search-bar|surface:card-grid|flow:search-browse|interact:filter-drill|mobile:collapse-nav",
+    "canonical": {
+      "nav_family": "search-bar",
+      "surface_family": "card-grid",
+      "flow_family": "search-browse",
+      "interaction_family": "filter-drill",
+      "mobile_family": "collapse-nav"
+    },
+    "screens": ["login", "explore", "saved"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "wizard",
+    "variant_id": "base",
+    "air_file": "base-wizard.air",
+    "layout_signature": "nav:step-indicator|surface:centered-form|flow:sequential|interact:step-submit|mobile:native-mobile",
+    "canonical": {
+      "nav_family": "step-indicator",
+      "surface_family": "centered-form",
+      "flow_family": "sequential",
+      "interaction_family": "step-submit",
+      "mobile_family": "native-mobile"
+    },
+    "screens": ["login", "step1", "step2", "step3", "step4", "confirmation"],
     "air_risk_level": "medium",
     "version": "1.0.0"
   },
@@ -64,6 +192,118 @@
     "version": "1.0.0"
   },
   {
+    "base_id": "feed",
+    "variant_id": "base",
+    "air_file": "base-feed.air",
+    "layout_signature": "nav:bottom-tabs|surface:card-feed|flow:tab-switch|interact:compose-react|mobile:native-mobile",
+    "canonical": {
+      "nav_family": "bottom-tabs",
+      "surface_family": "card-feed",
+      "flow_family": "tab-switch",
+      "interaction_family": "compose-react",
+      "mobile_family": "native-mobile"
+    },
+    "screens": ["login", "feed", "trending", "notifs", "profile"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "ai-chat",
+    "variant_id": "base",
+    "air_file": "base-ai-chat.air",
+    "layout_signature": "nav:sidebar|surface:list-pane|flow:select-edit|interact:compose-react|mobile:collapse-nav",
+    "canonical": {
+      "nav_family": "sidebar",
+      "surface_family": "list-pane",
+      "flow_family": "select-edit",
+      "interaction_family": "compose-react",
+      "mobile_family": "collapse-nav"
+    },
+    "screens": ["login", "chat"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "storefront",
+    "variant_id": "base",
+    "air_file": "base-storefront.air",
+    "layout_signature": "nav:top-bar|surface:card-grid|flow:browse-checkout|interact:navigate-consume|mobile:collapse-nav",
+    "canonical": {
+      "nav_family": "top-bar",
+      "surface_family": "card-grid",
+      "flow_family": "browse-checkout",
+      "interaction_family": "navigate-consume",
+      "mobile_family": "collapse-nav"
+    },
+    "screens": ["login", "shop", "cart", "checkout", "orders"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "patient-chart",
+    "variant_id": "base",
+    "air_file": "base-patient-chart.air",
+    "layout_signature": "nav:top-tabs|surface:tab-panels|flow:tab-switch|interact:switch-edit|mobile:scroll-horizontal",
+    "canonical": {
+      "nav_family": "top-tabs",
+      "surface_family": "tab-panels",
+      "flow_family": "tab-switch",
+      "interaction_family": "switch-edit",
+      "mobile_family": "scroll-horizontal"
+    },
+    "screens": ["login", "patientSearch", "chartVitals", "chartHistory", "chartMedications", "chartNotes"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "learning",
+    "variant_id": "base",
+    "air_file": "base-learning.air",
+    "layout_signature": "nav:sidebar|surface:content-canvas|flow:sequential|interact:step-submit|mobile:collapse-nav",
+    "canonical": {
+      "nav_family": "sidebar",
+      "surface_family": "content-canvas",
+      "flow_family": "sequential",
+      "interaction_family": "step-submit",
+      "mobile_family": "collapse-nav"
+    },
+    "screens": ["login", "courseList", "lesson"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "ledger",
+    "variant_id": "base",
+    "air_file": "base-ledger.air",
+    "layout_signature": "nav:top-bar|surface:data-table|flow:filter-driven|interact:crud-forms|mobile:scroll-horizontal",
+    "canonical": {
+      "nav_family": "top-bar",
+      "surface_family": "data-table",
+      "flow_family": "filter-driven",
+      "interaction_family": "crud-forms",
+      "mobile_family": "scroll-horizontal"
+    },
+    "screens": ["login", "ledger", "accounts", "reports"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "portal",
+    "variant_id": "base",
+    "air_file": "base-portal.air",
+    "layout_signature": "nav:top-bar|surface:mixed-sections|flow:section-browse|interact:navigate-consume|mobile:stack-vertical",
+    "canonical": {
+      "nav_family": "top-bar",
+      "surface_family": "mixed-sections",
+      "flow_family": "section-browse",
+      "interaction_family": "navigate-consume",
+      "mobile_family": "stack-vertical"
+    },
+    "screens": ["login", "home", "knowledgeBase", "support", "account"],
+    "air_risk_level": "low",
+    "version": "1.0.0"
+  },
+  {
     "base_id": "warehouse",
     "variant_id": "base",
     "air_file": "base-warehouse.air",
@@ -75,7 +315,7 @@
       "interaction_family": "scan-confirm",
       "mobile_family": "native-mobile"
     },
-    "screens": ["login", "warehouse"],
+    "screens": ["login", "scan", "pick", "inventorySearch", "profile"],
     "air_risk_level": "medium",
     "version": "1.0.0"
   }

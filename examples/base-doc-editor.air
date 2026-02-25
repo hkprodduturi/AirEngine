@@ -1,0 +1,147 @@
+# ================================================================
+# Document Editor — Notes / Wiki / Content Editor (Base Template)
+# ================================================================
+# Toolbar navigation, content-canvas surface, select-edit flow.
+# Document list sidebar, format toolbar, text display, save/preview.
+# Demonstrates: toolbar nav, content-canvas surface, toolbar-edit interaction.
+# AIR risk: MEDIUM — no contenteditable, use forms for editing.
+# ================================================================
+
+@app:docEditor
+
+@style(theme:light,accent:#6366f1,radius:6,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  documents:[{id:int,title:str,updatedAt:str,wordCount:int}],
+  activeDoc:?{id:int,title:str,content:str,updatedAt:str},
+  editTitle:str,
+  editContent:str,
+  previewMode:bool,
+  showCreateForm:bool,
+  search:str,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Document{id:int:primary:auto,title:str:required,content:str:default(""),word_count:int:default(0),user_id:int:required,created_at:datetime:auto,updated_at:datetime:auto}
+  @relation(User.documents<>Document.user)
+  @index(User.email:unique)
+  @index(Document.user_id+Document.updated_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/documents>~db.Document.findMany
+  POST:/documents(title:str,content:str)>~db.Document.create
+  PUT:/documents/:id(title:str,content:str)>~db.Document.update
+  DELETE:/documents/:id>~db.Document.delete
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>editor:login
+  /documents>?user>documentList:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.documents
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Doc Editor"
+        p:"muted">"Write, edit, and organize your notes"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:editor(
+    sidebar(
+      h2>"Documents"
+      btn:primary>"+ New">!toggleCreateForm
+      search:input>#search
+
+      ?showCreateForm>card(
+        form(
+          input:text>#editTitle
+          row(btn:primary>"Create">!createDoc,btn:ghost>"Cancel">!toggleCreateForm)
+        )
+      )
+
+      ?!documents>p:"muted">"No documents"
+
+      list>documents|search>*doc(
+        btn:ghost>#doc.title+text:"muted">#doc.updatedAt
+      )>!selectDoc(#doc.id)
+    )+main(
+      ?loading>spinner
+      ?error>alert:error>#error
+
+      ?!activeDoc>card(
+        h2>"Select a document"
+        p:"muted">"Choose a document from the sidebar or create a new one"
+      )
+
+      ?activeDoc>header>row(
+        btn:ghost>"B">!formatBold
+        btn:ghost>"I">!formatItalic
+        btn:ghost>"H1">!formatHeading
+        btn:ghost>"Code">!formatCode
+        btn:ghost>"Preview">!togglePreview
+        btn:primary>"Save">!saveDoc
+        btn:ghost>"Delete">!deleteDoc(#activeDoc.id)
+      )
+
+      ?activeDoc>?!previewMode>@section:editMode(
+        form(
+          input:text>#editTitle
+          input:text>#editContent
+        )
+      )
+
+      ?activeDoc>?previewMode>@section:previewMode(
+        h1>#activeDoc.title
+        p>#activeDoc.content
+        text:"muted">"Last updated: "+text>#activeDoc.updatedAt
+      )
+    )
+  )
+  @page:documentList(
+    header>h1>"All Documents"+btn:primary>"+ New Document">!toggleCreateForm
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!documents>card(
+      h2>"No documents yet"
+      p:"muted">"Create your first document to get started"
+    )
+
+    table>documents>*doc(
+      text>#doc.title
+      stat:"Words">#doc.wordCount
+      text:"muted">#doc.updatedAt
+      row(btn:ghost>"Open">!selectDoc(#doc.id),btn:ghost>"Delete">!deleteDoc(#doc.id))
+    )
+  )
+)

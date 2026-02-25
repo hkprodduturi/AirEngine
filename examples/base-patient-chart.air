@@ -1,0 +1,263 @@
+# ================================================================
+# Patient Chart — Medical Record Viewer / Editor (Base Template)
+# ================================================================
+# Top-tabs navigation, tab-panels surface, tab-switch flow.
+# Patient header bar, tab panels (vitals/history/medications/notes).
+# Demonstrates: top-tabs nav, tab-panels surface, switch-edit interaction.
+# AIR risk: LOW — tabs and conditional sections handle panel switching.
+# ================================================================
+
+@app:patientChart
+
+@style(theme:light,accent:#0d9488,radius:8,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  patients:[{id:int,name:str,dob:str,mrn:str}],
+  activePatient:?{id:int,name:str,dob:str,mrn:str},
+  vitals:[{id:int,type:str,value:str,unit:str,recordedAt:str}],
+  history:[{id:int,condition:str,diagnosedAt:str,status:str,notes:?str}],
+  medications:[{id:int,name:str,dosage:str,frequency:str,prescribedAt:str,active:bool}],
+  notes:[{id:int,author:str,content:str,createdAt:str}],
+  search:str,
+  newNote:str,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(nurse,doctor,admin):default(nurse),created_at:datetime:auto}
+  Patient{id:int:primary:auto,name:str:required,dob:date:required,mrn:str:required,created_at:datetime:auto}
+  Vital{id:int:primary:auto,type:enum(bp,hr,temp,o2,weight):required,value:str:required,unit:str:required,patient_id:int:required,recorded_by:int:required,created_at:datetime:auto}
+  MedicalHistory{id:int:primary:auto,condition:str:required,diagnosed_at:date:required,status:enum(active,resolved,chronic):default(active),notes:?str,patient_id:int:required,created_at:datetime:auto}
+  Medication{id:int:primary:auto,name:str:required,dosage:str:required,frequency:str:required,active:bool:default(true),patient_id:int:required,prescribed_by:int:required,created_at:datetime:auto}
+  ClinicalNote{id:int:primary:auto,content:str:required,patient_id:int:required,author_id:int:required,created_at:datetime:auto}
+  @relation(Patient.vitals<>Vital.patient)
+  @relation(User.recordedVitals<>Vital.recorded_by)
+  @relation(Patient.history<>MedicalHistory.patient)
+  @relation(Patient.medications<>Medication.patient)
+  @relation(User.prescriptions<>Medication.prescribed_by)
+  @relation(Patient.notes<>ClinicalNote.patient)
+  @relation(User.authoredNotes<>ClinicalNote.author)
+  @index(User.email:unique)
+  @index(Patient.mrn:unique)
+  @index(Vital.patient_id+Vital.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/patients>~db.Patient.findMany
+  GET:/patients/:id>~db.Patient.findOne
+  GET:/patients/:id/vitals>~db.Vital.findMany
+  POST:/patients/:id/vitals(type:str,value:str,unit:str)>~db.Vital.create
+  GET:/patients/:id/history>~db.MedicalHistory.findMany
+  GET:/patients/:id/medications>~db.Medication.findMany
+  GET:/patients/:id/notes>~db.ClinicalNote.findMany
+  POST:/patients/:id/notes(content:str)>~db.ClinicalNote.create
+)
+
+@auth(required,role:enum(nurse,doctor,admin),redirect:/login)
+
+@nav(
+  />?user>patientSearch:login
+  /chart>?user>chartVitals:login
+  /chart/history>?user>chartHistory:login
+  /chart/medications>?user>chartMedications:login
+  /chart/notes>?user>chartNotes:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.patients
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Patient Chart"
+        p:"muted">"Electronic health records"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:patientSearch(
+    h1>"Patient Search"
+    search:input>#search
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!patients>card(
+      h2>"No patients found"
+      p:"muted">"Search by name or MRN"
+    )
+
+    table>patients|search>*patient(
+      text>#patient.name
+      text>"DOB: "+text>#patient.dob
+      badge:#patient.mrn
+      btn:primary>"Open Chart">!openChart(#patient.id)
+    )
+  )
+  @page:chartVitals(
+    ?activePatient>header>row(
+      h2>#activePatient.name
+      text:"muted">"DOB: "+text>#activePatient.dob
+      badge:#activePatient.mrn
+      btn:ghost>"Back to Search">!backToSearch
+    )
+
+    nav(
+      btn:ghost>"Vitals"
+      btn:ghost>"History"
+      btn:ghost>"Medications"
+      btn:ghost>"Notes"
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    h2>"Vitals"
+
+    ?!vitals>card(
+      p:"muted">"No vitals recorded"
+    )
+
+    grid:4(
+      stat:"BP">#vitals.bp
+      stat:"HR">#vitals.hr
+      stat:"Temp">#vitals.temp
+      stat:"O2">#vitals.o2
+    )
+
+    table>vitals>*vital(
+      badge:#vital.type
+      text>#vital.value
+      text>#vital.unit
+      text:"muted">#vital.recordedAt
+    )
+
+    card(
+      h3>"Record Vital"
+      form(
+        select>#vital.type
+        input:text>#vital.value
+        input:text>#vital.unit
+        btn:primary>"Record">!recordVital(#activePatient.id)
+      )
+    )
+  )
+  @page:chartHistory(
+    ?activePatient>header>row(
+      h2>#activePatient.name
+      text:"muted">"DOB: "+text>#activePatient.dob
+      badge:#activePatient.mrn
+      btn:ghost>"Back to Search">!backToSearch
+    )
+
+    nav(
+      btn:ghost>"Vitals"
+      btn:ghost>"History"
+      btn:ghost>"Medications"
+      btn:ghost>"Notes"
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    h2>"Medical History"
+
+    ?!history>card(
+      p:"muted">"No medical history recorded"
+    )
+
+    table>history>*entry(
+      text>#entry.condition
+      text>#entry.diagnosedAt
+      badge:#entry.status
+      ?entry.notes>text:"muted">#entry.notes
+    )
+  )
+  @page:chartMedications(
+    ?activePatient>header>row(
+      h2>#activePatient.name
+      text:"muted">"DOB: "+text>#activePatient.dob
+      badge:#activePatient.mrn
+      btn:ghost>"Back to Search">!backToSearch
+    )
+
+    nav(
+      btn:ghost>"Vitals"
+      btn:ghost>"History"
+      btn:ghost>"Medications"
+      btn:ghost>"Notes"
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    h2>"Medications"
+
+    ?!medications>card(
+      p:"muted">"No medications prescribed"
+    )
+
+    list>medications>*med(
+      card(
+        row(h3>#med.name+?med.active>badge:"active"+?!med.active>badge:"inactive")
+        row(text>"Dosage: "+text>#med.dosage+text>"Frequency: "+text>#med.frequency)
+        text:"muted">"Prescribed: "+text>#med.prescribedAt
+      )
+    )
+  )
+  @page:chartNotes(
+    ?activePatient>header>row(
+      h2>#activePatient.name
+      text:"muted">"DOB: "+text>#activePatient.dob
+      badge:#activePatient.mrn
+      btn:ghost>"Back to Search">!backToSearch
+    )
+
+    nav(
+      btn:ghost>"Vitals"
+      btn:ghost>"History"
+      btn:ghost>"Medications"
+      btn:ghost>"Notes"
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    h2>"Clinical Notes"
+
+    card(
+      form(
+        input:text>#newNote
+        btn:primary>"Add Note">!addNote(#activePatient.id)
+      )
+    )
+
+    ?!notes>card(
+      p:"muted">"No clinical notes"
+    )
+
+    list>notes>*note(
+      card(
+        row(text>#note.author+text:"muted">#note.createdAt)
+        p>#note.content
+      )
+    )
+  )
+)

@@ -1,0 +1,117 @@
+# ================================================================
+# Monitoring NOC — Network Operations / Status Wall (Base Template)
+# ================================================================
+# No navigation, fullscreen tile-wall, single-screen flow.
+# Status tiles in a grid, alert feed, acknowledge actions.
+# Demonstrates: no nav, tile-wall surface, monitor-ack interaction.
+# AIR risk: LOW — native grid, badges, stats. Tile expand via details workaround.
+# ================================================================
+
+@app:nocWall
+
+@style(theme:dark,accent:#22c55e,radius:8,font:mono)
+
+@state{
+  user:?{id:int,name:str,role:str},
+  servers:[{id:int,name:str,status:str,cpu:float,memory:float,disk:float,region:str,lastPing:str}],
+  alerts:[{id:int,severity:str,message:str,source:str,acknowledged:bool,timestamp:str}],
+  overallStatus:str,
+  healthyCount:int,
+  degradedCount:int,
+  downCount:int,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(viewer,operator,admin):default(operator),created_at:datetime:auto}
+  Server{id:int:primary:auto,name:str:required,status:enum(healthy,degraded,down):default(healthy),cpu:float:default(0),memory:float:default(0),disk:float:default(0),region:str:required,last_ping:datetime:auto,created_at:datetime:auto}
+  Alert{id:int:primary:auto,severity:enum(info,warning,critical):required,message:str:required,source:str:required,acknowledged:bool:default(false),server_id:int:required,created_at:datetime:auto}
+  @relation(Server.alerts<>Alert.server)
+  @index(User.email:unique)
+  @index(Server.status)
+  @index(Alert.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/servers>~db.Server.findMany
+  GET:/alerts>~db.Alert.findMany
+  PUT:/alerts/:id/ack>~db.Alert.update
+)
+
+@auth(required,role:enum(viewer,operator,admin),redirect:/login)
+
+@nav(
+  />?user>wall:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.servers+~api.alerts
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"NOC Monitor"
+        p:"muted">"Network operations status wall"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:wall(
+    header>row(
+      h1>"Status Wall"
+      badge:#overallStatus
+      row(stat:"Healthy">#healthyCount+stat:"Degraded">#degradedCount+stat:"Down">#downCount)
+      btn:ghost>"Sign Out">!logout
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!servers>card(
+      h2>"No servers monitored"
+      p:"muted">"Add servers to begin monitoring"
+    )
+
+    grid:3>servers>*server(
+      card(
+        row(h3>#server.name+badge:#server.status)
+        stat:"CPU">#server.cpu
+        stat:"Memory">#server.memory
+        stat:"Disk">#server.disk
+        text:"muted">#server.region
+        text:"muted">"Last ping: "+text>#server.lastPing
+      )
+    )
+
+    h2>"Alert Feed"
+    ?!alerts>card(
+      p:"muted">"No active alerts"
+    )
+    list>alerts>*alert(
+      row(
+        badge:#alert.severity
+        text>#alert.message
+        text:"muted">#alert.source
+        text:"muted">#alert.timestamp
+        ?!alert.acknowledged>btn:ghost>"Ack">!ackAlert(#alert.id)
+        ?alert.acknowledged>badge:"acked"
+      )
+    )
+  )
+)

@@ -1,0 +1,225 @@
+# ================================================================
+# Ecommerce Storefront — Public-Facing Online Store (Base Template)
+# ================================================================
+# Top-bar navigation, card-grid surface, browse-checkout flow.
+# Hero banner, product grid, cart, checkout, order history.
+# Demonstrates: top-bar nav, card-grid surface, navigate-consume interaction.
+# AIR risk: LOW — all native elements (header nav, grid, card, form).
+# ================================================================
+
+@app:storefront
+
+@style(theme:light,accent:#f97316,radius:10,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  products:[{id:int,name:str,description:str,price:float,category:str,inStock:bool}],
+  cart:[{id:int,productId:int,name:str,price:float,quantity:int}],
+  cartTotal:float,
+  orders:[{id:int,total:float,itemCount:int,status:str,createdAt:str}],
+  categoryFilter:str,
+  checkoutSuccess:bool,
+  search:str,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Product{id:int:primary:auto,name:str:required,description:str:required,price:float:required,category:enum(electronics,clothing,home,books,food):required,in_stock:bool:default(true),created_at:datetime:auto}
+  Order{id:int:primary:auto,total:float:required,status:enum(pending,shipped,delivered,cancelled):default(pending),user_id:int:required,created_at:datetime:auto}
+  OrderItem{id:int:primary:auto,quantity:int:required,unit_price:float:required,product_id:int:required,order_id:int:required}
+  @relation(User.orders<>Order.user)
+  @relation(Order.items<>OrderItem.order)
+  @relation(Product.orderItems<>OrderItem.product)
+  @index(User.email:unique)
+  @index(Product.category)
+  @index(Order.user_id+Order.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/products>~db.Product.findMany
+  GET:/orders>~db.Order.findMany
+  POST:/orders(total:float)>~db.Order.create
+  POST:/orders/:id/items(product_id:int,quantity:int,unit_price:float)>~db.OrderItem.create
+)
+
+@auth(optional,redirect:/login)
+
+@nav(
+  />shop
+  /cart>?user>cart:login
+  /checkout>?user>checkout:login
+  /orders>?user>orders:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+@persist:localStorage(cart)
+
+@hook(
+  onMount>~api.products
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Storefront"
+        p:"muted">"Sign in to checkout and track orders"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:shop(
+    header(
+      nav(
+        h2>"Store"
+        btn:ghost>"All"
+        btn:ghost>"Electronics"
+        btn:ghost>"Clothing"
+        btn:ghost>"Home"
+        btn:ghost>"Books"
+        btn:ghost>"Cart"+badge:#cart.length
+      )
+    )
+
+    @section:hero(
+      h1>"Welcome to our Store"
+      p:"muted">"Browse our latest products"
+      search:input>#search
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    tabs>categoryFilter.set(all,electronics,clothing,home,books,food)
+
+    ?!products>card(
+      h2>"No products available"
+      p:"muted">"Check back soon for new arrivals"
+    )
+
+    grid:3>products|search|categoryFilter>*product(
+      card(
+        h3>#product.name
+        p:"muted">#product.description
+        text:amount:$#product.price
+        badge:#product.category
+        ?product.inStock>btn:primary>"Add to Cart">!addToCart(#product.id)
+        ?!product.inStock>text:"muted">"Out of Stock"
+      )
+    )
+  )
+  @page:cart(
+    header(
+      nav(
+        h2>"Store"
+        btn:ghost>"Shop"
+        btn:ghost>"Cart"
+        btn:ghost>"Orders"
+      )
+    )
+
+    h1>"Your Cart"
+
+    ?!cart>card(
+      h2>"Cart is empty"
+      p:"muted">"Add products from the shop"
+      btn:primary>"Continue Shopping">!goToShop
+    )
+
+    list>cart>*item(
+      card(
+        row(
+          h3>#item.name
+          row(
+            btn:ghost>"-">!decrementQty(#item.id)
+            text>#item.quantity
+            btn:ghost>"+">!incrementQty(#item.id)
+          )
+          text:amount:$#item.price
+          btn:ghost>"Remove">!removeFromCart(#item.id)
+        )
+      )
+    )
+
+    ?cart>@section:cartSummary(
+      row(h3>"Total"+h3:amount:$#cartTotal)
+      btn:primary>"Proceed to Checkout">!goToCheckout
+    )
+  )
+  @page:checkout(
+    header(
+      nav(
+        h2>"Store"
+        btn:ghost>"Shop"
+        btn:ghost>"Cart"
+        btn:ghost>"Orders"
+      )
+    )
+
+    h1>"Checkout"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+    ?checkoutSuccess>alert:success>"Order placed successfully!"
+
+    card(
+      h3>"Order Summary"
+      list>cart>*item(
+        row(text>#item.name+text>#item.quantity+text:amount:$#item.price)
+      )
+      row(h3>"Total"+h3:amount:$#cartTotal)
+    )
+
+    card(
+      h3>"Shipping Information"
+      form(
+        input:text>#shipping.name
+        input:text>#shipping.address
+        input:text>#shipping.city
+        btn:primary>"Place Order">!placeOrder
+      )
+    )
+  )
+  @page:orders(
+    header(
+      nav(
+        h2>"Store"
+        btn:ghost>"Shop"
+        btn:ghost>"Cart"
+        btn:ghost>"Orders"
+      )
+    )
+
+    h1>"My Orders"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!orders>card(
+      h2>"No orders yet"
+      p:"muted">"Your order history will appear here"
+    )
+
+    table>orders>*order(
+      text:"muted">#order.createdAt
+      stat:"Items">#order.itemCount
+      text:amount:$#order.total
+      badge:#order.status
+    )
+  )
+)
