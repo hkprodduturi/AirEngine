@@ -22,3 +22,4 @@ gallery/package.json
 gallery/*.js
 gallery/*.cjs
 site/
+.eval-tmp/
