@@ -10,4 +10,10 @@ output/client/
 output/server/
 output/docker-compose.yml
 output/README.md
-gallery/
+gallery/node_modules/
+gallery/previews/
+gallery/src/
+gallery/*.air
+gallery/package.json
+gallery/*.js
+gallery/*.cjs
