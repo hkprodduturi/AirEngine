@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/prompt-replay-result/1.0",
+  "title": "AirEngine Prompt Replay Result",
+  "description": "Structured result from the prompt-to-app replay orchestrator (A5b). Schema version 1.0.",
+  "type": "object",
+  "required": ["schema_version", "success", "prompt", "generator", "timestamp"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "success": {
+      "type": "boolean",
+      "description": "True when generation succeeded AND loop pipeline had no failed stages"
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "ISO 8601 timestamp"
+    },
+    "prompt": {
+      "$ref": "#/$defs/promptMetadata"
+    },
+    "generator": {
+      "$ref": "#/$defs/generatorMetadata"
+    },
+    "generated_air": {
+      "oneOf": [
+        { "$ref": "#/$defs/generatedAirSummary" },
+        { "type": "null" }
+      ],
+      "description": "Summary of generated .air source. Null on generation failure."
+    },
+    "loop_result": {
+      "oneOf": [
+        { "$ref": "#/$defs/loopResultSummary" },
+        { "type": "null" }
+      ],
+      "description": "Summary of loop pipeline execution. Null if generation failed before loop."
+    },
+    "timing": {
+      "$ref": "#/$defs/timing"
+    },
+    "artifacts": {
+      "$ref": "#/$defs/artifactPaths"
+    },
+    "error": {
+      "type": "string",
+      "description": "Top-level error message on failure"
+    }
+  },
+  "$defs": {
+    "promptMetadata": {
+      "type": "object",
+      "required": ["text", "hash"],
+      "properties": {
+        "text": { "type": "string", "description": "Original prompt text" },
+        "hash": { "type": "string", "description": "SHA-256 of prompt text" },
+        "source": {
+          "type": "string",
+          "enum": ["cli_arg", "file"],
+          "description": "How the prompt was provided"
+        },
+        "source_path": { "type": "string", "description": "File path if source=file" }
+      }
+    },
+    "generatorMetadata": {
+      "type": "object",
+      "required": ["adapter", "duration_ms"],
+      "properties": {
+        "adapter": { "type": "string", "description": "Adapter name (replay, noop, etc.)" },
+        "fixture_id": { "type": "string", "description": "Replay fixture ID if applicable" },
+        "prompt_hash": { "type": "string" },
+        "duration_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "generatedAirSummary": {
+      "type": "object",
+      "required": ["source_hash", "line_count"],
+      "properties": {
+        "source_hash": { "type": "string", "description": "SHA-256 of generated .air source" },
+        "line_count": { "type": "integer", "minimum": 0 },
+        "artifact_path": { "type": "string", "description": "Path to saved generated.air file" }
+      }
+    },
+    "loopResultSummary": {
+      "type": "object",
+      "required": ["success", "stages"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "status", "durationMs"],
+            "properties": {
+              "name": { "type": "string" },
+              "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+              "durationMs": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "file_count": { "type": "integer", "minimum": 0 },
+        "output_lines": { "type": "integer", "minimum": 0 },
+        "deterministic": { "type": "boolean" },
+        "artifact_dir": { "type": "string" }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "required": ["total_ms"],
+      "properties": {
+        "generate_ms": { "type": "number", "minimum": 0 },
+        "loop_ms": { "type": "number", "minimum": 0 },
+        "total_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "artifactPaths": {
+      "type": "object",
+      "properties": {
+        "report": { "type": "string" },
+        "generated_air": { "type": "string" },
+        "loop_artifacts": { "type": "string" },
+        "output_dir": { "type": "string" }
+      }
+    }
+  }
+}
