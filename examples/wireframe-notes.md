@@ -6,6 +6,35 @@ Phase 3 first five (scheduler, inbox, kanban, pos, warehouse) receive expanded d
 
 ---
 
+## Canonical Quick Reference
+
+Each template's structural fingerprint from Phase 1 (`base-template-specs.json`). Layout signature = `nav:{nav}|surface:{surface}|flow:{flow}|interact:{interact}|mobile:{mobile}`.
+
+| # | template_id | nav | surface | flow | interact | mobile | risk |
+|---|-------------|-----|---------|------|----------|--------|------|
+| 01 | command-center | top-tabs | stat-dashboard | tab-switch | monitor-ack | stack-vertical | low |
+| 02 | crud-admin | sidebar | data-table | list-detail | crud-forms | collapse-nav | low |
+| 03 | kanban | dropdown-header | column-layout | board-centric | move-organize | stack-vertical | medium |
+| 04 | inbox | sidebar | list-pane | three-pane-drill | select-act | screen-drill | high |
+| 05 | scheduler | date-controls | date-grid | calendar-drill | step-submit | simplify-view | high |
+| 06 | gantt | top-tabs | progress-rows | split-view | move-organize | simplify-view | medium |
+| 07 | analytics | toolbar | chart-grid | filter-driven | filter-drill | stack-vertical | low |
+| 08 | noc | none | tile-wall | single-screen | monitor-ack | stack-vertical | low |
+| 09 | doc-editor | toolbar | content-canvas | select-edit | toolbar-edit | collapse-nav | medium |
+| 10 | marketplace | search-bar | card-grid | search-browse | filter-drill | collapse-nav | low |
+| 11 | wizard | step-indicator | centered-form | sequential | step-submit | native-mobile | medium |
+| 12 | pos | none | split-panels | single-screen | transact-checkout | simplify-view | medium |
+| 13 | feed | bottom-tabs | card-feed | tab-switch | compose-react | native-mobile | low |
+| 14 | ai-chat | sidebar | list-pane | select-edit | compose-react | collapse-nav | low |
+| 15 | storefront | top-bar | card-grid | browse-checkout | navigate-consume | collapse-nav | low |
+| 16 | patient-chart | top-tabs | tab-panels | tab-switch | switch-edit | scroll-horizontal | low |
+| 17 | learning | sidebar | content-canvas | sequential | step-submit | collapse-nav | low |
+| 18 | ledger | top-bar | data-table | filter-driven | crud-forms | scroll-horizontal | low |
+| 19 | portal | top-bar | mixed-sections | section-browse | navigate-consume | stack-vertical | low |
+| 20 | warehouse | bottom-tabs | action-primary | action-confirm | scan-confirm | native-mobile | medium |
+
+---
+
 ## State Contract (All Templates)
 
 Every base must render four states. These are the `.air` patterns used across all templates:
@@ -24,6 +53,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-05: Scheduler (high risk)
+
+> `nav:date-controls|surface:date-grid|flow:calendar-drill|interact:step-submit|mobile:simplify-view`
 
 **Desktop Layout**
 ```
@@ -90,6 +121,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-04: Inbox (high risk)
 
+> `nav:sidebar|surface:list-pane|flow:three-pane-drill|interact:select-act|mobile:screen-drill`
+
 **Desktop Layout**
 ```
 +------------+--------------------+----------------------------+
@@ -148,6 +181,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-03: Kanban Board (medium risk)
+
+> `nav:dropdown-header|surface:column-layout|flow:board-centric|interact:move-organize|mobile:stack-vertical`
 
 **Desktop Layout**
 ```
@@ -215,6 +250,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-12: POS Terminal (medium risk)
 
+> `nav:none|surface:split-panels|flow:single-screen|interact:transact-checkout|mobile:simplify-view`
+
 **Desktop Layout**
 ```
 +------------------------------------------+---------------------+
@@ -278,6 +315,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-20: Warehouse Mobile (medium risk)
+
+> `nav:bottom-tabs|surface:action-primary|flow:action-confirm|interact:scan-confirm|mobile:native-mobile`
 
 **Desktop Layout**
 ```
@@ -350,6 +389,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-01: Command Center (low risk)
 
+> `nav:top-tabs|surface:stat-dashboard|flow:tab-switch|interact:monitor-ack|mobile:stack-vertical`
+
 **Desktop Layout**
 ```
 +------------------------------------------------------------------+
@@ -402,6 +443,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-02: CRUD Admin (low risk)
 
+> `nav:sidebar|surface:data-table|flow:list-detail|interact:crud-forms|mobile:collapse-nav`
+
 **Desktop Layout**
 ```
 +----------+-------------------------------------------------------+
@@ -445,6 +488,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-06: Gantt Planner (medium risk)
+
+> `nav:top-tabs|surface:progress-rows|flow:split-view|interact:move-organize|mobile:simplify-view`
 
 **Desktop Layout**
 ```
@@ -496,6 +541,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-07: Analytics Studio (low risk)
 
+> `nav:toolbar|surface:chart-grid|flow:filter-driven|interact:filter-drill|mobile:stack-vertical`
+
 **Desktop Layout**
 ```
 +------------------------------------------------------------------+
@@ -542,6 +589,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-08: Monitoring NOC (low risk)
+
+> `nav:none|surface:tile-wall|flow:single-screen|interact:monitor-ack|mobile:stack-vertical`
 
 **Desktop Layout**
 ```
@@ -594,6 +643,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-09: Document Editor (medium risk)
+
+> `nav:toolbar|surface:content-canvas|flow:select-edit|interact:toolbar-edit|mobile:collapse-nav`
 
 **Desktop Layout**
 ```
@@ -649,6 +700,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-10: Marketplace Search (low risk)
 
+> `nav:search-bar|surface:card-grid|flow:search-browse|interact:filter-drill|mobile:collapse-nav`
+
 **Desktop Layout**
 ```
 +------------------------------------------------------------------+
@@ -698,6 +751,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-11: Onboarding Wizard (medium risk)
+
+> `nav:step-indicator|surface:centered-form|flow:sequential|interact:step-submit|mobile:native-mobile`
 
 **Desktop Layout**
 ```
@@ -755,6 +810,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-13: Community Feed (low risk)
 
+> `nav:bottom-tabs|surface:card-feed|flow:tab-switch|interact:compose-react|mobile:native-mobile`
+
 **Desktop Layout**
 ```
 +------------------------------------------------------------------+
@@ -808,6 +865,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-14: AI Workspace (low risk)
 
+> `nav:sidebar|surface:list-pane|flow:select-edit|interact:compose-react|mobile:collapse-nav`
+
 **Desktop Layout**
 ```
 +----------+-------------------------------------------------------+
@@ -859,6 +918,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-15: Ecommerce Storefront (low risk)
 
+> `nav:top-bar|surface:card-grid|flow:browse-checkout|interact:navigate-consume|mobile:collapse-nav`
+
 **Desktop Layout**
 ```
 +------------------------------------------------------------------+
@@ -902,6 +963,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-16: Patient Chart (low risk)
+
+> `nav:top-tabs|surface:tab-panels|flow:tab-switch|interact:switch-edit|mobile:scroll-horizontal`
 
 **Desktop Layout**
 ```
@@ -950,6 +1013,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-17: Learning Platform (low risk)
+
+> `nav:sidebar|surface:content-canvas|flow:sequential|interact:step-submit|mobile:collapse-nav`
 
 **Desktop Layout**
 ```
@@ -1002,6 +1067,8 @@ Every base must render four states. These are the `.air` patterns used across al
 
 ### BASE-18: Finance Ledger (low risk)
 
+> `nav:top-bar|surface:data-table|flow:filter-driven|interact:crud-forms|mobile:scroll-horizontal`
+
 **Desktop Layout**
 ```
 +------------------------------------------------------------------+
@@ -1050,6 +1117,8 @@ Every base must render four states. These are the `.air` patterns used across al
 ---
 
 ### BASE-19: Customer Portal (low risk)
+
+> `nav:top-bar|surface:mixed-sections|flow:section-browse|interact:navigate-consume|mobile:stack-vertical`
 
 **Desktop Layout**
 ```

@@ -1,0 +1,150 @@
+# ================================================================
+# Inbox — Email / Message Client (Base Template)
+# ================================================================
+# Three-pane layout: folder sidebar, thread list, message detail.
+# Demonstrates: sidebar nav, list-pane surface, three-pane-drill flow.
+# AIR risk: HIGH — three-pane simulated via sidebar + row of sections.
+# ================================================================
+
+@app:inbox
+
+@style(theme:light,accent:#6366f1,radius:8,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  folders:[{id:int,name:str,unreadCount:int}],
+  threads:[{id:int,subject:str,sender:str,preview:str,date:str,unread:bool,starred:bool}],
+  messages:[{id:int,sender:str,senderEmail:str,subject:str,body:str,date:str}],
+  activeFolder:?int,
+  activeThread:?int,
+  replyText:str,
+  search:str,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Folder{id:int:primary:auto,name:str:required,user_id:int:required}
+  Thread{id:int:primary:auto,subject:str:required,starred:bool:default(false),unread:bool:default(true),archived:bool:default(false),folder_id:int:required,created_at:datetime:auto}
+  Message{id:int:primary:auto,sender_name:str:required,sender_email:str:required,body:str:required,thread_id:int:required,created_at:datetime:auto}
+  @relation(User.folders<>Folder.user)
+  @relation(Folder.threads<>Thread.folder)
+  @relation(Thread.messages<>Message.thread)
+  @index(User.email:unique)
+  @index(Thread.folder_id+Thread.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/folders>~db.Folder.findMany
+  GET:/folders/:id/threads>~db.Thread.findMany
+  GET:/threads/:id/messages>~db.Message.findMany
+  PUT:/threads/:id(unread:bool)>~db.Thread.update
+  PUT:/threads/:id/star(starred:bool)>~db.Thread.update
+  PUT:/threads/:id/archive>~db.Thread.update
+  DELETE:/threads/:id>~db.Thread.delete
+  POST:/threads/:id/reply(body:str)>~db.Message.create
+  POST:/compose(subject:str,body:str,to:str)>~db.Thread.create
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>mail:login
+  /compose>?user>compose:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.folders
+  onChange:activeFolder>~api.threads
+  onChange:activeThread>~api.messages
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Inbox"
+        p:"muted">"Your messages, organized"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:mail(
+    sidebar(
+      h2>"Mail"
+      btn:primary>"Compose">!startCompose
+      list>folders>*folder(
+        btn:ghost>#folder.name+badge:#folder.unreadCount
+      )>!selectFolder(#folder.id)
+    )+main(
+      ?loading>spinner
+      ?error>alert:error>#error
+
+      @section:threadList(
+        search:input>#search
+        ?!threads>card(
+          h2>"No messages"
+          p:"muted">"Your inbox is empty"
+        )
+        list>threads|activeFolder|search>*thread(
+          card(
+            row(
+              ?thread.unread>badge:"new"
+              text>#thread.sender
+              text:"muted">#thread.date
+            )
+            text>#thread.subject
+            p:"muted">#thread.preview
+            row(
+              btn:ghost>"Star">!toggleStar(#thread.id)
+              btn:ghost>"Archive">!archive(#thread.id)
+            )
+          )>!selectThread(#thread.id)
+        )
+      )
+
+      ?activeThread>@section:messageDetail(
+        list>messages>*msg(
+          card(
+            row(text>#msg.sender+text:"muted">#msg.senderEmail+text:"muted">#msg.date)
+            h3>#msg.subject
+            p>#msg.body
+          )
+        )
+        form(
+          input:text>#replyText
+          row(btn:primary>"Reply">!reply(#activeThread),btn:ghost>"Forward">!forward(#activeThread))
+        )
+      )
+    )
+  )
+  @page:compose(
+    main>grid:1(
+      card(
+        h2>"New Message"
+        form(
+          input:email>#compose.to
+          input:text>#compose.subject
+          input:text>#compose.body
+          row(btn:primary>"Send">!sendCompose,btn:ghost>"Cancel">!cancelCompose)
+        )
+      )
+    )
+  )
+)

@@ -1,0 +1,196 @@
+# ================================================================
+# Warehouse Mobile — Inventory Scanner (Base Template)
+# ================================================================
+# Mobile-first with bottom tabs, large scan button, quick-confirm flow.
+# Single-column layout, oversized touch targets, scan-then-confirm.
+# Demonstrates: bottom-tabs nav, action-primary surface, scan-confirm interaction.
+# AIR risk: MEDIUM — large buttons via centered section, bottom tabs via footer nav.
+# ================================================================
+
+@app:warehouseMobile
+
+@style(theme:dark,accent:#10b981,radius:12,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,role:str},
+  recentScans:[{id:int,sku:str,name:str,bin:str,quantity:int,scannedAt:str}],
+  scannedItem:?{id:int,sku:str,name:str,bin:str,quantity:int},
+  pickOrders:[{id:int,orderNum:str,itemCount:int,status:str,priority:str}],
+  inventory:[{id:int,sku:str,name:str,bin:str,quantity:int,category:str}],
+  scanSuccess:bool,
+  search:str,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(picker,supervisor,admin):default(picker),created_at:datetime:auto}
+  Product{id:int:primary:auto,sku:str:required,name:str:required,bin_location:str:required,quantity:int:default(0),category:enum(electronics,hardware,packaging,other):required,min_stock:int:default(5),created_at:datetime:auto}
+  ScanLog{id:int:primary:auto,sku:str:required,action:enum(scan,pick,restock):required,quantity:int:required,user_id:int:required,product_id:int:required,created_at:datetime:auto}
+  PickOrder{id:int:primary:auto,order_num:str:required,status:enum(pending,in_progress,completed):default(pending),priority:enum(normal,urgent):default(normal),created_at:datetime:auto}
+  PickItem{id:int:primary:auto,quantity:int:required,picked:bool:default(false),product_id:int:required,order_id:int:required}
+  @relation(User.scanLogs<>ScanLog.user)
+  @relation(Product.scanLogs<>ScanLog.product)
+  @relation(PickOrder.items<>PickItem.order)
+  @relation(Product.pickItems<>PickItem.product)
+  @index(User.email:unique)
+  @index(Product.sku:unique)
+  @index(PickOrder.order_num:unique)
+  @index(ScanLog.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/products>~db.Product.findMany
+  POST:/scans(sku:str,action:str,quantity:int)>~db.ScanLog.create
+  GET:/scans/recent>~db.ScanLog.findMany
+  GET:/pick-orders>~db.PickOrder.findMany
+  PUT:/pick-orders/:id(status:str)>~db.PickOrder.update
+)
+
+@auth(required,role:enum(picker,supervisor,admin),redirect:/login)
+
+@nav(
+  />?user>scan:login
+  /pick>?user>pick:login
+  /inventory>?user>inventorySearch:login
+  /profile>?user>profile:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.scans+~api.pickOrders
+  onChange:search>~api.products
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Warehouse"
+        p:"muted">"Scan, pick, and manage inventory"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:scan(
+    ?loading>spinner
+    ?error>alert:error>#error
+    ?scanSuccess>alert:success>"Item scanned successfully!"
+
+    @section:scanArea(
+      btn:primary>"SCAN BARCODE">!scanBarcode
+    )
+
+    ?scannedItem>card(
+      h2>#scannedItem.name
+      row(text>"SKU: "+text>#scannedItem.sku)
+      row(text>"Bin: "+badge:#scannedItem.bin)
+      row(text>"Qty: "+text>#scannedItem.quantity)
+      row(btn:primary>"Confirm">!confirmScan,btn:ghost>"Cancel">!cancelScan)
+    )
+
+    h3>"Recent Scans"
+    ?!recentScans>card(
+      p:"muted">"No recent scans"
+      p:"muted">"Scan a barcode to get started"
+    )
+    list>recentScans>*scan(
+      card(
+        row(text>#scan.sku+text>#scan.name+badge:#scan.bin)
+        text:"muted">#scan.scannedAt
+      )
+    )
+
+    footer(
+      nav(
+        btn:ghost>"Scan"
+        btn:ghost>"Pick"
+        btn:ghost>"Inventory"
+        btn:ghost>"Profile"
+      )
+    )
+  )
+  @page:pick(
+    h2>"Pick Orders"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!pickOrders>card(
+      p:"muted">"No pending pick orders"
+    )
+    list>pickOrders>*order(
+      card(
+        row(h3>#order.orderNum+badge:#order.status+badge:#order.priority)
+        stat:"Items">#order.itemCount
+        btn:primary>"Start Picking">!startPick(#order.id)
+      )
+    )
+
+    footer(
+      nav(
+        btn:ghost>"Scan"
+        btn:ghost>"Pick"
+        btn:ghost>"Inventory"
+        btn:ghost>"Profile"
+      )
+    )
+  )
+  @page:inventorySearch(
+    h2>"Inventory Search"
+    search:input>#search
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!inventory>card(
+      p:"muted">"Search for products by SKU or name"
+    )
+    list>inventory|search>*item(
+      card(
+        row(text>#item.sku+h3>#item.name)
+        row(text>"Bin: "+badge:#item.bin+text>"Qty: "+text>#item.quantity)
+        badge:#item.category
+      )
+    )
+
+    footer(
+      nav(
+        btn:ghost>"Scan"
+        btn:ghost>"Pick"
+        btn:ghost>"Inventory"
+        btn:ghost>"Profile"
+      )
+    )
+  )
+  @page:profile(
+    h2>"Profile"
+    card(
+      h3>#user.name
+      text>#user.email
+      badge:#user.role
+    )
+    btn:ghost>"Sign Out">!logout
+
+    footer(
+      nav(
+        btn:ghost>"Scan"
+        btn:ghost>"Pick"
+        btn:ghost>"Inventory"
+        btn:ghost>"Profile"
+      )
+    )
+  )
+)

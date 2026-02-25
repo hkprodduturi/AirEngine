@@ -1,0 +1,82 @@
+[
+  {
+    "base_id": "scheduler",
+    "variant_id": "base",
+    "air_file": "base-scheduler.air",
+    "layout_signature": "nav:date-controls|surface:date-grid|flow:calendar-drill|interact:step-submit|mobile:simplify-view",
+    "canonical": {
+      "nav_family": "date-controls",
+      "surface_family": "date-grid",
+      "flow_family": "calendar-drill",
+      "interaction_family": "step-submit",
+      "mobile_family": "simplify-view"
+    },
+    "screens": ["login", "calendar", "myEvents"],
+    "air_risk_level": "high",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "inbox",
+    "variant_id": "base",
+    "air_file": "base-inbox.air",
+    "layout_signature": "nav:sidebar|surface:list-pane|flow:three-pane-drill|interact:select-act|mobile:screen-drill",
+    "canonical": {
+      "nav_family": "sidebar",
+      "surface_family": "list-pane",
+      "flow_family": "three-pane-drill",
+      "interaction_family": "select-act",
+      "mobile_family": "screen-drill"
+    },
+    "screens": ["login", "mail", "compose"],
+    "air_risk_level": "high",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "kanban",
+    "variant_id": "base",
+    "air_file": "base-kanban.air",
+    "layout_signature": "nav:dropdown-header|surface:column-layout|flow:board-centric|interact:move-organize|mobile:stack-vertical",
+    "canonical": {
+      "nav_family": "dropdown-header",
+      "surface_family": "column-layout",
+      "flow_family": "board-centric",
+      "interaction_family": "move-organize",
+      "mobile_family": "stack-vertical"
+    },
+    "screens": ["login", "boardList", "board"],
+    "air_risk_level": "medium",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "pos",
+    "variant_id": "base",
+    "air_file": "base-pos.air",
+    "layout_signature": "nav:none|surface:split-panels|flow:single-screen|interact:transact-checkout|mobile:simplify-view",
+    "canonical": {
+      "nav_family": "none",
+      "surface_family": "split-panels",
+      "flow_family": "single-screen",
+      "interaction_family": "transact-checkout",
+      "mobile_family": "simplify-view"
+    },
+    "screens": ["login", "terminal", "history"],
+    "air_risk_level": "medium",
+    "version": "1.0.0"
+  },
+  {
+    "base_id": "warehouse",
+    "variant_id": "base",
+    "air_file": "base-warehouse.air",
+    "layout_signature": "nav:bottom-tabs|surface:action-primary|flow:action-confirm|interact:scan-confirm|mobile:native-mobile",
+    "canonical": {
+      "nav_family": "bottom-tabs",
+      "surface_family": "action-primary",
+      "flow_family": "action-confirm",
+      "interaction_family": "scan-confirm",
+      "mobile_family": "native-mobile"
+    },
+    "screens": ["login", "warehouse"],
+    "air_risk_level": "medium",
+    "version": "1.0.0"
+  }
+]

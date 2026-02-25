@@ -1,0 +1,141 @@
+# ================================================================
+# Scheduler — Calendar / Appointment Booking (Base Template)
+# ================================================================
+# Date-grid layout with month navigation, day/week/month toggle,
+# event badges on calendar cells, and event CRUD.
+# Demonstrates: date-controls nav, date-grid surface, calendar-drill flow.
+# AIR risk: HIGH — 7-column grid via table workaround.
+# ================================================================
+
+@app:scheduler
+
+@style(theme:light,accent:#0ea5e9,radius:8,font:sans)
+
+@state{
+  user:?{id:int,name:str,email:str},
+  events:[{id:int,title:str,date:str,startTime:str,endTime:str,description:?str,category:str}],
+  calendarDays:[{date:str,dayNum:int,isCurrentMonth:bool,eventCount:int}],
+  selectedDate:?str,
+  currentMonthLabel:str,
+  showCreateForm:bool,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,created_at:datetime:auto}
+  Event{id:int:primary:auto,title:str:required,date:date:required,start_time:str:required,end_time:str:required,description:?str,category:enum(meeting,personal,deadline,reminder):default(meeting),user_id:int:required,created_at:datetime:auto}
+  @relation(User.events<>Event.user)
+  @index(User.email:unique)
+  @index(Event.date+Event.user_id)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(name:str,email:str,password:str)>auth.register
+  GET:/events>~db.Event.findMany
+  POST:/events(title:str,date:str,start_time:str,end_time:str,category:str)>~db.Event.create
+  PUT:/events/:id(title:str,date:str,start_time:str,end_time:str,category:str)>~db.Event.update
+  DELETE:/events/:id>~db.Event.delete
+)
+
+@auth(required,redirect:/login)
+
+@nav(
+  />?user>calendar:login
+  /events>?user>myEvents:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.events
+  onChange:selectedDate>~api.events
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Scheduler"
+        p:"muted">"Book and manage your appointments"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"No account? "+btn:ghost>"Sign Up">!register
+        )
+      )
+    )
+  )
+  @page:calendar(
+    header>row(
+      btn:ghost>"<">!prevMonth
+      h2>#currentMonthLabel
+      btn:ghost>">">!nextMonth
+    )
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    table>calendarDays>*day(
+      text>#day.dayNum
+      ?day.eventCount>badge:#day.eventCount
+    )>!selectDate(#day.date)
+
+    ?selectedDate>@section:dateDetail(
+      h3>"Events for "+#selectedDate
+      list>events|selectedDate>*event(
+        card(
+          h3>#event.title
+          row(text>#event.startTime+text>" - "+text>#event.endTime)
+          badge:#event.category
+          ?event.description>p:"muted">#event.description
+          row(btn:ghost>"Edit">!editEvent(#event.id),btn:ghost>"Delete">!deleteEvent(#event.id))
+        )
+      )
+      btn:primary>"+ New Event">!toggleCreateForm
+    )
+
+    ?showCreateForm>@section:createEvent(
+      card(
+        h2>"New Event"
+        form(
+          input:text>#event.title
+          input:date>#event.date
+          input:text>#event.startTime
+          input:text>#event.endTime
+          select>#event.category
+          input:text>#event.description
+          row(btn:primary>"Create">!createEvent,btn:ghost>"Cancel">!toggleCreateForm)
+        )
+      )
+    )
+  )
+  @page:myEvents(
+    header>h1>"My Events"+btn:primary>"+ New Event">!toggleCreateForm
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!events>card(
+      h2>"No events yet"
+      p:"muted">"Create your first event to get started"
+      btn:primary>"+ New Event">!toggleCreateForm
+    )
+
+    table>events>*event(
+      text>#event.date
+      text>#event.startTime
+      text>#event.title
+      badge:#event.category
+      row(btn:ghost>"Edit">!editEvent(#event.id),btn:ghost>"Delete">!deleteEvent(#event.id))
+    )
+  )
+)

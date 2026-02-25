@@ -1,0 +1,148 @@
+# ================================================================
+# POS Terminal — Point-of-Sale Checkout (Base Template)
+# ================================================================
+# Split-panel: product grid (main) + live receipt (sidebar).
+# No page navigation — single-screen checkout terminal.
+# Demonstrates: no nav, split-panels surface, transact-checkout interaction.
+# AIR risk: MEDIUM — split-panel via main+sidebar, quantity via buttons.
+# ================================================================
+
+@app:posTerminal
+
+@style(theme:dark,accent:#f97316,radius:8,font:sans,density:comfortable)
+
+@state{
+  user:?{id:int,name:str,role:str},
+  products:[{id:int,name:str,price:float,category:str,available:bool}],
+  cart:[{id:int,productId:int,name:str,price:float,quantity:int}],
+  cartTotal:float,
+  cartTax:float,
+  cartGrandTotal:float,
+  categoryFilter:enum(all,food,drinks,snacks,other),
+  orderHistory:[{id:int,total:float,itemCount:int,date:str,status:str}],
+  checkoutSuccess:bool,
+  loading:bool,
+  error:?str
+}
+
+@db{
+  User{id:int:primary:auto,name:str:required,email:str:required,role:enum(cashier,manager):default(cashier),created_at:datetime:auto}
+  Product{id:int:primary:auto,name:str:required,price:float:required,category:enum(food,drinks,snacks,other):required,available:bool:default(true),created_at:datetime:auto}
+  Order{id:int:primary:auto,total:float:required,tax:float:required,status:enum(pending,completed,refunded):default(completed),user_id:int:required,created_at:datetime:auto}
+  OrderItem{id:int:primary:auto,quantity:int:required,unit_price:float:required,product_id:int:required,order_id:int:required}
+  @relation(User.orders<>Order.user)
+  @relation(Order.items<>OrderItem.order)
+  @relation(Product.orderItems<>OrderItem.product)
+  @index(User.email:unique)
+  @index(Product.name:unique)
+  @index(Order.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  GET:/products>~db.Product.findMany
+  POST:/orders(total:float,tax:float)>~db.Order.create
+  POST:/orders/:id/items(product_id:int,quantity:int,unit_price:float)>~db.OrderItem.create
+  GET:/orders>~db.Order.findMany
+  PUT:/orders/:id(status:str)>~db.Order.update
+)
+
+@auth(required,role:enum(cashier,manager),redirect:/login)
+
+@nav(
+  />?user>terminal:login
+  /history>?user>history:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.products
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"POS Terminal"
+        p:"muted">"Point of sale checkout"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:terminal(
+    main(
+      tabs>categoryFilter.set(all,food,drinks,snacks,other)
+
+      ?loading>spinner
+      ?error>alert:error>#error
+
+      grid:3>products|categoryFilter>*product(
+        card(
+          h3>#product.name
+          text:amount:$#product.price
+          ?product.available>btn:primary>"+ Add">!addToCart(#product.id)
+          ?!product.available>text:"muted">"Unavailable"
+        )
+      )
+    )+sidebar(
+      h2>"Receipt"
+
+      ?!cart>card(
+        p:"muted">"No items yet"
+        p:"muted">"Tap a product to start"
+      )
+
+      list>cart>*item(
+        row(
+          text>#item.name
+          row(
+            btn:ghost>"-">!decrementQty(#item.id)
+            text>#item.quantity
+            btn:ghost>"+">!incrementQty(#item.id)
+          )
+          text:amount:$#item.price
+          btn:icon:!removeFromCart(#item.id)
+        )
+      )
+
+      ?cart>@section:totals(
+        row(text>"Subtotal"+text:amount:$#cartTotal)
+        row(text>"Tax"+text:amount:$#cartTax)
+        row(h3>"TOTAL"+h3:amount:$#cartGrandTotal)
+        btn:primary>"CHECKOUT">!checkout
+        btn:ghost>"Clear Cart">!clearCart
+      )
+
+      ?checkoutSuccess>alert:success>"Order completed!"
+    )
+  )
+  @page:history(
+    header>h1>"Order History"+btn:ghost>"Back to Terminal"
+
+    ?loading>spinner
+    ?error>alert:error>#error
+
+    ?!orderHistory>card(
+      h2>"No orders yet"
+      p:"muted">"Completed orders will appear here"
+    )
+
+    table>orderHistory>*order(
+      text>#order.date
+      stat:"Items">#order.itemCount
+      text:amount:$#order.total
+      badge:#order.status
+    )
+  )
+)
