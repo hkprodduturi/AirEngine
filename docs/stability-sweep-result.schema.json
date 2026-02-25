@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/stability-sweep-result.schema.json",
+  "title": "StabilitySweepResult",
+  "description": "Schema for AirEngine stability sweep report.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "mode",
+    "run_metadata",
+    "cases",
+    "summary",
+    "issues",
+    "total_duration_ms"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "mode": { "type": "string", "enum": ["offline", "full"] },
+    "run_metadata": { "$ref": "#/$defs/runMetadata" },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sweepCase" }
+    },
+    "summary": { "$ref": "#/$defs/sweepSummary" },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sweepIssue" }
+    },
+    "total_duration_ms": { "type": "number", "minimum": 0 }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "runMetadata": {
+      "type": "object",
+      "required": ["airengine_version", "node_version", "platform"],
+      "properties": {
+        "airengine_version": { "type": "string" },
+        "node_version": { "type": "string" },
+        "platform": { "type": "string" },
+        "git_commit": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "sweepCase": {
+      "type": "object",
+      "required": ["id", "source", "outcome", "stages", "duration_ms"],
+      "properties": {
+        "id": { "type": "string" },
+        "source": { "$ref": "#/$defs/caseSource" },
+        "file": { "type": "string" },
+        "fixture_id": { "type": "string" },
+        "prompt": { "type": "string" },
+        "complexity": { "type": "string" },
+        "outcome": { "$ref": "#/$defs/sweepOutcome" },
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/stageEntry" }
+        },
+        "file_count": { "type": "number", "minimum": 0 },
+        "deterministic": { "type": "boolean" },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "caseSource": {
+      "type": "string",
+      "enum": ["showcase", "replay", "live"]
+    },
+    "sweepOutcome": {
+      "type": "string",
+      "enum": [
+        "success",
+        "loop_failed_validation",
+        "loop_failed_repair",
+        "loop_failed_transpile",
+        "loop_failed_smoke",
+        "loop_failed_determinism",
+        "generation_failed",
+        "unexpected_error"
+      ]
+    },
+    "stageEntry": {
+      "type": "object",
+      "required": ["name", "status", "duration_ms"],
+      "properties": {
+        "name": { "type": "string" },
+        "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+        "duration_ms": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "sweepSummary": {
+      "type": "object",
+      "required": ["total", "success", "failed", "by_source", "by_outcome"],
+      "properties": {
+        "total": { "type": "number", "minimum": 0 },
+        "success": { "type": "number", "minimum": 0 },
+        "failed": { "type": "number", "minimum": 0 },
+        "by_source": {
+          "type": "object",
+          "required": ["showcase", "replay", "live"],
+          "properties": {
+            "showcase": { "$ref": "#/$defs/sourceSummary" },
+            "replay": { "$ref": "#/$defs/sourceSummary" },
+            "live": { "$ref": "#/$defs/sourceSummary" }
+          },
+          "additionalProperties": false
+        },
+        "by_outcome": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceSummary": {
+      "type": "object",
+      "required": ["total", "success", "failed"],
+      "properties": {
+        "total": { "type": "number", "minimum": 0 },
+        "success": { "type": "number", "minimum": 0 },
+        "failed": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "sweepIssue": {
+      "type": "object",
+      "required": ["id", "severity", "message"],
+      "properties": {
+        "id": { "type": "string" },
+        "severity": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

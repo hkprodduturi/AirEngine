@@ -104,7 +104,7 @@ Categories:
 | AIR-E005 | @nav references page '{page}' not defined in @ui | semantic | NEW |
 | AIR-E006 | @db field type invalid: '{type}' | semantic | NEW |
 | AIR-E007 | @api CRUD handler references model not in @db | semantic | NEW |
-| AIR-E008 | @auth(required) without login route in @api | semantic | NEW |
+| ~~AIR-E008~~ | ~~@auth(required) without login route in @api~~ | — | Moved to AIR-W008 |
 | AIR-E009 | @state field '{field}' shadows @db model name | semantic | NEW |
 
 ### Validation Warnings (AIR-W*)
@@ -118,6 +118,7 @@ Categories:
 | AIR-W005 | Auth route without @auth block — auth may not be enforced | semantic | NEW |
 | AIR-W006 | @page has no interactive elements (no forms, buttons, or inputs) | style | NEW |
 | AIR-W007 | @db model '{model}' has no primary key field | structural | NEW |
+| AIR-W008 | @auth(required) without login route in @api — external auth may be intended | semantic | NEW (was AIR-E008) |
 
 ### Lint Info (AIR-L*)
 

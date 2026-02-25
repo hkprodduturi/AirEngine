@@ -206,8 +206,10 @@ export function diagnose(ast: AirAST): Diagnostic[] {
           refs.push(route.fallback);
         }
         for (const ref of refs) {
-          // Skip condition-like values (e.g., 'user')
-          if (ref.startsWith('?') || ref === '/') continue;
+          // Skip condition-like values (e.g., 'user'), directives (@protected),
+          // redirect paths containing '/', route-like references, and navigation action keywords
+          const NAV_KEYWORDS = new Set(['redirect', 'back', 'reload', 'replace', 'push', 'pop']);
+          if (ref.startsWith('?') || ref === '/' || ref.startsWith('@') || ref.includes('/') || ref.includes(':') || NAV_KEYWORDS.has(ref)) continue;
           if (!pageNames.has(ref) && pageNames.size > 0) {
             diagnostics.push(createDiagnostic('AIR-E005', 'error', `@nav references page '${ref}' not defined in @ui`, 'semantic', {
               block: '@nav',
@@ -259,7 +261,7 @@ export function diagnose(ast: AirAST): Diagnostic[] {
           r.path.endsWith('/login')
         );
       if (!hasLoginRoute) {
-        diagnostics.push(createDiagnostic('AIR-E008', 'error', '@auth(required) without login route in @api', 'semantic', {
+        diagnostics.push(createDiagnostic('AIR-W008', 'warning', '@auth(required) without login route in @api — external auth may be intended', 'semantic', {
           block: '@auth',
           fix: {
             description: 'Add a login route to @api for authentication',

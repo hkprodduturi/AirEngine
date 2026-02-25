@@ -40,7 +40,7 @@ const SKIP_REASONS: Record<string, string> = {
   'AIR-E004': 'Duplicate page — choosing a new name is ambiguous',
   'AIR-E005': 'Nav ref — could add page or fix nav (ambiguous)',
   'AIR-E007': 'Model reference is ambiguous — requires user intent',
-  'AIR-E008': 'Auth design is complex — requires user intent',
+  'AIR-W008': 'Auth design is complex — requires user intent',
 };
 
 function getSkipReason(code: string): string {

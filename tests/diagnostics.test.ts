@@ -268,16 +268,17 @@ describe('A1-Rules: expanded validator rules', () => {
     expect(diags.some(d => d.code === 'AIR-E007')).toBe(false);
   });
 
-  it('E008: @auth(required) without login route', () => {
+  it('W008: @auth(required) without login route produces warning', () => {
     const ast = parse('@app:test\n@state{x:int}\n@api(GET:/items>test)\n@auth(required)\n@ui(h1>"hi")');
     const diags = diagnose(ast);
-    expect(diags.some(d => d.code === 'AIR-E008')).toBe(true);
+    expect(diags.some(d => d.code === 'AIR-W008')).toBe(true);
+    expect(diags.find(d => d.code === 'AIR-W008')!.severity).toBe('warning');
   });
 
-  it('E008: @auth(required) WITH login route does NOT produce error', () => {
+  it('W008: @auth(required) WITH login route does NOT produce warning', () => {
     const ast = parse('@app:test\n@state{x:int}\n@api(POST:/auth/login(email:str,password:str)>auth.login)\n@auth(required)\n@ui(h1>"hi")');
     const diags = diagnose(ast);
-    expect(diags.some(d => d.code === 'AIR-E008')).toBe(false);
+    expect(diags.some(d => d.code === 'AIR-W008')).toBe(false);
   });
 
   it('W005: auth routes without @auth block', () => {
@@ -313,7 +314,7 @@ describe('A1-Rules: expanded validator rules', () => {
   it('all A1-Rules diagnostics have fix hints', () => {
     const ast = parse('@app:test\n@state{x:int}\n@db{Item{name:str}}\n@api(CRUD:/tasks>~db.Task)\n@auth(required)\n@ui(@page:home(h1>"a")+@page:home(h1>"b"))');
     const diags = diagnose(ast);
-    const ruleCodes = ['AIR-E004', 'AIR-E007', 'AIR-E008', 'AIR-W007'];
+    const ruleCodes = ['AIR-E004', 'AIR-E007', 'AIR-W008', 'AIR-W007'];
     for (const code of ruleCodes) {
       const d = diags.find(d => d.code === code);
       if (d) {

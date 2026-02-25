@@ -70,7 +70,7 @@ Schema: `docs/alpha-rc-rehearsal-result.schema.json`
 
 All tests are network-free and deterministic.
 
-## Verification
+## Verification (Initial)
 
 ```
 npx tsc --noEmit                                           → exit 0
@@ -80,3 +80,21 @@ npm run release-rehearsal -- --mode offline                 → verdict PASS (GO
 npm run quality-gate -- --mode offline                      → 3/3 PASS
 npm run demo-live-canonical -- --adapter replay             → PASS
 ```
+
+## A8-prep Post-Sweep Rerun
+
+A stability sweep (`scripts/stability-sweep.ts`) was run across all 7 showcase examples and 5 replay fixtures. The initial sweep found 3 P1 validator issues (AIR-E005 false positives on nav keywords, AIR-E008 false positive on external-auth pattern). Both were fixed in `src/validator/index.ts`.
+
+Post-fix verification:
+
+```
+npx tsc --noEmit                                           → exit 0
+npx vitest run                                             → 916 passed, 4 skipped (920 total, 18 files)
+npm run stability-sweep                                    → 12/12 PASS, 0 issues
+npm run release-rehearsal -- --mode offline                 → verdict PASS (GO)
+npm run quality-gate -- --mode offline                      → 3/3 PASS
+npm run demo-live-canonical -- --adapter replay             → PASS
+```
+
+Detailed results: `docs/a8-prep-stability-sweep-report.md`
+Issue triage: `docs/a8-prep-issues.md`

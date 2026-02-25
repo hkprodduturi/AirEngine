@@ -34,7 +34,8 @@
     "quality-gate": "node --import tsx scripts/quality-gate.ts",
     "demo-live-canonical": "node --import tsx scripts/demo-live-canonical.ts",
     "doctor": "node --import tsx scripts/doctor.ts",
-    "release-rehearsal": "node --import tsx scripts/release-alpha-rehearsal.ts"
+    "release-rehearsal": "node --import tsx scripts/release-alpha-rehearsal.ts",
+    "stability-sweep": "node --import tsx scripts/stability-sweep.ts"
   },
   "keywords": [
     "ai",
