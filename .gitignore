@@ -13,6 +13,7 @@ output/README.md
 gallery/node_modules/
 gallery/previews/
 gallery/src/
+gallery/dist/
 gallery/*.air
 gallery/package.json
 gallery/*.js
