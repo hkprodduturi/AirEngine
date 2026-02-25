@@ -9,7 +9,7 @@
       "index.html": "de8f38d2651b5420",
       "src/main.jsx": "d2a5622fca5cfbd3",
       "src/index.css": "80423bf8513e23d2",
-      "src/App.jsx": "92406d6d10aed723"
+      "src/App.jsx": "6335b9fed9bc70ed"
     }
   },
   "expense-tracker": {
@@ -22,7 +22,7 @@
       "index.html": "fc368be178bc4d6a",
       "src/main.jsx": "6099034bef7a7282",
       "src/index.css": "28c5b6294174540e",
-      "src/App.jsx": "50f7dde0791ebae2"
+      "src/App.jsx": "f0a7b279720f23b6"
     }
   },
   "auth": {
@@ -103,7 +103,7 @@
       "client/index.html": "09af4aaa46cb6fbc",
       "client/src/main.jsx": "c9e4f45f08db9432",
       "client/src/index.css": "80423bf8513e23d2",
-      "client/src/App.jsx": "e55705cd54934946",
+      "client/src/App.jsx": "5404a0e3c0599b69",
       "client/src/api.js": "8702d9b891d7b30e",
       "client/src/types.ts": "168ea41abdea173d",
       "client/src/components/EmptyState.jsx": "2ecd1120175fe3a0",

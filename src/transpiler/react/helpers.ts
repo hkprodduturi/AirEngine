@@ -212,8 +212,9 @@ export function pluralize(s: string): string {
 /** Derive context-aware empty state label from a data expression */
 export function deriveEmptyLabel(dataExpr: string): string {
   if (!dataExpr || dataExpr === 'items') return 'No items yet';
-  // Strip filter/pipe expressions: "tasks.filter(...)" → "tasks"
-  const baseName = dataExpr.replace(/\..*/,'').replace(/\[.*/,'');
+  // Strip spread prefix, filter/pipe/sort expressions: "[...expenses.filter(...)].sort(...)" → "expenses"
+  let baseName = dataExpr.replace(/^\[\.\.\./, '').replace(/\..*/,'').replace(/\[.*/,'').replace(/\].*/,'');
+  if (!baseName) return 'No items yet';
   // Convert camelCase to words
   const words = baseName.replace(/([A-Z])/g, ' $1').trim().toLowerCase();
   return `No ${words} yet`;
@@ -423,7 +424,7 @@ export function resolvePipeExprSimple(node: AirUINode & { kind: 'binary' }, scop
 
 /**
  * Infer which model field to filter on, given a source array name and filter state variable.
- * Checks @db model enum fields for overlap with filter enum values.
+ * Checks @db model enum fields, then @state array item fields, for overlap with filter enum values.
  */
 function inferFilterField(source: string, filterName: string, ctx: TranspileContext): string {
   const filterState = ctx.state.find(f => f.name === filterName);
@@ -447,6 +448,28 @@ function inferFilterField(source: string, filterName: string, ctx: TranspileCont
         if (baseType.kind === 'enum' && (baseType as { values: string[] }).values) {
           const overlap = (baseType as { values: string[] }).values.filter(v => filterValues.includes(v));
           if (overlap.length > 0) return f.name;
+        }
+      }
+    }
+  }
+
+  // Check @state array item fields for matching enum or bool fields
+  const rawSource = source.replace(/\.filter\(.*$/, '');
+  const arrayState = ctx.state.find(f => f.name === rawSource && f.type.kind === 'array');
+  if (arrayState) {
+    const itemType = (arrayState.type as { kind: 'array'; of: { kind: string; fields?: { name: string; type: { kind: string; values?: string[] } }[] } }).of;
+    if (itemType.kind === 'object' && itemType.fields) {
+      // Check enum fields for overlap with filter values
+      for (const f of itemType.fields) {
+        if (f.type.kind === 'enum' && (f.type as { values: string[] }).values) {
+          const overlap = (f.type as { values: string[] }).values.filter(v => filterValues.includes(v));
+          if (overlap.length > 0) return f.name;
+        }
+      }
+      // Check bool fields: if a filter value matches a bool field name (e.g., filter "done" + field "done:bool")
+      for (const f of itemType.fields) {
+        if (f.type.kind === 'bool' && filterValues.includes(f.name)) {
+          return f.name;
         }
       }
     }

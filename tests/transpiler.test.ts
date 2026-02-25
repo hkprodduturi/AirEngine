@@ -6,6 +6,7 @@ import { extractContext } from '../src/transpiler/context.js';
 import { resolveBindChain, analyzeUI, extractMutations } from '../src/transpiler/normalize-ui.js';
 import { mapElement } from '../src/transpiler/element-map.js';
 import { expandCrud } from '../src/transpiler/route-utils.js';
+import { deriveEmptyLabel } from '../src/transpiler/react/helpers.js';
 import type { AirUINode, AirUIBinaryNode } from '../src/parser/types.js';
 
 // ---- Helpers ----
@@ -1543,5 +1544,88 @@ describe('T1.6: Cancel button recognition', () => {
   it('cancelLogin mutation generates form reset + page navigation', () => {
     expect(allJsx).toContain('const cancelLogin');
     expect(allJsx).toContain("setCurrentPage('login')");
+  });
+});
+
+// ---- Regression: filter field inference (codegen polish) ----
+
+describe('filter field inference', () => {
+  it('todo.air filters on _item.done (bool field), NOT _item.status', () => {
+    const jsx = getAppJsx('todo');
+    // The filter expression should reference the "done" field from @state items
+    expect(jsx).toContain('_item.done');
+    expect(jsx).not.toContain('_item.status');
+  });
+
+  it('expense-tracker.air filters on _item.category (enum field), NOT _item.status', () => {
+    const jsx = getAppJsx('expense-tracker');
+    expect(jsx).toContain('_item.category');
+    expect(jsx).not.toContain('_item.status');
+  });
+
+  it('@db model enum field is used when present', () => {
+    // A fullstack app with @db model — filter should match the model's enum field
+    const source = `@app:proj
+@state{tasks:[{id:int,title:str,status:enum(active,done)}],filter:enum(all,active,done)}
+@db{Task{id:int:primary:auto,title:str,status:enum(active,done)}}
+@api(
+  GET:/tasks>~db.Task.findMany
+  POST:/tasks(title:str)>~db.Task.create
+)
+@ui(
+  h1>"Tasks"
+  list>tasks|filter>*task(p>#task.title)
+)`;
+    const ast = parse(source);
+    const result = transpile(ast);
+    const appFile = result.files.find(f => f.path.includes('App.jsx'));
+    expect(appFile?.content).toContain('_item.status');
+  });
+
+  it('inline @state object with enum field resolves correctly', () => {
+    const source = `@app:notes
+@state{notes:[{text:str,priority:enum(low,medium,high)}],filter:enum(all,low,medium,high)}
+@ui(
+  h1>"Notes"
+  list>notes|filter>*note(p>#note.text)
+)`;
+    const ast = parse(source);
+    const result = transpile(ast);
+    const appFile = result.files.find(f => f.path === 'src/App.jsx');
+    expect(appFile?.content).toContain('_item.priority');
+    expect(appFile?.content).not.toContain('_item.status');
+  });
+});
+
+// ---- Regression: empty state label derivation (codegen polish) ----
+
+describe('deriveEmptyLabel', () => {
+  it('returns "No items yet" for empty/default input', () => {
+    expect(deriveEmptyLabel('')).toBe('No items yet');
+    expect(deriveEmptyLabel('items')).toBe('No items yet');
+  });
+
+  it('derives label from simple name', () => {
+    expect(deriveEmptyLabel('expenses')).toBe('No expenses yet');
+    expect(deriveEmptyLabel('tasks')).toBe('No tasks yet');
+  });
+
+  it('handles camelCase names', () => {
+    expect(deriveEmptyLabel('myExpenses')).toBe('No my expenses yet');
+  });
+
+  it('handles [...spread] prefix', () => {
+    expect(deriveEmptyLabel('[...expenses')).toBe('No expenses yet');
+    expect(deriveEmptyLabel('[...tasks')).toBe('No tasks yet');
+  });
+
+  it('strips filter/pipe expressions after spread', () => {
+    expect(deriveEmptyLabel('[...expenses.filter(x => x)')).toBe('No expenses yet');
+  });
+
+  it('expense-tracker.air shows "No expenses yet" in generated code', () => {
+    const jsx = getAppJsx('expense-tracker');
+    expect(jsx).toContain('No expenses yet');
+    expect(jsx).not.toMatch(/No\s{2,}yet/);  // no double-space from empty label
   });
 });
