@@ -1,12 +1,12 @@
 /**
  * AirEngine Agent Loop Harness
  *
- * Runs the full pipeline: validate → repair (stub) → transpile → smoke → deliver.
+ * Runs the full pipeline: validate → repair → transpile → smoke → deliver.
  * Logs artifacts to .air-artifacts/<timestamp>/ for auditability.
  *
  * Stages (each tracked with pass/fail/skip + timing):
  *   1. validate:     Parse + diagnose, produce DiagnosticResult
- *   2. repair:       Stub — log diagnostics, no auto-fix yet
+ *   2. repair:       Deterministic single-pass repair (A3b: E001, E002)
  *   3. transpile:    Generate output files
  *   4. smoke:        L0 (files exist) + L1 (entry point, package.json, non-trivial)
  *   5. determinism:  Transpile twice, compare output hashes
@@ -23,6 +23,8 @@ import { transpile } from '../transpiler/index.js';
 import { buildResult, hashSource, formatDiagnosticCLI, wrapParseError } from '../diagnostics.js';
 import type { DiagnosticResult } from '../diagnostics.js';
 import type { TranspileResult, OutputFile } from '../transpiler/index.js';
+import { repair } from '../repair.js';
+import type { RepairAction, RepairStatus } from '../repair.js';
 
 // ---- Types ----
 
@@ -45,6 +47,16 @@ export interface LoopResult {
     sourceHash: string;
     outputHashes: Record<string, string>;
     deterministic: boolean;
+  };
+  repairResult?: {
+    status: RepairStatus;
+    attempted: boolean;
+    appliedActions: RepairAction[];
+    skippedActions: RepairAction[];
+    beforeDiagnostics: DiagnosticResult;
+    afterDiagnostics: DiagnosticResult | null;
+    sourceChanged: boolean;
+    repairedFile: string | null;
   };
 }
 
@@ -104,32 +116,116 @@ function stageValidate(source: string): { stage: LoopStage; diagnostics: Diagnos
   }
 }
 
-function stageRepair(diagnostics: DiagnosticResult): LoopStage {
-  // Stub — log diagnostics that would need repair
+function stageRepair(
+  source: string,
+  diagnostics: DiagnosticResult,
+  artifactDir: string,
+): {
+  stage: LoopStage;
+  updatedSource: string;
+  updatedAst: ReturnType<typeof parse> | null;
+  postRepairDiagnostics: DiagnosticResult | null;
+  repairResult: LoopResult['repairResult'];
+} {
   const start = performance.now();
   const errorCount = diagnostics.summary.errors;
 
+  // No errors → skip repair entirely
   if (errorCount === 0) {
     return {
-      name: 'repair',
-      status: 'skip',
-      durationMs: Math.round(performance.now() - start),
-      details: { reason: 'No errors to repair' },
+      stage: {
+        name: 'repair',
+        status: 'skip',
+        durationMs: Math.round(performance.now() - start),
+        details: { reason: 'No errors to repair' },
+      },
+      updatedSource: source,
+      updatedAst: null,
+      postRepairDiagnostics: null,
+      repairResult: undefined,
     };
   }
 
-  // Future: call LLM to generate patched .air source
+  // Run repair engine
+  const repairRes = repair(source, diagnostics.diagnostics);
+  const appliedActions = repairRes.actions.filter(a => a.applied);
+  const skippedActions = repairRes.actions.filter(a => !a.applied);
+
+  const repairResultPayload: LoopResult['repairResult'] = {
+    status: repairRes.status,
+    attempted: true,
+    appliedActions,
+    skippedActions,
+    beforeDiagnostics: diagnostics,
+    afterDiagnostics: null,
+    sourceChanged: repairRes.sourceChanged,
+    repairedFile: null,
+  };
+
+  // Always write audit artifacts when repair is attempted
+  writeFileSync(join(artifactDir, 'repair-actions.json'), JSON.stringify(repairRes.actions, null, 2));
+  writeFileSync(join(artifactDir, 'diagnostics-before.json'), JSON.stringify(diagnostics, null, 2));
+
+  if (!repairRes.sourceChanged) {
+    // No repairs could be applied
+    return {
+      stage: {
+        name: 'repair',
+        status: 'fail',
+        durationMs: Math.round(performance.now() - start),
+        details: {
+          repairStatus: repairRes.status,
+          applied: 0,
+          skipped: skippedActions.length,
+        },
+      },
+      updatedSource: source,
+      updatedAst: null,
+      postRepairDiagnostics: null,
+      repairResult: repairResultPayload,
+    };
+  }
+
+  // Source was modified — write repaired source, re-parse, re-diagnose
+  writeFileSync(join(artifactDir, 'repaired.air'), repairRes.repairedSource);
+  repairResultPayload.repairedFile = join(artifactDir, 'repaired.air');
+
+  // Re-parse repaired source
+  let newAst: ReturnType<typeof parse> | null = null;
+  let afterDiagnostics: DiagnosticResult | null = null;
+  try {
+    newAst = parse(repairRes.repairedSource);
+    const newDiags = diagnose(newAst);
+    afterDiagnostics = buildResult(newDiags, hashSource(repairRes.repairedSource));
+  } catch (err: any) {
+    const diag = wrapParseError(err);
+    afterDiagnostics = buildResult([diag], hashSource(repairRes.repairedSource));
+    newAst = null;
+  }
+
+  writeFileSync(join(artifactDir, 'diagnostics-after.json'), JSON.stringify(afterDiagnostics, null, 2));
+  repairResultPayload.afterDiagnostics = afterDiagnostics;
+
+  const afterErrors = afterDiagnostics?.summary.errors ?? 0;
+  const stageStatus: 'pass' | 'fail' = afterErrors === 0 && newAst ? 'pass' : 'fail';
+
   return {
-    name: 'repair',
-    status: 'skip',
-    durationMs: Math.round(performance.now() - start),
-    details: {
-      reason: 'Auto-repair not yet implemented',
-      errorsToFix: errorCount,
-      codes: diagnostics.diagnostics
-        .filter(d => d.severity === 'error')
-        .map(d => d.code),
+    stage: {
+      name: 'repair',
+      status: stageStatus,
+      durationMs: Math.round(performance.now() - start),
+      details: {
+        repairStatus: repairRes.status,
+        applied: appliedActions.length,
+        skipped: skippedActions.length,
+        errorsBefore: diagnostics.summary.errors,
+        errorsAfter: afterErrors,
+      },
     },
+    updatedSource: repairRes.repairedSource,
+    updatedAst: newAst,
+    postRepairDiagnostics: afterDiagnostics,
+    repairResult: repairResultPayload,
   };
 }
 
@@ -254,12 +350,23 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
   // Log diagnostics artifact
   writeFileSync(join(artifactDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));
 
-  // Stage 2: Repair (stub)
-  const repairStage = stageRepair(diagnostics);
+  // Stage 2: Repair
+  const {
+    stage: repairStage,
+    updatedSource,
+    updatedAst,
+    postRepairDiagnostics,
+    repairResult: repairPayload,
+  } = stageRepair(source, diagnostics, artifactDir);
   stages.push(repairStage);
 
-  // If validation failed with errors and no AST, stop here
-  if (!ast || diagnostics.summary.errors > 0) {
+  // Use post-repair state if repair was attempted, otherwise original
+  const effectiveAst = updatedAst ?? ast;
+  const effectiveDiagnostics = postRepairDiagnostics ?? diagnostics;
+  const effectiveSource = updatedAst ? updatedSource : source;
+
+  // If validation still fails after repair (or no AST), stop here
+  if (!effectiveAst || effectiveDiagnostics.summary.errors > 0) {
     const result: LoopResult = {
       file,
       timestamp,
@@ -272,13 +379,14 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
         outputHashes: {},
         deterministic: true,
       },
+      repairResult: repairPayload,
     };
     writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(result, null, 2));
     return result;
   }
 
-  // Stage 3: Transpile
-  const { stage: transpileStage, result: transpileResult } = stageTranspile(ast, source);
+  // Stage 3: Transpile (use effective source/ast post-repair)
+  const { stage: transpileStage, result: transpileResult } = stageTranspile(effectiveAst, effectiveSource);
   stages.push(transpileStage);
 
   if (!transpileResult) {
@@ -294,6 +402,7 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
         outputHashes: {},
         deterministic: true,
       },
+      repairResult: repairPayload,
     };
     writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(result, null, 2));
     return result;
@@ -305,7 +414,7 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
 
   // Stage 5: Determinism check
   const outputHashes = hashFiles(transpileResult.files);
-  const { stage: deterStage, check: deterCheck } = stageDeterminism(ast, source, outputHashes);
+  const { stage: deterStage, check: deterCheck } = stageDeterminism(effectiveAst, effectiveSource, outputHashes);
   stages.push(deterStage);
 
   // Deliver: Write output files
@@ -328,6 +437,7 @@ export async function runLoop(file: string, outputDir: string): Promise<LoopResu
     outputDir,
     artifactDir,
     determinismCheck: deterCheck,
+    repairResult: repairPayload,
   };
   writeFileSync(join(artifactDir, 'loop-result.json'), JSON.stringify(loopResult, null, 2));
 
@@ -348,9 +458,20 @@ export function formatLoopResult(result: LoopResult): string {
 
   lines.push('');
 
-  if (result.diagnostics.summary.errors > 0) {
-    lines.push(`  Diagnostics: ${result.diagnostics.summary.errors} errors, ${result.diagnostics.summary.warnings} warnings`);
-    for (const d of result.diagnostics.diagnostics.filter(d => d.severity === 'error')) {
+  if (result.repairResult?.attempted) {
+    const r = result.repairResult;
+    lines.push(`  Repair: ${r.status} (${r.appliedActions.length} applied, ${r.skippedActions.length} skipped)`);
+    if (r.sourceChanged) {
+      lines.push(`  Repaired source: ${r.repairedFile}`);
+    }
+    lines.push('');
+  }
+
+  // Show effective diagnostics: post-repair if repair was attempted, otherwise original
+  const effectiveDiags = result.repairResult?.afterDiagnostics ?? result.diagnostics;
+  if (effectiveDiags.summary.errors > 0) {
+    lines.push(`  Diagnostics: ${effectiveDiags.summary.errors} errors, ${effectiveDiags.summary.warnings} warnings`);
+    for (const d of effectiveDiags.diagnostics.filter(d => d.severity === 'error')) {
       lines.push(`    ${formatDiagnosticCLI(d).split('\n').join('\n    ')}`);
     }
     lines.push('');

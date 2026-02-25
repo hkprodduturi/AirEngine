@@ -223,7 +223,12 @@ program
       const result = await runLoop(file, options.output);
       console.log(formatLoopResult(result));
 
-      const failed = result.stages.some(s => s.status === 'fail');
+      // A validate fail is compensated by a repair pass
+      const repairStage = result.stages.find(s => s.name === 'repair');
+      const failed = result.stages.some(s => {
+        if (s.name === 'validate' && repairStage?.status === 'pass') return false;
+        return s.status === 'fail';
+      });
       if (failed) {
         console.log('\n  Loop completed with failures.\n');
         process.exit(1);
