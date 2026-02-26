@@ -23,7 +23,7 @@ interface MappingEntry {
 const ELEMENT_MAP: Record<string, MappingEntry> = {
   header: {
     tag: 'header',
-    className: 'sticky top-0 z-40 flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-b border-[var(--border)] bg-[var(--bg)]/80 backdrop-blur-lg',
+    className: 'flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-b border-[var(--border)] bg-[var(--surface)]',
   },
   footer: {
     tag: 'footer',
@@ -173,7 +173,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   stat: {
     tag: 'div',
-    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-5 hover:border-[color-mix(in_srgb,var(--border)_60%,var(--accent))] transition-colors',
+    className: 'stat-card rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-5 hover:border-[color-mix(in_srgb,var(--border)_60%,var(--accent))] transition-colors',
   },
   progress: {
     tag: 'div',

@@ -350,9 +350,6 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-form .form-group + button[type="submit"],
-form > button[type="submit"] { width: 100%; }
-
 /* ---- Auth Form Wrapper — flatten redundant main/grid structural elements ---- */
 .auth-form-wrapper > main,
 .auth-form-wrapper > main > div[class*="grid-cols"] {
@@ -368,7 +365,10 @@ form > button[type="submit"] { width: 100%; }
 .auth-form-wrapper p { color: var(--muted); font-size: 0.9375rem; }
 .auth-form-wrapper form { margin-top: 0.75rem; }
 .auth-form-wrapper form button[type="submit"] {
-  margin-top: 0.5rem; padding: 12px 20px; font-size: 0.9375rem;
+  width: auto; min-width: 160px; margin-top: 0.5rem; padding: 12px 24px; font-size: 0.9375rem;
+}
+@media (max-width: 640px) {
+  .auth-form-wrapper form button[type="submit"] { width: 100%; }
 }
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
@@ -377,7 +377,7 @@ input:focus, select:focus, textarea:focus {
 }
 input::placeholder, textarea::placeholder {
   color: var(--muted);
-  opacity: 0.7;
+  opacity: 0.85;
 }
 input:focus-visible, select:focus-visible, button:focus-visible {
   outline: 2px solid var(--accent);
@@ -415,6 +415,27 @@ button:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
   border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
+
+/* ---- List rows (iteration items) ---- */
+.list-row {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 6px 12px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.15s ease;
+}
+.list-row:last-child { border-bottom: none; }
+.list-row:hover { background: var(--hover); }
+.list-row > span:first-child,
+.list-row > div:first-child > span:first-child {
+  font-weight: 500; flex: 1 1 auto; min-width: 120px;
+}
+
+/* ---- Stat card color accents ---- */
+.stat-card { border-left: 3px solid transparent; }
+.stat-card:nth-child(4n+1) { border-left-color: #3b82f6; }
+.stat-card:nth-child(4n+2) { border-left-color: #f59e0b; }
+.stat-card:nth-child(4n+3) { border-left-color: #22c55e; }
+.stat-card:nth-child(4n+4) { border-left-color: #8b5cf6; }
 
 /* ---- Empty state ---- */
 .empty-state {

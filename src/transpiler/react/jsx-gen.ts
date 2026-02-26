@@ -520,16 +520,31 @@ function generatePageComponentRef(
         'currentPage={currentPage}',
         'setCurrentPage={setCurrentPage}',
       ];
-      const propsStr = ' ' + propAssignments.join(' ');
-      let result = `${pad}{isAuthed && currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
-
-      // C1/G3: Check if this page's model has nested routes → add detail page conditional
+      // C1/G3: Check if this page's model has nested routes → pass setter for detail navigation
       if (ctx.db) {
         const pageNameLower = node.name.toLowerCase();
         for (const model of ctx.db.models) {
           const modelPlural = model.name.toLowerCase().endsWith('s') ? model.name.toLowerCase() : model.name.toLowerCase() + 's';
           if (pageNameLower === modelPlural || pageNameLower.includes(model.name.toLowerCase())) {
-            // Check for nested child routes
+            const hasNestedRoutes = ctx.expandedRoutes.some(r => {
+              const nestedMatch = r.path.match(/^\/(\w+)\/:id\/(\w+)$/);
+              return nestedMatch && nestedMatch[1] === modelPlural && r.method === 'GET';
+            });
+            if (hasNestedRoutes) {
+              propAssignments.push(`setSelected${model.name}Id={setSelected${model.name}Id}`);
+            }
+          }
+        }
+      }
+      const propsStr = ' ' + propAssignments.join(' ');
+      let result = `${pad}{isAuthed && currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
+
+      // C1/G3: Add detail page conditional rendering
+      if (ctx.db) {
+        const pageNameLower = node.name.toLowerCase();
+        for (const model of ctx.db.models) {
+          const modelPlural = model.name.toLowerCase().endsWith('s') ? model.name.toLowerCase() : model.name.toLowerCase() + 's';
+          if (pageNameLower === modelPlural || pageNameLower.includes(model.name.toLowerCase())) {
             const hasNestedRoutes = ctx.expandedRoutes.some(r => {
               const nestedMatch = r.path.match(/^\/(\w+)\/:id\/(\w+)$/);
               return nestedMatch && nestedMatch[1] === modelPlural && r.method === 'GET';
@@ -1406,7 +1421,7 @@ export function generateIterationJSX(
   const emptyLabel = deriveEmptyLabel(dataExpr);
   // Skip styled wrapper when children contain a card element (avoid double-wrapping)
   const hasCardChild = children.some(c => c.kind === 'element' && c.element === 'card');
-  const iterItemClass = hasCardChild ? '' : ' className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3"';
+  const iterItemClass = hasCardChild ? '' : ' className="list-row"';
   return `${pad}{${dataExpr}.length === 0 ? (\n${pad}  <div className="empty-state">${emptyLabel}</div>\n${pad}) : ${dataExpr}.map((${iterVar}) => (\n${pad}  <div key={${iterVar}.id}${iterItemClass}>\n${childJsx}\n${pad}  </div>\n${pad}))}`;
 }
 
@@ -1460,7 +1475,7 @@ export function generateContainerWithIteration(
 
   const emptyLabel = deriveEmptyLabel(dataSource);
   const hasCardChild = children.some(c => c.kind === 'element' && c.element === 'card');
-  const iterItemClass = hasCardChild ? '' : ' className="flex gap-3 items-center bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] px-4 py-3"';
+  const iterItemClass = hasCardChild ? '' : ' className="list-row"';
   return `${pad}<${containerElement}${classAttr(containerClass)}>\n`
     + `${pad}  {${dataSource}.length === 0 ? (\n`
     + `${pad}    <div className="empty-state">${emptyLabel}</div>\n`

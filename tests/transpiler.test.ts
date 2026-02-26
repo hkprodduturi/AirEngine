@@ -718,6 +718,54 @@ describe('golden: dashboard.air codegen shape', () => {
   });
 });
 
+// ---- Dashboard list fetch unwrapping regression ----
+
+describe('dashboard list fetch unwraps paginated response', () => {
+  // helpdesk.air produces a self-contained DashboardPage with generateDashboardPage() path
+  const result = transpileFile('helpdesk');
+  const dashPage = result.files.find(f => f.path.includes('DashboardPage.jsx'));
+  const dashJsx = dashPage?.content ?? '';
+
+  it('dashboard data-source fetches unwrap res.data for list endpoints', () => {
+    // Must use res?.data ?? res to handle { data, meta } paginated shape
+    expect(dashJsx).toContain('.then(res => set');
+    expect(dashJsx).toContain('res?.data ?? res');
+  });
+
+  it('dashboard does NOT pass raw response directly to setState', () => {
+    // Regression: old code did api.getX().then(setX) which sets object instead of array
+    expect(dashJsx).not.toMatch(/\.then\(setTickets\)\s*[,)]/);
+    expect(dashJsx).not.toMatch(/\.then\(setAgents\)\s*[,)]/);
+  });
+
+  it('stats/aggregate endpoint also uses unwrap pattern (safe passthrough)', () => {
+    // For aggregate responses without .data field, res?.data is undefined, so res?.data ?? res returns original
+    expect(dashJsx).toContain('getStats().then(res =>');
+  });
+});
+
+describe('auth form submit button responsive width in auth wrapper', () => {
+  const result = transpileFile('helpdesk');
+  const css = result.files.find(f => f.path.includes('index.css'));
+  const cssContent = css?.content ?? '';
+
+  it('no global form submit width:100% rule', () => {
+    expect(cssContent).not.toContain('form .form-group + button[type="submit"]');
+    expect(cssContent).not.toContain('form > button[type="submit"] { width: 100%');
+  });
+
+  it('auth form submit has width:auto with min-width on desktop', () => {
+    expect(cssContent).toContain('.auth-form-wrapper form button[type="submit"]');
+    expect(cssContent).toContain('width: auto');
+    expect(cssContent).toContain('min-width: 160px');
+  });
+
+  it('auth form submit goes full-width on mobile', () => {
+    expect(cssContent).toContain('@media (max-width: 640px)');
+    expect(cssContent).toMatch(/auth-form-wrapper.*button.*width:\s*100%/s);
+  });
+});
+
 // ---- Golden output: landing.air codegen shape ----
 
 describe('golden: landing.air codegen shape', () => {

@@ -287,6 +287,10 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`const ${name} = (data) => {`);
         lines.push(`  ${setter(arrayName)}(prev => [...prev, { ...data, id: Date.now() }]);`);
         lines.push('};');
+      } else {
+        lines.push(`const ${name} = (...args) => {`);
+        lines.push(`  console.log('${name}', ...args);`);
+        lines.push('};');
       }
     } else if (name === 'del' || name === 'delItem' || name === 'remove') {
       // Check if there are multiple DELETE routes → dispatch by checking arrays
@@ -373,6 +377,10 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
       } else if (arrayName) {
         lines.push(`const ${name} = (id, field) => {`);
         lines.push(`  ${setter(arrayName)}(prev => prev.map(item => item.id === id ? { ...item, [field]: !item[field] } : item));`);
+        lines.push('};');
+      } else {
+        lines.push(`const ${name} = (...args) => {`);
+        lines.push(`  console.log('toggle', ...args);`);
         lines.push('};');
       }
     } else if (name === 'login') {

@@ -23,6 +23,20 @@ import {
 import { generateJSX } from './jsx-gen.js';
 import { findGenericRouteMatch } from './mutation-gen.js';
 
+// ---- Badge Color Helper (injected into generated components) ----
+
+const BADGE_COLOR_FN = "  const _bc = (v) => { const s = String(v ?? '').toLowerCase(); const m = { open: 'bg-blue-500/15 text-blue-400', active: 'bg-blue-500/15 text-blue-400', new: 'bg-blue-500/15 text-blue-400', in_progress: 'bg-yellow-500/15 text-yellow-400', pending: 'bg-yellow-500/15 text-yellow-400', processing: 'bg-yellow-500/15 text-yellow-400', resolved: 'bg-green-500/15 text-green-400', done: 'bg-green-500/15 text-green-400', completed: 'bg-green-500/15 text-green-400', approved: 'bg-green-500/15 text-green-400', closed: 'bg-zinc-500/15 text-zinc-400', archived: 'bg-zinc-500/15 text-zinc-400', cancelled: 'bg-zinc-500/15 text-zinc-400', rejected: 'bg-zinc-500/15 text-zinc-400', waiting: 'bg-orange-500/15 text-orange-400', on_hold: 'bg-orange-500/15 text-orange-400', review: 'bg-orange-500/15 text-orange-400', urgent: 'bg-red-500/15 text-red-400', critical: 'bg-red-500/15 text-red-400', high: 'bg-orange-500/15 text-orange-400', medium: 'bg-yellow-500/15 text-yellow-400', low: 'bg-emerald-500/15 text-emerald-400' }; return m[s] || 'bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] text-[var(--accent)]'; };";
+
+const BADGE_STATIC_MARKER = 'bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] text-[var(--accent)]';
+
+/** Post-process JSX: replace static accent-colored badges with semantic _bc() calls */
+function applyBadgeColors(jsx: string): string {
+  return jsx.replace(
+    /className="inline-flex items-center rounded-full px-2\.5 py-0\.5 text-xs font-medium bg-\[color-mix\(in_srgb,var\(--accent\)_20%,transparent\)\] text-\[var\(--accent\)\]">\{(\w+(?:\.\w+)*)\}/g,
+    (_, expr) => `className={\`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium \${_bc(${expr})}\`}>{${expr}}`
+  );
+}
+
 // ---- Page Resource Binding ----
 
 interface PageResourceBinding {
@@ -648,9 +662,13 @@ function generateDashboardPage(
   // Pre-generate child JSX to scan for undeclared state vars
   const filteredChildren = page.children.filter(c => !hasSidebarNode(c));
   const mainChildren = extractMainContent(page.children) || filteredChildren;
-  const childJsx = mainChildren.map(c =>
+  let childJsx = mainChildren.map(c =>
     generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
   ).filter(Boolean).join('\n');
+
+  // Apply semantic badge colors to dynamically-bound badges
+  const hasBadges = childJsx.includes(BADGE_STATIC_MARKER);
+  if (hasBadges) childJsx = applyBadgeColors(childJsx);
 
   // Scan JSX for undeclared state variables and add them
   const extraState = detectUndeclaredStateVars(childJsx, declaredVars, ctx);
@@ -658,6 +676,9 @@ function generateDashboardPage(
     lines.push(`  const [${name}, set${capitalize(name)}] = useState(${defaultVal});`);
     declaredVars.add(name);
   }
+
+  // Badge color helper (semantic status/priority colors)
+  if (hasBadges) lines.push(BADGE_COLOR_FN);
   lines.push('');
 
   // T1.2: Error state for dashboard pages
@@ -665,11 +686,11 @@ function generateDashboardPage(
   declaredVars.add('error'); declaredVars.add('setError');
   lines.push('');
 
-  // Parallel fetch on mount
+  // Parallel fetch on mount — unwrap paginated { data, meta } responses for list endpoints
   lines.push('  useEffect(() => {');
   lines.push('    Promise.all([');
   for (const ds of binding.dataSources) {
-    lines.push(`      api.${ds.getFnName}().then(set${capitalize(ds.stateVar)}),`);
+    lines.push(`      api.${ds.getFnName}().then(res => set${capitalize(ds.stateVar)}(res?.data ?? res)),`);
   }
   lines.push('    ])');
   lines.push("      .catch(err => setError(err.message || 'Failed to load data'))");
@@ -756,10 +777,19 @@ function generateCrudPage(
   lines.push("import * as api from '../api.js';");
   if (hasLayout) lines.push("import Layout from '../Layout.jsx';");
   lines.push('');
-  lines.push(`export default function ${pageName}Page({ user, logout, currentPage, setCurrentPage }) {`);
+  // Detect if this model has a detail page → accept setter prop for navigation
+  const detailModels = ctx.db ? detectDetailPageModels(ctx) : [];
+  const detailModel = detailModels.find(d => {
+    const dp = d.modelName.toLowerCase().endsWith('s') ? d.modelName.toLowerCase() : d.modelName.toLowerCase() + 's';
+    return dp === modelPlural || modelPlural.includes(d.modelName.toLowerCase());
+  });
+  const detailSetterProp = detailModel ? `setSelected${detailModel.modelName}Id` : null;
+  const detailSetterParam = detailSetterProp ? `, ${detailSetterProp}` : '';
+  lines.push(`export default function ${pageName}Page({ user, logout, currentPage, setCurrentPage${detailSetterParam} }) {`);
 
   // Local state
   const declaredVars = new Set<string>(['user', 'logout', 'currentPage', 'setCurrentPage']);
+  if (detailSetterProp) declaredVars.add(detailSetterProp);
   lines.push(`  const [${modelPlural}, set${capitalize(modelPlural)}] = useState([]);`);
   lines.push('  const [loading, setLoading] = useState(true);');
   declaredVars.add(modelPlural);
@@ -849,7 +879,22 @@ function generateCrudPage(
 
   lines.push('');
 
-  // Load function
+  // Load function — if no GET route, immediately clear loading state
+  // Also load cart-like arrays from localStorage for cross-page persistence
+  if (!getFnName) {
+    const cartArrayName = ctx.state.find(f =>
+      f.type.kind === 'array' && /^(cart|items|basket|bag)$/i.test(f.name)
+    )?.name;
+    if (cartArrayName) {
+      lines.push(`  useEffect(() => {`);
+      lines.push(`    try { const saved = localStorage.getItem('${ctx.appName}_cart'); if (saved) set${capitalize(cartArrayName)}(JSON.parse(saved)); } catch(_) {}`);
+      lines.push(`    setLoading(false);`);
+      lines.push(`  }, []);`);
+    } else {
+      lines.push('  useEffect(() => { setLoading(false); }, []);');
+    }
+    lines.push('');
+  }
   if (getFnName) {
     lines.push(`  const load = async () => {`);
     lines.push('    try {');
@@ -986,21 +1031,24 @@ function generateCrudPage(
 
   // T1.5/A2c: Generate custom page-level mutations (e.g., resolveTicket, closeTicket)
   // Extract mutations from page children, skip standard CRUD names, wire to API routes
-  const standardMutNames = new Set(['add', 'addItem', 'del', 'delItem', 'remove', 'update', 'save', 'toggle', 'handleCreate', 'handleUpdate', 'handleDelete']);
+  // Names that are handled by CRUD handlers above, or should skip generic route matching
+  // to fall through to the safety net (which uses page-binding putFnName/deleteFnName)
+  const skipGenericMatch = new Set(['update', 'save', 'handleCreate', 'handleUpdate', 'handleDelete',
+    'del', 'delItem', 'remove', 'add', 'addItem', 'done', 'archive', 'toggle', 'checkout']);
   const pageMuts = extractMutations(page.children);
   const expandedRoutes = ctx.expandedRoutes;
   for (const mut of pageMuts) {
-    if (standardMutNames.has(mut.name)) continue;
-    const genericMatch = findGenericRouteMatch(mut.name, expandedRoutes);
+    if (declaredVars.has(mut.name)) continue;
+    const genericMatch = skipGenericMatch.has(mut.name) ? null : findGenericRouteMatch(mut.name, expandedRoutes);
     if (genericMatch) {
       declaredVars.add(mut.name);
 
       // C1/G1: Specialize status-related mutations when model has status enum
       if (mut.name === 'assign' && statusField && genericMatch.method === 'PUT') {
-        // assign takes (id, agent_id) — explicitly sends { agent_id } payload
+        // assign takes (id, agent_id) — default agent_id to current user when called from a single-arg button
         lines.push(`  const assign = async (id, agent_id) => {`);
         lines.push('    try {');
-        lines.push(`      await api.${genericMatch.fnName}(id, { agent_id });`);
+        lines.push(`      await api.${genericMatch.fnName}(id, { agent_id: agent_id || user?.id });`);
         if (getFnName) lines.push('      load();');
         lines.push('    } catch (err) {');
         lines.push("      setError(err.message || 'assign failed');");
@@ -1047,6 +1095,106 @@ function generateCrudPage(
         lines.push('  };');
       }
       lines.push('');
+    } else if (!declaredVars.has(mut.name)) {
+      // Safety net: emit stub for mutations found in UI but not matched to any route
+      // Check for cart-like array state — del/checkout work on local state with persistence
+      const _cartArray = ctx.state.find(f =>
+        f.type.kind === 'array' && /^(cart|items|basket|bag)$/i.test(f.name)
+      )?.name;
+      if ((mut.name === 'del' || mut.name === 'delItem' || mut.name === 'remove') && _cartArray && !deleteFnName) {
+        // Cart-style delete: remove from local array + persist
+        lines.push(`  const ${mut.name} = (id) => {`);
+        lines.push(`    set${capitalize(_cartArray)}(prev => {`);
+        lines.push(`      const next = prev.filter(i => i.id !== id && i.productId !== id);`);
+        lines.push(`      try { localStorage.setItem('${ctx.appName}_cart', JSON.stringify(next)); } catch(_) {}`);
+        lines.push(`      return next;`);
+        lines.push('    });');
+        lines.push('  };');
+      } else if ((mut.name === 'del' || mut.name === 'delItem' || mut.name === 'remove') && deleteFnName) {
+        // Map del/remove to the delete-modal pattern
+        lines.push(`  const ${mut.name} = (id) => setDeleteId(id);`);
+      } else if ((mut.name === 'add' || mut.name === 'addItem') && postFnName) {
+        // If mutation has data arguments (e.g., !add({...})), it's a cart-add style operation
+        if (mut.argNodes.length > 0) {
+          // Detect a cart/items array state to push into
+          const cartArrayName = ctx.state.find(f =>
+            f.type.kind === 'array' && /^(cart|items|basket|bag)$/i.test(f.name)
+          )?.name;
+          if (cartArrayName) {
+            lines.push(`  const ${mut.name} = (data) => {`);
+            lines.push(`    set${capitalize(cartArrayName)}(prev => {`);
+            lines.push(`      const existing = prev.find(i => i.productId === data.productId || i.id === data.id);`);
+            lines.push(`      const next = existing ? prev.map(i => (i.productId === data.productId || i.id === data.id) ? { ...i, quantity: (i.quantity || 1) + 1 } : i) : [...prev, { ...data, id: Date.now() }];`);
+            lines.push(`      try { localStorage.setItem('${ctx.appName}_cart', JSON.stringify(next)); } catch(_) {}`);
+            lines.push(`      return next;`);
+            lines.push('    });');
+            lines.push('  };');
+          } else {
+            lines.push(`  const ${mut.name} = () => setShowForm(true);`);
+          }
+        } else {
+          lines.push(`  const ${mut.name} = () => setShowForm(true);`);
+        }
+      } else if ((mut.name === 'done' || mut.name === 'archive') && putFnName) {
+        const payload = mut.name === 'archive' ? "status: 'archived'" : "status: 'done'";
+        lines.push(`  const ${mut.name} = async (id) => {`);
+        lines.push('    try {');
+        lines.push(`      await api.${putFnName}(id, { ${payload} });`);
+        if (getFnName) lines.push('      load();');
+        lines.push('    } catch (err) {');
+        lines.push(`      setError(err.message || '${mut.name} failed');`);
+        lines.push('    }');
+        lines.push('  };');
+      } else if (mut.name === 'toggle' && putFnName) {
+        lines.push(`  const toggle = async (id, field) => {`);
+        lines.push(`    const current = ${modelPlural}.find(i => i.id === id);`);
+        lines.push('    try {');
+        lines.push(`      await api.${putFnName}(id, { [field]: !(current?.[field]) });`);
+        if (getFnName) lines.push('      load();');
+        lines.push('    } catch (err) {');
+        lines.push("      setError(err.message || 'toggle failed');");
+        lines.push('    }');
+        lines.push('  };');
+      } else if (mut.name === 'checkout') {
+        if (_cartArray) {
+          // Cart checkout: create order from cart items, clear cart
+          if (postFnName) {
+            lines.push(`  const checkout = async () => {`);
+            lines.push('    try {');
+            lines.push(`      await api.${postFnName}({ items: ${_cartArray} });`);
+            lines.push(`      set${capitalize(_cartArray)}([]);`);
+            lines.push(`      try { localStorage.removeItem('${ctx.appName}_cart'); } catch(_) {}`);
+            lines.push(`      setSuccessMsg('Order placed successfully');`);
+            lines.push(`      setTimeout(() => setSuccessMsg(null), 3000);`);
+            lines.push('    } catch (err) {');
+            lines.push("      setError(err.message || 'checkout failed');");
+            lines.push('    }');
+            lines.push('  };');
+          } else {
+            lines.push(`  const checkout = () => {`);
+            lines.push(`    set${capitalize(_cartArray)}([]);`);
+            lines.push(`    try { localStorage.removeItem('${ctx.appName}_cart'); } catch(_) {}`);
+            lines.push(`    setSuccessMsg('Order placed successfully');`);
+            lines.push(`    setTimeout(() => setSuccessMsg(null), 3000);`);
+            lines.push('  };');
+          }
+        } else if (postFnName) {
+          lines.push(`  const checkout = async () => {`);
+          lines.push('    try {');
+          lines.push(`      await api.${postFnName}({ items: ${modelPlural} });`);
+          if (getFnName) lines.push('      load();');
+          lines.push('    } catch (err) {');
+          lines.push("      setError(err.message || 'checkout failed');");
+          lines.push('    }');
+          lines.push('  };');
+        } else {
+          lines.push(`  const checkout = (...args) => { console.log('checkout', ...args); };`);
+        }
+      } else {
+        lines.push(`  const ${mut.name} = (...args) => { console.log('${mut.name}', ...args); };`);
+      }
+      declaredVars.add(mut.name);
+      lines.push('');
     }
   }
 
@@ -1068,6 +1216,21 @@ function generateCrudPage(
       generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
     ).filter(Boolean).join('\n');
 
+    // Apply semantic badge colors to dynamically-bound badges
+    const hasCrudBadges = childJsx.includes(BADGE_STATIC_MARKER);
+    if (hasCrudBadges) childJsx = applyBadgeColors(childJsx);
+
+    // Wire list-row clicks to detail page navigation
+    if (detailSetterProp) {
+      // Find list-row divs inside .map() iteration and add onClick + cursor
+      // Pattern: <div key={xxx.id} className="list-row">
+      childJsx = childJsx.replace(
+        /(<div key=\{(\w+)\.id\} className="list-row")>/g,
+        (_, prefix, iterVar) =>
+          `${prefix} onClick={() => ${detailSetterProp}(${iterVar}.id)} style={{cursor:'pointer'}}>`
+      );
+    }
+
     // Wire "New {Model}" / "Create {Model}" buttons to showForm toggle
     if (postFnName && declaredVars.has('showForm')) {
       const label = singularLabel;
@@ -1084,6 +1247,18 @@ function generateCrudPage(
     for (const { name, defaultVal } of extraState) {
       lines.push(`  const [${name}, set${capitalize(name)}] = useState(${defaultVal});`);
       declaredVars.add(name);
+    }
+    // Badge color helper (semantic status/priority colors)
+    if (hasCrudBadges) lines.push(BADGE_COLOR_FN);
+
+    // Auto-compute cart total from cart-like array
+    if (declaredVars.has('cartTotal') || childJsx.includes('cartTotal')) {
+      const cartArr = ctx.state.find(f =>
+        f.type.kind === 'array' && /^(cart|items|basket|bag)$/i.test(f.name)
+      )?.name;
+      if (cartArr) {
+        lines.push(`  useEffect(() => { setCartTotal(${cartArr}.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0)); }, [${cartArr}]);`);
+      }
     }
     lines.push('');
 
@@ -1537,6 +1712,15 @@ function detectUndeclaredStateVars(
     }
   }
 
+  // Find (varName).method() patterns — e.g., (cartTotal).toFixed(2)
+  const parenAccessPattern = /\((\w+)\)\.(?:toFixed|toString|toLocaleString|valueOf)\b/g;
+  while ((m = parenAccessPattern.exec(jsx)) !== null) {
+    const name = m[1];
+    if (!['api', 'Math', 'JSON', 'console', 'e', 'item', '_item', 'row', 'prev'].includes(name)) {
+      varRefs.add(name);
+    }
+  }
+
   for (const varName of varRefs) {
     if (declaredVars.has(varName) || seen.has(varName)) continue;
     seen.add(varName);
@@ -1555,6 +1739,8 @@ function detectUndeclaredStateVars(
     } else {
       if (varName.toLowerCase().includes('filter') || varName.toLowerCase().includes('status')) {
         defaultVal = "'all'";
+      } else if (/(?:total|count|amount|sum|price|quantity|num|avg|min|max)$/i.test(varName)) {
+        defaultVal = '0';
       } else if (varName.endsWith('s') && varName.length > 2) {
         defaultVal = '[]';
       }
