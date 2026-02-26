@@ -37,7 +37,10 @@
     "demo-live-canonical": "node --import tsx scripts/demo-live-canonical.ts",
     "doctor": "node --import tsx scripts/doctor.ts",
     "release-rehearsal": "node --import tsx scripts/release-alpha-rehearsal.ts",
-    "stability-sweep": "node --import tsx scripts/stability-sweep.ts"
+    "stability-sweep": "node --import tsx scripts/stability-sweep.ts",
+    "helpdesk-golden": "node --import tsx scripts/helpdesk-golden-run.ts",
+    "eval-complex": "node --import tsx scripts/eval-complex.ts",
+    "complex-readiness": "npm run test:complex-baseline && npm run test:complex-gaps && npm run helpdesk-golden"
   },
   "keywords": [
     "ai",

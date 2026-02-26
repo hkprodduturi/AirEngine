@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "corpus_id": "complex-eval-v1",
+  "entries": [
+    {
+      "id": "complex-helpdesk",
+      "prompt": "Build a fullstack helpdesk ticketing system with tickets and replies databases. Tickets have subject, description, status (open/in_progress/resolved/closed), priority (low/medium/high/urgent), and are assigned to agents. Support status workflow transitions, agent assignment, reply threads, server-side filtering by status and priority, sorting, pagination, RBAC (admin vs agent roles), email notifications on ticket creation and resolution, and an analytics dashboard with average response time stats.",
+      "category": "support",
+      "complexity": "complex",
+      "replay_fixture": "examples/helpdesk.air"
+    },
+    {
+      "id": "complex-projectmgmt",
+      "prompt": "Build a fullstack project management tool with projects, tasks, and team members databases. Each project has multiple tasks with title, description, status (todo/in_progress/review/done), priority, and assignee. Support creating projects, adding tasks, filtering tasks by status, team member management with roles, and a dashboard showing project progress stats.",
+      "category": "project",
+      "complexity": "complex",
+      "replay_fixture": "examples/projectflow.air"
+    },
+    {
+      "id": "complex-ecommerce",
+      "prompt": "Create a fullstack e-commerce platform with products, categories, orders, and order items databases. Products have name, price, description, stock, and belong to categories. Users can browse products, filter by category, add to cart, and place orders. Include an admin page to manage products and categories, order management with status tracking, and inventory updates on order placement.",
+      "category": "commerce",
+      "complexity": "complex",
+      "replay_fixture": "examples/ecommerce.air"
+    },
+    {
+      "id": "complex-hr-approvals",
+      "prompt": "Build a fullstack clinic management system with patients, appointments, doctors, and medical records databases. Patients have name, date of birth, contact info. Appointments have date, time, status (scheduled/completed/cancelled), and link to both patient and doctor. Support scheduling appointments, viewing patient history, doctor availability, and role-based access for doctors vs staff.",
+      "category": "hr",
+      "complexity": "complex",
+      "replay_fixture": "examples/clinic.air"
+    },
+    {
+      "id": "complex-saas-crm",
+      "prompt": "Build a fullstack CRM system with contacts, companies, deals, and activities databases. Contacts belong to companies, deals have stages (lead/qualified/proposal/negotiation/closed_won/closed_lost) and values. Support pipeline view of deals by stage, contact management with company associations, activity logging, filtering and sorting, and a dashboard with revenue metrics and deal stage distribution.",
+      "category": "saas",
+      "complexity": "complex",
+      "replay_fixture": "examples/crm.air"
+    }
+  ]
+}
