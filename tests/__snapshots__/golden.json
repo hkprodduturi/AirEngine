@@ -197,7 +197,7 @@
       "server/seed.ts": "333cfcbab96a6586",
       "server/types.ts": "2ac910f69eaf6e1a",
       "server/validation.ts": "bdd83665c368bac3",
-      "server/routes/tickets.ts": "2df816bcc2c4176b",
+      "server/routes/tickets.ts": "df5e74e1b41d8a4a",
       "server/routes/agents.ts": "8bf613f92d8a75f9",
       "server/routes/departments.ts": "3621d9b3d7b8a145",
       "server/api.ts": "8ec64e9b1cdfc576",

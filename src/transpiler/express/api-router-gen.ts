@@ -882,6 +882,23 @@ export function generateResourceRouter(
     lines.push("import { requireRole } from '../auth.js';");
   }
 
+  // C4/G12: Import sendEmail when @email templates exist and this resource has matching templates
+  const hasEmailTemplates = ctx.email && ctx.email.templates.length > 0;
+  if (hasEmailTemplates && !isAuthResource) {
+    // Check if any template name matches a model in this resource group
+    const resourceModels = new Set<string>();
+    for (const r of routes) {
+      const m = r.handler.match(/^~db\.(\w+)\./);
+      if (m) resourceModels.add(m[1].toLowerCase());
+    }
+    const hasMatchingTemplate = ctx.email!.templates.some(t =>
+      resourceModels.has(t.name.replace(/Created$|Resolved$|Updated$|Deleted$/i, '').toLowerCase())
+    );
+    if (hasMatchingTemplate) {
+      lines.push("import { sendEmail } from '../templates.js';");
+    }
+  }
+
   // Collect type names used
   const typeNames = getGeneratedTypeNames(ctx);
   const usedTypes: string[] = [];
@@ -1082,6 +1099,42 @@ export function generateResourceRouter(
           lines.push('    res.status(201).json(result);');
         } else {
           pushPrismaResponse(lines, prismaInfo, method, handler);
+        }
+
+        // C4/G12: Wire sendEmail calls for matching @email templates
+        if (hasEmailTemplates) {
+          const handlerModelMatch = handler.match(/^~db\.(\w+)\.(create|update)$/);
+          if (handlerModelMatch) {
+            const [, handlerModelName, operation] = handlerModelMatch;
+            const modelLower = handlerModelName.toLowerCase();
+            if (operation === 'create') {
+              // Match template: {model}Created
+              const tmpl = ctx.email!.templates.find(t =>
+                t.name.toLowerCase() === `${modelLower}created`
+              );
+              if (tmpl) {
+                const paramStr = tmpl.params
+                  ? tmpl.params.map(p => `${p.name}: result.${p.name}`).join(', ')
+                  : '';
+                lines.push(`    // C4/G12: Send email notification on ${handlerModelName} creation`);
+                lines.push(`    sendEmail('${tmpl.name}', result.email || '', { ${paramStr} }).catch(() => {});`);
+              }
+            } else if (operation === 'update') {
+              // Match template: {model}Resolved (or other status-based templates)
+              const resolvedTmpl = ctx.email!.templates.find(t =>
+                t.name.toLowerCase() === `${modelLower}resolved`
+              );
+              if (resolvedTmpl) {
+                const paramStr = resolvedTmpl.params
+                  ? resolvedTmpl.params.map(p => `${p.name}: result.${p.name}`).join(', ')
+                  : '';
+                lines.push(`    // C4/G12: Send email notification when ${handlerModelName} is resolved`);
+                lines.push(`    if (status === 'resolved') {`);
+                lines.push(`      sendEmail('${resolvedTmpl.name}', result.email || '', { ${paramStr} }).catch(() => {});`);
+                lines.push('    }');
+              }
+            }
+          }
         }
       } else {
         // Check for auth handler before falling through to 501
