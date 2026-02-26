@@ -736,6 +736,17 @@ function generateCrudPage(
   const putFnName = binding.putRoute ? routeToFunctionName('PUT', binding.putRoute.path) : null;
   const deleteFnName = binding.deleteRoute ? routeToFunctionName('DELETE', binding.deleteRoute.path) : null;
 
+  // C2/G5: Detect if this is an admin-only resource in an auth-gated app with roles
+  const hasRoleAuth = ctx.auth?.role !== undefined;
+  let isAdminResource = false;
+  if (hasRoleAuth && binding.model && ctx.db) {
+    // Non-primary model heuristic: models with fewer than 3 CRUD routes are admin-level
+    const allRoutes = ctx.expandedRoutes;
+    const modelRouteCount = allRoutes.filter(r => r.handler.includes(`.${binding.model!.name}.`)).length;
+    // Primary model typically has 4+ routes (GET list, POST, PUT, DELETE + nested)
+    isAdminResource = modelRouteCount < 3;
+  }
+
   // Note: provenance header is prepended by transpiler orchestrator
   lines.push("import { useState, useEffect } from 'react';");
   lines.push("import * as api from '../api.js';");
@@ -769,6 +780,16 @@ function generateCrudPage(
   lines.push('  const [successMsg, setSuccessMsg] = useState(null);');
   declaredVars.add('error'); declaredVars.add('setError');
   declaredVars.add('successMsg'); declaredVars.add('setSuccessMsg');
+  // C2/G7: Field-level validation errors for forms
+  if (postFnName) {
+    lines.push('  const [fieldErrors, setFieldErrors] = useState({});');
+    declaredVars.add('fieldErrors'); declaredVars.add('setFieldErrors');
+  }
+  // C2/G5: Derive admin flag for role-based UI gating
+  if (hasRoleAuth) {
+    lines.push("  const isAdmin = user?.role === 'admin';");
+    declaredVars.add('isAdmin');
+  }
   // Mark handler names as known
   if (postFnName) declaredVars.add('handleCreate');
   if (putFnName) declaredVars.add('handleUpdate');
@@ -780,13 +801,47 @@ function generateCrudPage(
     return f.name === 'status' && base.kind === 'enum';
   });
 
+  // C2/G4: Detect enum filter state variables (e.g., statusFilter → status field, priorityFilter → priority field)
+  const filterStateVars: { stateVar: string; fieldName: string }[] = [];
+  if (binding.model) {
+    for (const sf of ctx.state) {
+      if (!sf.name.endsWith('Filter')) continue;
+      const fieldName = sf.name.replace(/Filter$/, '');
+      const matchField = binding.model.fields.find(f => f.name === fieldName);
+      if (matchField) {
+        const base = matchField.type.kind === 'optional'
+          ? (matchField.type as { of: { kind: string } }).of
+          : matchField.type;
+        if (base.kind === 'enum') {
+          filterStateVars.push({ stateVar: sf.name, fieldName });
+        }
+      }
+    }
+  }
+
+  // C2/G4: Add sort state when model has enum filters (implying a filterable/sortable list)
+  if (filterStateVars.length > 0) {
+    lines.push("  const [sortField, setSortField] = useState('created_at');");
+    lines.push("  const [sortOrder, setSortOrder] = useState('desc');");
+    declaredVars.add('sortField'); declaredVars.add('setSortField');
+    declaredVars.add('sortOrder'); declaredVars.add('setSortOrder');
+  }
+
   lines.push('');
 
   // Load function
   if (getFnName) {
     lines.push(`  const load = async () => {`);
     lines.push('    try {');
-    lines.push(`      const data = await api.${getFnName}();`);
+    if (filterStateVars.length > 0) {
+      // C2/G4: Pass filter and sort state to API call
+      const filterArgs = filterStateVars.map(fv =>
+        `${fv.fieldName}: ${fv.stateVar} !== 'all' ? ${fv.stateVar} : undefined`
+      ).join(', ');
+      lines.push(`      const data = await api.${getFnName}({ ${filterArgs}, sort: sortField + ':' + sortOrder });`);
+    } else {
+      lines.push(`      const data = await api.${getFnName}();`);
+    }
     lines.push(`      set${capitalize(modelPlural)}(data);`);
     lines.push('    } catch (err) {');
     lines.push("      setError(err.message || 'Failed to load data');");
@@ -795,18 +850,40 @@ function generateCrudPage(
     lines.push('    }');
     lines.push('  };');
     lines.push('');
-    lines.push('  useEffect(() => { load(); }, []);');
+    if (filterStateVars.length > 0) {
+      // C2/G4: Re-fetch when filter/sort state changes
+      const deps = filterStateVars.map(fv => fv.stateVar).join(', ');
+      lines.push(`  useEffect(() => { load(); }, [${deps}, sortField, sortOrder]);`);
+    } else {
+      lines.push('  useEffect(() => { load(); }, []);');
+    }
     lines.push('');
   }
 
   // Create handler
   if (postFnName && getFnName) {
+    // C2/G7: Collect required fields for validation
+    const requiredFields = binding.formFields.filter(f => f.required);
+
     lines.push('  const handleCreate = async (e) => {');
     lines.push('    e.preventDefault();');
     lines.push('    setSubmitting(true);');
     lines.push('    setError(null);');
     lines.push('    try {');
     lines.push('      const fd = Object.fromEntries(new FormData(e.target));');
+
+    // C2/G7: Inline validation for required fields
+    if (requiredFields.length > 0) {
+      lines.push('      // Validate required fields');
+      lines.push('      const validation = {};');
+      for (const f of requiredFields) {
+        const label = f.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+        lines.push(`      if (!fd.${f.name}) validation.${f.name} = '${label} is required';`);
+      }
+      lines.push('      if (Object.keys(validation).length > 0) { setFieldErrors(validation); setSubmitting(false); return; }');
+      lines.push('      setFieldErrors({});');
+    }
+
     // Convert numeric fields
     for (const f of binding.formFields) {
       if (f.type === 'number') {
@@ -1001,12 +1078,35 @@ function generateCrudPage(
     if (childJsx.trim()) {
       lines.push('        <div className="space-y-6 animate-fade-in">');
       lines.push(childJsx);
+
+      // C2/G7: Inject CRUD create form when page has postRoute and form fields
+      if (postFnName && binding.formFields.length > 0) {
+        const formGateOpen = isAdminResource ? `{user?.role === 'admin' && showForm && (` : '{showForm && (';
+        lines.push(`        ${formGateOpen}`);
+        lines.push(`          <form onSubmit={handleCreate} className="p-6 border border-[var(--border)] rounded-[var(--radius)] bg-[var(--surface)] space-y-4 animate-slide-up">`);
+        lines.push(`            <h3 className="text-lg font-semibold mb-2">New ${singularLabel}</h3>`);
+        for (const field of binding.formFields) {
+          lines.push(renderFormField(field, binding, 12));
+        }
+        lines.push(`            <div className="flex justify-end gap-3 pt-2">`);
+        lines.push(`              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2.5 rounded-[var(--radius)] border border-[var(--border)] hover:bg-[var(--hover)] text-sm font-medium transition-colors">Cancel</button>`);
+        lines.push(`              <button type="submit" disabled={submitting} className="px-6 py-2.5 bg-[var(--accent)] text-white rounded-[var(--radius)] text-sm font-medium hover:opacity-90 transition-colors disabled:opacity-50">{submitting ? 'Creating...' : 'Create ${singularLabel}'}</button>`);
+        lines.push(`            </div>`);
+        lines.push(`          </form>`);
+        lines.push('        )}');
+      }
+
       lines.push('        </div>');
     } else {
       lines.push('        <div className="space-y-6 animate-fade-in" />');
     }
 
     lines.push('      )}');
+
+    // C2/G5: Role-based gating for admin resources in substantive content path
+    if (isAdminResource && deleteFnName) {
+      // Admin-only delete is handled by the modal gating below
+    }
 
     // Delete confirmation modal (still needed for CRUD pages)
     if (deleteFnName) {
@@ -1053,16 +1153,32 @@ function generateCrudPage(
   lines.push(`            <p className="text-sm text-[var(--muted)] mt-1">{loading ? 'Loading...' : \`\${${modelPlural}.length} ${modelPlural} total\`}</p>`);
   lines.push(`          </div>`);
   if (postFnName) {
-    lines.push(`          <button`);
-    lines.push(`            onClick={() => setShowForm(!showForm)}`);
-    lines.push(`            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--accent)] text-white rounded-[var(--radius)] font-medium hover:opacity-90 transition-all text-sm"`);
-    lines.push(`          >`);
-    lines.push(`            {showForm ? (`);
-    lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg> Cancel</>`);
-    lines.push(`            ) : (`);
-    lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg> Add ${singularLabel}</>`);
-    lines.push(`            )}`);
-    lines.push(`          </button>`);
+    if (isAdminResource) {
+      // C2/G5: Wrap create button in admin role check
+      lines.push(`          {user?.role === 'admin' && (`);
+      lines.push(`            <button`);
+      lines.push(`              onClick={() => setShowForm(!showForm)}`);
+      lines.push(`              className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--accent)] text-white rounded-[var(--radius)] font-medium hover:opacity-90 transition-all text-sm"`);
+      lines.push(`            >`);
+      lines.push(`              {showForm ? (`);
+      lines.push(`                <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg> Cancel</>`);
+      lines.push(`              ) : (`);
+      lines.push(`                <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg> Add ${singularLabel}</>`);
+      lines.push(`              )}`);
+      lines.push(`            </button>`);
+      lines.push(`          )}`);
+    } else {
+      lines.push(`          <button`);
+      lines.push(`            onClick={() => setShowForm(!showForm)}`);
+      lines.push(`            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--accent)] text-white rounded-[var(--radius)] font-medium hover:opacity-90 transition-all text-sm"`);
+      lines.push(`          >`);
+      lines.push(`            {showForm ? (`);
+      lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg> Cancel</>`);
+      lines.push(`            ) : (`);
+      lines.push(`              <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg> Add ${singularLabel}</>`);
+      lines.push(`            )}`);
+      lines.push(`          </button>`);
+    }
   }
   lines.push(`        </div>`);
 
@@ -1129,9 +1245,18 @@ function generateCrudPage(
       lines.push(`                      </button>`);
     }
     if (deleteFnName) {
-      lines.push(`                      <button onClick={() => setDeleteId(item.id)} className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--muted)] hover:text-red-400 transition-colors" title="Delete">`);
-      lines.push(`                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>`);
-      lines.push(`                      </button>`);
+      if (isAdminResource) {
+        // C2/G5: Wrap delete button in admin role check
+        lines.push(`                      {user?.role === 'admin' && (`);
+        lines.push(`                        <button onClick={() => setDeleteId(item.id)} className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--muted)] hover:text-red-400 transition-colors" title="Delete">`);
+        lines.push(`                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>`);
+        lines.push(`                        </button>`);
+        lines.push(`                      )}`);
+      } else {
+        lines.push(`                      <button onClick={() => setDeleteId(item.id)} className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--muted)] hover:text-red-400 transition-colors" title="Delete">`);
+        lines.push(`                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>`);
+        lines.push(`                      </button>`);
+      }
     }
     lines.push(`                    </div>`);
     lines.push(`                  </div>`);
@@ -1175,13 +1300,17 @@ function renderFormField(field: FormFieldInfo, binding: PageResourceBinding, ind
   const placeholder = `Enter ${label.toLowerCase()}...`;
   // T1.3: Required attribute from @db :required modifier
   const reqAttr = field.required ? ' required' : '';
+  // C2/G7: Inline validation error message for required fields
+  const errorLine = field.required
+    ? `\n${pad}  {fieldErrors.${field.name} && <p className="text-xs text-red-400 mt-1">{fieldErrors.${field.name}}</p>}`
+    : '';
 
   if (field.type === 'select' && field.enumValues) {
     return `${pad}<div>\n`
       + `${pad}  <label className="block text-sm font-medium mb-1.5">${label}</label>\n`
       + `${pad}  <select name="${field.name}"${reqAttr} className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm">\n`
       + field.enumValues.map(v => `${pad}    <option value="${v}">${capitalize(v)}</option>`).join('\n') + '\n'
-      + `${pad}  </select>\n`
+      + `${pad}  </select>${errorLine}\n`
       + `${pad}</div>`;
   }
   if (field.type === 'checkbox') {
@@ -1193,13 +1322,13 @@ function renderFormField(field: FormFieldInfo, binding: PageResourceBinding, ind
   if (field.type === 'textarea') {
     return `${pad}<div>\n`
       + `${pad}  <label className="block text-sm font-medium mb-1.5">${label}</label>\n`
-      + `${pad}  <textarea name="${field.name}" rows="3"${reqAttr} placeholder="${placeholder}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm resize-y" />\n`
+      + `${pad}  <textarea name="${field.name}"${reqAttr} rows="3" placeholder="${placeholder}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm resize-y" />${errorLine}\n`
       + `${pad}</div>`;
   }
 
   return `${pad}<div>\n`
     + `${pad}  <label className="block text-sm font-medium mb-1.5">${label}</label>\n`
-    + `${pad}  <input type="${field.type}" name="${field.name}"${reqAttr} placeholder="${placeholder}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm" />\n`
+    + `${pad}  <input type="${field.type}" name="${field.name}"${reqAttr} placeholder="${placeholder}" className="w-full border border-[var(--border-input)] rounded-[var(--radius)] px-3.5 py-2.5 bg-transparent text-sm" />${errorLine}\n`
     + `${pad}</div>`;
 }
 

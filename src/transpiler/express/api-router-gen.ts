@@ -367,16 +367,38 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock, options
       }).map(f => f.name)
     : [];
 
+  // C2/G4: Detect enum fields for query param filtering (status, priority, etc.)
+  const enumFields = model
+    ? model.fields.filter(f => {
+        const base = f.type.kind === 'optional' ? (f.type as { kind: 'optional'; of: { kind: string } }).of : f.type;
+        return base.kind === 'enum' && !f.primary;
+      }).map(f => f.name)
+    : [];
+
   // Build where clause
-  if (stringFields.length > 0) {
-    lines.push("    const search = (req.query.search as string) || '';");
-    lines.push("    const where = search ? {");
-    lines.push("      OR: [");
-    for (const f of stringFields) {
-      lines.push(`        { ${f}: { contains: search } },`);
+  if (stringFields.length > 0 || enumFields.length > 0) {
+    // C2/G4: Read enum filter params from query string
+    for (const ef of enumFields) {
+      lines.push(`    const ${ef}Filter = req.query.${ef} as string | undefined;`);
     }
-    lines.push("      ],");
-    lines.push("    } : {};");
+
+    if (stringFields.length > 0) {
+      lines.push("    const search = (req.query.search as string) || '';");
+      lines.push("    const where: Record<string, unknown> = search ? {");
+      lines.push("      OR: [");
+      for (const f of stringFields) {
+        lines.push(`        { ${f}: { contains: search } },`);
+      }
+      lines.push("      ],");
+      lines.push("    } : {};");
+    } else {
+      lines.push("    const where: Record<string, unknown> = {};");
+    }
+
+    // C2/G4: Merge enum filters into where clause
+    for (const ef of enumFields) {
+      lines.push(`    if (${ef}Filter) where.${ef} = ${ef}Filter;`);
+    }
   }
 
   // Exclude sensitive fields from response via select
@@ -392,7 +414,7 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock, options
   // Build prisma query args
   const queryParts: string[] = [];
   if (hasSensitiveFields) queryParts.push('select');
-  if (stringFields.length > 0) queryParts.push('where');
+  if (stringFields.length > 0 || enumFields.length > 0) queryParts.push('where');
   if (sortableFields.length > 0) {
     queryParts.push('orderBy');
   } else if (defaultOrderBy) {
@@ -406,7 +428,7 @@ export function generateFindManyHandler(handler: string, db: AirDbBlock, options
   // Total count + findMany
   lines.push(`    const [result, total] = await Promise.all([`);
   lines.push(`      prisma.${modelVar}.findMany(${queryArg}),`);
-  if (stringFields.length > 0) {
+  if (stringFields.length > 0 || enumFields.length > 0) {
     lines.push(`      prisma.${modelVar}.count({ where }),`);
   } else {
     lines.push(`      prisma.${modelVar}.count(),`);
@@ -853,6 +875,13 @@ export function generateResourceRouter(
     lines.push("import { createToken } from '../auth.js';");
   }
 
+  // C2/G5: Import requireRole when auth has role field and resource is not auth itself
+  const hasRoleAuth = ctx.auth?.role !== undefined;
+  const isAuthResource = routes.some(r => r.path.includes('/auth/'));
+  if (hasRoleAuth && !isAuthResource) {
+    lines.push("import { requireRole } from '../auth.js';");
+  }
+
   // Collect type names used
   const typeNames = getGeneratedTypeNames(ctx);
   const usedTypes: string[] = [];
@@ -869,6 +898,28 @@ export function generateResourceRouter(
 
   lines.push('');
   lines.push(`export const ${resourceKey}Router = Router();`);
+
+  // C2/G5: Apply role-based middleware to admin-level resources
+  // Heuristic: resources that are NOT the primary app model get admin-only write protection
+  if (hasRoleAuth && !isAuthResource) {
+    // Check if this resource is a management/admin resource (Agent, Department, etc.)
+    const primaryModel = ctx.db?.models.find(m => {
+      // Primary model heuristic: model with most routes
+      const routeCount = routes.filter(r => r.handler.includes(`.${m.name}.`)).length;
+      return routeCount >= 3;
+    });
+    const isPrimaryResource = primaryModel && routes.some(r => r.handler.includes(`.${primaryModel.name}.`));
+    if (!isPrimaryResource) {
+      // Admin-gated write operations for non-primary resources
+      lines.push(`// C2/G5: Admin-only write access for ${resourceKey} management`);
+      lines.push(`${resourceKey}Router.use((req: Request, res: Response, next: NextFunction) => {`);
+      lines.push("  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {");
+      lines.push("    return requireRole('admin')(req, res, next);");
+      lines.push('  }');
+      lines.push('  next();');
+      lines.push('});');
+    }
+  }
   lines.push('');
 
   // Compute base path shared by all routes in this group

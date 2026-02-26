@@ -98,7 +98,7 @@ export function generateApiClient(ctx: TranspileContext): string {
     const args: string[] = [];
     for (const p of pathParams) args.push(p);
     if (hasBody) args.push('data');
-    if (wantsPagination) args.push('{ page, limit, search, sort } = {}');
+    if (wantsPagination) args.push('{ page, limit, search, sort, ...filters } = {}');
     const sig = args.join(', ');
 
     // Build URL expression
@@ -116,6 +116,10 @@ export function generateApiClient(ctx: TranspileContext): string {
       lines.push("  if (limit !== undefined) params.set('limit', String(limit));");
       lines.push("  if (search) params.set('search', search);");
       lines.push("  if (sort) params.set('sort', sort);");
+      // C2/G4: Forward additional filter params (status, priority, etc.)
+      lines.push("  Object.entries(filters || {}).forEach(([k, v]) => {");
+      lines.push("    if (v !== undefined && v !== null && v !== '' && v !== 'all') params.set(k, String(v));");
+      lines.push("  });");
       lines.push(`  const qs = params.toString();`);
       lines.push(`  const url = qs ? ${urlExpr} + '?' + qs : ${urlExpr};`);
     }
