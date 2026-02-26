@@ -352,6 +352,18 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea {
 }
 form .form-group + button[type="submit"],
 form > button[type="submit"] { width: 100%; }
+
+/* ---- Auth Form Wrapper — flatten redundant main/grid structural elements ---- */
+.auth-form-wrapper > main,
+.auth-form-wrapper > main > div[class*="grid-cols"] {
+  display: contents;
+}
+.auth-form-wrapper > main > div[class*="grid-cols"] > div[class*="rounded"] {
+  padding: 2rem;
+  space-y: 1.25rem;
+}
+.auth-form-wrapper h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+.auth-form-wrapper form { margin-top: 0.5rem; }
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
@@ -397,9 +409,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 
 /* ---- Empty state ---- */
 .empty-state {
-  text-align: center; padding: 48px 24px; color: var(--muted);
-  font-size: 0.875rem;
+  text-align: center; padding: 56px 24px; color: var(--muted);
+  font-size: 0.875rem; line-height: 1.6;
 }
+.empty-state svg { margin: 0 auto 12px; opacity: 0.5; }
 
 /* ---- Code blocks ---- */
 code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
@@ -415,18 +428,39 @@ hr { border: none; }
 /* ---- Links ---- */
 a { transition: all 0.2s ease; }
 
+/* ---- Alerts ---- */
+.alert {
+  padding: 12px 16px; border-radius: var(--radius); font-size: 0.875rem;
+  border: 1px solid transparent;
+}
+.alert-error { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.2); color: #f87171; }
+.alert-success { background: rgba(34,197,94,0.08); border-color: rgba(34,197,94,0.2); color: #4ade80; }
+
 /* ---- Sidebar base ---- */
-aside { background: var(--surface); }
+aside {
+  background: var(--surface);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+aside::-webkit-scrollbar { width: 4px; }
+aside::-webkit-scrollbar-track { background: transparent; }
+aside::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
 /* ---- Utility animations ---- */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 
 .animate-fade-in { animation: fadeIn 0.2s ease-out; }
 .animate-slide-up { animation: slideUp 0.25s ease-out; }
 .animate-slide-in { animation: slideIn 0.2s ease-out; }
+.skeleton {
+  background: linear-gradient(90deg, var(--hover) 25%, rgba(var(--accent-rgb), 0.04) 50%, var(--hover) 75%);
+  background-size: 200% 100%; animation: shimmer 1.5s infinite;
+  border-radius: var(--radius);
+}
 
 /* ---- Delete/Confirm Modal ---- */
 .modal-backdrop {

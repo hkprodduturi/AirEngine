@@ -589,8 +589,11 @@ function generateOriginalPage(
     lines.push('    </div>');
   } else if (isDeepForm && !hasSidebar) {
     // Deep form page (e.g. main>grid:1(card(form(...)))) — no redundant bg
+    // Auth pages: add auth-form-wrapper class to flatten redundant main/grid via CSS display:contents
+    const isAuth = isAuthPageName(page.name);
+    const wrapperCls = isAuth ? 'w-full max-w-md animate-fade-in auth-form-wrapper' : 'w-full max-w-md animate-fade-in';
     lines.push('    <div className="flex items-center justify-center min-h-screen">');
-    lines.push('      <div className="w-full max-w-md animate-fade-in">');
+    lines.push(`      <div className="${wrapperCls}">`);
     const childJsx = page.children.map(c => generateJSX(c, ctx, analysis, ROOT_SCOPE, 8)).filter(Boolean).join('\n');
     lines.push(childJsx);
     lines.push('      </div>');

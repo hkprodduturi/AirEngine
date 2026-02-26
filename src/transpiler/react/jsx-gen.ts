@@ -91,8 +91,34 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
   const lines: string[] = [];
   lines.push(`<div className="${rootClasses}">`);
 
-  // When auth-gated without Layout, render auth pages outside the constrained wrapper
-  // so login/register get full-screen centering without conflicting max-width/padding
+  // When auth-gated, render pages without the constraining wrapper.
+  // - With Layout: all non-auth pages are self-contained (import their own Layout)
+  // - Without Layout: auth pages render full-screen, non-auth pages get wrapper
+  if (hasAuthGating && hasLayout && analysis.hasPages) {
+    // All pages self-contained — render directly without wrapper
+    const allPages: AirUINode[] = [];
+    for (const node of ctx.uiNodes) {
+      allPages.push(...extractScopedPages(node));
+    }
+
+    if (useLazy) {
+      lines.push(`  <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>}>`);
+      for (const pn of allPages) {
+        const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, 4);
+        if (jsx) lines.push(jsx);
+      }
+      lines.push('  </Suspense>');
+    } else {
+      for (const pn of allPages) {
+        const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, 2);
+        if (jsx) lines.push(jsx);
+      }
+    }
+
+    lines.push('</div>');
+    return lines;
+  }
+
   if (hasAuthGating && !hasLayout && analysis.hasPages) {
     const allPages: AirUINode[] = [];
     for (const node of ctx.uiNodes) {

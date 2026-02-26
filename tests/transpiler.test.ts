@@ -960,7 +960,7 @@ describe('transpile: output structure', () => {
     expect(css).toContain('border-collapse');
     expect(css).toContain('button:disabled');
     expect(css).toContain('rgba(var(--accent-rgb)');
-    expect(css).toContain('aside { background: var(--surface)');
+    expect(css).toContain('background: var(--surface)');
   });
 
   it('App.jsx uses CSS variables for component styling', () => {
