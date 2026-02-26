@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/self-heal-verify/1.0",
+  "title": "AirEngine Self-Heal Verification Result",
+  "description": "Schema for verification reports produced by the verifier orchestrator (SH4). Validates patches against type checks, tests, quality gates, and golden runs.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "verify_id",
+    "patch_id",
+    "incident_id",
+    "timestamp",
+    "steps",
+    "verdict",
+    "total_duration_ms"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "verify_id": {
+      "type": "string",
+      "pattern": "^SV-\\d{8}-\\d{6}-[a-z0-9]{6}$"
+    },
+    "patch_id": { "type": "string" },
+    "incident_id": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/verifyStep" }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail", "partial"]
+    },
+    "total_duration_ms": { "type": "number", "minimum": 0 },
+    "recurrence_tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "promotion": {
+      "oneOf": [{ "$ref": "#/$defs/promotionRecord" }, { "type": "null" }]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "verifyStep": {
+      "type": "object",
+      "required": ["name", "command", "status", "duration_ms"],
+      "properties": {
+        "name": { "type": "string" },
+        "command": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "skip"]
+        },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "output_summary": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "exit_code": {
+          "oneOf": [{ "type": "integer" }, { "type": "null" }]
+        }
+      },
+      "additionalProperties": false
+    },
+    "promotionRecord": {
+      "type": "object",
+      "required": ["regression_test_added", "invariant_added"],
+      "properties": {
+        "regression_test_added": { "type": "boolean" },
+        "invariant_added": { "type": "boolean" },
+        "golden_coverage_added": { "type": "boolean" },
+        "sweep_coverage_added": { "type": "boolean" },
+        "details": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

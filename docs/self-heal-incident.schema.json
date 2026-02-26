@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/self-heal-incident/1.0",
+  "title": "AirEngine Self-Heal Incident",
+  "description": "Schema for captured self-healing incidents — failures detected from goldens, evals, runtime QA, manual runs, or local preview.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "incident_id",
+    "timestamp",
+    "source",
+    "stage",
+    "severity",
+    "summary",
+    "error",
+    "inputs",
+    "evidence",
+    "status",
+    "tags"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "incident_id": {
+      "type": "string",
+      "pattern": "^SH-\\d{8}-\\d{6}-[a-z0-9]{6}$",
+      "description": "Unique incident ID: SH-YYYYMMDD-HHmmss-<random6>"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "stability-sweep",
+        "helpdesk-golden",
+        "photography-golden",
+        "eval-complex",
+        "eval-online",
+        "foundation-check",
+        "quality-gate",
+        "manual",
+        "runtime-ui",
+        "runtime-server",
+        "local-preview",
+        "ci"
+      ]
+    },
+    "command": {
+      "oneOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "validate",
+        "repair",
+        "transpile",
+        "smoke",
+        "build",
+        "seed",
+        "runtime-ui",
+        "runtime-server",
+        "qa-visual",
+        "golden-check",
+        "invariant-check",
+        "other"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["p0", "p1", "p2", "p3"]
+    },
+    "classification": {
+      "oneOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "suspected_subsystem": {
+      "oneOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "error": { "$ref": "#/$defs/errorDetail" },
+    "inputs": { "$ref": "#/$defs/inputsDetail" },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidenceItem" }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "triaged", "patching", "verifying", "resolved", "wont_fix", "duplicate"]
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "triage": {
+      "oneOf": [{ "$ref": "#/$defs/triageResult" }, { "type": "null" }]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "errorDetail": {
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "message": { "type": "string" },
+        "stack": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "raw_output": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "error_code": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "http_status": { "oneOf": [{ "type": "integer" }, { "type": "null" }] }
+      },
+      "additionalProperties": false
+    },
+    "inputsDetail": {
+      "type": "object",
+      "properties": {
+        "air_file": { "oneOf": [{ "$ref": "#/$defs/fileRef" }, { "type": "null" }] },
+        "generated_file": { "oneOf": [{ "$ref": "#/$defs/fileRef" }, { "type": "null" }] },
+        "output_dir": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "page_name": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "route_path": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "seed_file": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "example_id": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      },
+      "additionalProperties": false
+    },
+    "fileRef": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "hash": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      },
+      "additionalProperties": false
+    },
+    "evidenceItem": {
+      "type": "object",
+      "required": ["kind", "content"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "console_line",
+            "stack_frame",
+            "generated_snippet",
+            "request_response",
+            "screenshot_path",
+            "dom_snapshot_path",
+            "css_fragment",
+            "raw_output",
+            "test_output",
+            "config_snippet"
+          ]
+        },
+        "content": { "type": "string" },
+        "file_path": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "line_number": { "oneOf": [{ "type": "integer" }, { "type": "null" }] },
+        "label": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      },
+      "additionalProperties": false
+    },
+    "triageResult": {
+      "type": "object",
+      "required": [
+        "classification",
+        "suspected_subsystem",
+        "confidence",
+        "triage_notes",
+        "recommended_next_step"
+      ],
+      "properties": {
+        "classification": { "type": "string" },
+        "suspected_subsystem": { "type": "string" },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "triage_notes": { "type": "string" },
+        "recommended_next_step": { "type": "string" },
+        "suggested_tests": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "suggested_invariant": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

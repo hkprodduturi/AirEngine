@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/self-heal-knowledge/1.0",
+  "title": "AirEngine Self-Heal Knowledge Entry",
+  "description": "Schema for knowledge store entries (SH5). Each entry represents a resolved incident with its patch, tests, invariants, and recurrence metadata for retrieval-first reuse.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "knowledge_id",
+    "incident_id",
+    "timestamp",
+    "classification",
+    "subsystem",
+    "root_cause",
+    "fix_summary",
+    "patch_id",
+    "tests_added",
+    "invariants_added",
+    "recurrence_tags",
+    "retrieval_keywords"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "knowledge_id": {
+      "type": "string",
+      "pattern": "^SK-\\d{8}-\\d{6}-[a-z0-9]{6}$"
+    },
+    "incident_id": { "type": "string" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "classification": { "type": "string" },
+    "subsystem": { "type": "string" },
+    "root_cause": { "type": "string" },
+    "fix_summary": { "type": "string" },
+    "patch_id": {
+      "oneOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "files_changed": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tests_added": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "invariants_added": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "recurrence_tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "retrieval_keywords": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "occurrence_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "related_incidents": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "verified": { "type": "boolean" },
+    "promoted_to_regression": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

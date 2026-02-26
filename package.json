@@ -41,7 +41,14 @@
     "helpdesk-golden": "node --import tsx scripts/helpdesk-golden-run.ts",
     "photography-golden": "node --import tsx scripts/photography-premium-golden-run.ts",
     "eval-complex": "node --import tsx scripts/eval-complex.ts",
-    "complex-readiness": "npm run test:complex-baseline && npm run test:complex-gaps && npm run helpdesk-golden"
+    "complex-readiness": "npm run test:complex-baseline && npm run test:complex-gaps && npm run helpdesk-golden",
+    "capture-incident": "node --import tsx scripts/capture-incident.ts",
+    "classify-incident": "node --import tsx scripts/classify-incident.ts",
+    "patch-incident": "node --import tsx scripts/patch-incident.ts",
+    "verify-patch": "node --import tsx scripts/verify-patch.ts",
+    "knowledge-store": "node --import tsx scripts/knowledge-store.ts",
+    "promote-fix": "node --import tsx scripts/promote-fix.ts",
+    "model-assisted": "node --import tsx scripts/model-assisted.ts"
   },
   "keywords": [
     "ai",
