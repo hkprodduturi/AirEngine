@@ -128,6 +128,7 @@ export interface MockablePage {
   click(selector: string, options?: Record<string, unknown>): Promise<void>;
   fill?(selector: string, value: string): Promise<void>;
   waitForSelector?(selector: string, options?: Record<string, unknown>): Promise<unknown>;
+  waitForEvent?(event: string, options?: Record<string, unknown>): Promise<unknown>;
   evaluate<T>(fn: (() => T) | string): Promise<T>;
   screenshot?(options?: Record<string, unknown>): Promise<Buffer>;
   close?(): Promise<void>;
@@ -280,6 +281,22 @@ export async function detectDeadCTA(
   const expected = step.expected || {};
   const urlBefore = page.url();
 
+  // Pre-click: detect if element has target="_blank" (opens new tab)
+  let isBlankTarget = false;
+  if (step.selector) {
+    try {
+      const firstSelector = step.selector.split(',')[0].split(':has-text')[0].trim();
+      isBlankTarget = await page.evaluate(`
+        (() => {
+          const el = document.querySelector(${JSON.stringify(firstSelector)});
+          return el ? el.getAttribute('target') === '_blank' : false;
+        })()
+      `);
+    } catch {
+      // Ignore
+    }
+  }
+
   // Setup DOM mutation observer if expected
   let domChanged = false;
   if (expected.dom_mutation) {
@@ -297,18 +314,48 @@ export async function detectDeadCTA(
   // Record network request count before
   const networkBefore = networkRequests.length;
 
-  // Click the element
-  if (step.selector) {
-    try {
-      await page.click(step.selector, { timeout: 2000 });
-    } catch {
-      // Click failed — element may not exist
+  // For target="_blank" links, listen for popup event
+  let popupOpened = false;
+  let popupPage: { url(): string; close?(): Promise<void> } | null = null;
+  if (isBlankTarget && page.waitForEvent) {
+    // Race the click + popup detection
+    const popupPromise = page.waitForEvent('popup', { timeout: 5000 }).then((p: any) => {
+      popupOpened = true;
+      popupPage = p;
+      return p;
+    }).catch(() => { /* no popup within timeout */ });
+
+    // Click the element
+    if (step.selector) {
+      try {
+        await page.click(step.selector, { timeout: 2000 });
+      } catch {
+        // Click failed — element may not exist
+      }
+    }
+
+    await popupPromise;
+
+    // Close the popup to keep the browser state clean
+    if (popupPage && (popupPage as any).close) {
+      try { await (popupPage as any).close(); } catch { /* ignore */ }
+    }
+  } else {
+    // Click the element (normal flow)
+    if (step.selector) {
+      try {
+        await page.click(step.selector, { timeout: 2000 });
+      } catch {
+        // Click failed — element may not exist
+      }
     }
   }
 
-  // Wait for effects
-  const timeoutMs = 2000;
-  await new Promise(r => setTimeout(r, timeoutMs));
+  // Wait for effects (skip long wait if popup already confirmed)
+  if (!popupOpened) {
+    const timeoutMs = 2000;
+    await new Promise(r => setTimeout(r, timeoutMs));
+  }
 
   // Check DOM mutations
   if (expected.dom_mutation) {
@@ -329,7 +376,8 @@ export async function detectDeadCTA(
 
   if (expected.url_change) {
     const urlAfter = page.url();
-    if (urlAfter !== urlBefore) {
+    // For target="_blank" links, a popup counts as url_change
+    if (urlAfter !== urlBefore || popupOpened) {
       allExpectedAbsent = false;
     }
   }

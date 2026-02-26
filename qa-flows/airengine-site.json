@@ -1,0 +1,188 @@
+{
+  "flow_id": "airengine-site",
+  "description": "Verify AirEngine marketing site: nav links, CTA buttons, external links, and template showcase cards.",
+  "base_url_client": "http://localhost:5173",
+  "base_url_server": "http://localhost:5173",
+  "preflight_health_path": "/",
+  "steps": [
+    {
+      "step_id": "nav-home",
+      "label": "Navigate to homepage",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "nav"
+      }
+    },
+    {
+      "step_id": "click-get-started",
+      "label": "Click Get Started CTA",
+      "action": "click",
+      "selector": "a[href='#quickstart'], button:has-text('Get Started')",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "click-nav-stats",
+      "label": "Click Stats nav link",
+      "action": "click",
+      "selector": "a[href='#stats']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true
+    },
+    {
+      "step_id": "click-nav-flagship",
+      "label": "Click Showcase nav link",
+      "action": "click",
+      "selector": "a[href='#flagship']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true
+    },
+    {
+      "step_id": "click-nav-templates",
+      "label": "Click Templates nav link",
+      "action": "click",
+      "selector": "a[href='#templates']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "click-nav-docs",
+      "label": "Click Docs nav link",
+      "action": "click",
+      "selector": "a[href='#docs']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true
+    },
+    {
+      "step_id": "click-view-github",
+      "label": "Click View on GitHub link (target=_blank)",
+      "action": "click",
+      "selector": "a[href*='github.com/hkprodduturi/AirEngine']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "nav-back-github",
+      "label": "Navigate back after GitHub",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "nav"
+      }
+    },
+    {
+      "step_id": "click-read-spec",
+      "label": "Click Read the Full Spec link (target=_blank)",
+      "action": "click",
+      "selector": "a[href*='SPEC.md']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "nav-back-spec",
+      "label": "Navigate back after Spec",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "nav"
+      }
+    },
+    {
+      "step_id": "click-mcp-integration",
+      "label": "Click MCP Integration link (target=_blank)",
+      "action": "click",
+      "selector": "a[href*='mcp-quickstart']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true
+    },
+    {
+      "step_id": "nav-back-mcp",
+      "label": "Navigate back after MCP",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "nav"
+      }
+    },
+    {
+      "step_id": "click-todo-template",
+      "label": "Click Todo template card (target=_blank)",
+      "action": "click",
+      "selector": "a[href*='gallery/previews/todo']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "nav-back-todo",
+      "label": "Navigate back after Todo",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "nav"
+      }
+    },
+    {
+      "step_id": "click-crm-template",
+      "label": "Click CRM template card (target=_blank)",
+      "action": "click",
+      "selector": "a[href*='gallery/previews/crm']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "nav-back-crm",
+      "label": "Navigate back after CRM",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "nav"
+      }
+    },
+    {
+      "step_id": "click-ecommerce-template",
+      "label": "Click E-Commerce template card (target=_blank)",
+      "action": "click",
+      "selector": "a[href*='gallery/previews/ecommerce']",
+      "expected": {
+        "url_change": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "check-console-errors",
+      "label": "Check for console errors",
+      "action": "check_console",
+      "expected": {
+        "no_errors": true
+      }
+    }
+  ]
+}

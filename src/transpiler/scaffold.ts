@@ -529,6 +529,10 @@ section#hero p { font-size: 1.25rem; max-width: 600px; }
 .faq-group details summary::-webkit-details-marker { display: none; }
 .faq-group details[open] summary { color: var(--accent); }
 .faq-group details > div { padding: 0 0 16px 0; color: var(--muted); }
+` : '')
+  + (ctx.navRoutes.some(r => r.path.startsWith('/#')) ? `
+/* ---- Smooth scroll for section-based nav ---- */
+html { scroll-behavior: smooth; }
 ` : '');
 }
 

@@ -10,7 +10,7 @@
 
 @style(theme:dark,accent:#6366f1,radius:12,font:display+sans,maxWidth:1200,variant:modern-dark)
 
-@nav(/#hero,/#stats,/#flagship,/#how-it-works,/#self-heal,/#quickstart,/#docs)
+@nav(/#hero,/#stats,/#flagship,/#how-it-works,/#self-heal,/#templates,/#quickstart,/#docs)
 
 @ui(
   @section:hero(
@@ -19,7 +19,7 @@
     p:muted>"Not a template pack. Not a black-box prompt toy. A real compiler that produces owned, readable code in milliseconds."
     row(
       btn:primary>"Get Started"
-      btn:secondary>"View on GitHub"
+      link:secondary:"https://github.com/hkprodduturi/AirEngine">"View on GitHub"
     )
     code:block(
       "@app:helpdesk"
@@ -145,40 +145,113 @@
     )
   )
 
+  @section:templates(
+    h2>"Ready-to-Use Templates"
+    p:lead>"From todo apps to full-stack SaaS platforms — every template is a complete, working application."
+
+    grid:3(
+      card(
+        h3>"Todo"
+        badge:"12 lines"+badge:"Frontend"
+        p>"Classic todo app with filters and local persistence. Add, complete, and delete tasks."
+      )
+      card(
+        h3>"SalesCRM"
+        badge:"170 lines"+badge:"Full-Stack"
+        p>"Contacts, companies, deals pipeline, and activity tracking. Demonstrates enum workflows, kanban layout, complex filters."
+      )
+      card(
+        h3>"ProjectFlow"
+        badge:"302 lines"+badge:"Full-Stack"
+        p>"A complete project management app demonstrating every block type AirEngine supports."
+      )
+    )
+    grid:3(
+      card(
+        h3>"E-Commerce"
+        badge:"132 lines"+badge:"Full-Stack"
+        p>"Products, categories, cart, orders, and checkout. Demonstrates complex cart mutations and webhooks."
+      )
+      card(
+        h3>"Blog CMS"
+        badge:"127 lines"+badge:"Full-Stack"
+        p>"Posts, authors, categories, tags with many-to-many. Demonstrates m:n relations and multi-page editor."
+      )
+      card(
+        h3>"Kanban"
+        badge:"110 lines"+badge:"Full-Stack"
+        p>"Boards, columns, and cards with drag-style kanban layout. Demonstrates multi-column layout and card ordering."
+      )
+    )
+    grid:2(
+      card(
+        h3>"LearnAIR LMS"
+        badge:"138 lines"+badge:"Full-Stack"
+        p>"Courses, lessons, enrollment, and progress tracking. Demonstrates junction with extra fields, email, queue."
+      )
+      card(
+        h3>"MediClinic"
+        badge:"160 lines"+badge:"Full-Stack"
+        p>"Doctors, patients, appointments, and department tracking. Demonstrates scheduling workflows and stats."
+      )
+    )
+  )
+
   @section:quickstart(
     h2>"Get Started"
-    p:lead>"Everything works offline. No API key required for the core pipeline."
+    p:lead>"Install via npm. Everything works offline. No API key required for the core pipeline."
 
-    h3>"Install and Verify"
+    h3>"Install via npm"
     code:block(
-      "git clone https://github.com/hkprodduturi/AirEngine.git"
-      +"cd AirEngine && npm install"
-      +"npx tsx src/cli/index.ts doctor"
-      +"npm run quality-gate -- --mode offline"
+      "npm install -g airengine"
+      +"air --version"
+    )
+    p:muted>"Or use npx to run without installing globally:"
+    code:block(
+      "npx airengine transpile myapp.air"
     )
 
-    h3>"Transpile a Flagship App"
+    h3>"Create and Compile Your First App"
     code:block(
-      "npx tsx src/cli/index.ts transpile examples/photography-studio-premium.air -o ./output --no-incremental"
+      "# Create a new .air file"
+      +"air init myapp.air"
+      +""
+      +"# Transpile to React + Express + Prisma"
+      +"air transpile myapp.air --output ./output"
+      +""
+      +"# Validate your .air file"
+      +"air validate myapp.air"
+      +""
+      +"# Run diagnostics"
+      +"air doctor myapp.air"
     )
 
     h3>"Run the Generated App"
     code:block(
-      "# Terminal 1 - Server:"
+      "# Frontend-only apps:"
+      +"cd output && npm install && npx vite"
+      +""
+      +"# Fullstack apps:"
+      +"# Terminal 1 - Server:"
       +"cd output/server && npm install"
-      +"printf DATABASE_URL=file:./dev.db JWT_SECRET=dev-secret SMTP_HOST=localhost PORT=3001 > .env"
+      +"printf DATABASE_URL=file:./dev.db JWT_SECRET=dev-secret PORT=3001 > .env"
       +"npx prisma db push && npx prisma generate && npx tsx seed.ts && npx tsx server.ts"
       +""
       +"# Terminal 2 - Client:"
       +"cd output/client && npm install && npx vite --port 5173"
     )
 
-    h3>"Validation Commands"
+    h3>"Watch Mode (Hot Reload)"
     code:block(
-      "npm run helpdesk-golden         # 32 capability checks"
-      +"npm run photography-golden      # 33 capability checks"
-      +"npm run eval-complex            # 6/6 replay fixtures"
-      +"npm run stability-sweep -- --mode offline  # 10/10 sweep"
+      "air dev myapp.air"
+    )
+    p:muted>"Watches for .air file changes, re-transpiles instantly, Vite HMR for the client."
+
+    h3>"Install from Source"
+    code:block(
+      "git clone https://github.com/hkprodduturi/AirEngine.git"
+      +"cd AirEngine && npm install"
+      +"npm run quality-gate -- --mode offline  # 1131 tests"
     )
   )
 
@@ -212,8 +285,8 @@
     )
 
     row:center(
-      btn:primary>"Read the Full Spec"
-      btn:secondary>"MCP Integration"
+      link:primary:"https://github.com/hkprodduturi/AirEngine/blob/main/SPEC.md">"Read the Full Spec"
+      link:secondary:"https://github.com/hkprodduturi/AirEngine/blob/main/docs/mcp-quickstart.md">"MCP Integration"
     )
   )
 
@@ -222,9 +295,9 @@
     p:muted>"AirEngine v0.2.0 — AI-authored IR, deterministic compiler, owned code."
     p:small>"MIT License"
     row:center(
-      link>"GitHub"
-      link>"Docs"
-      link>"Spec"
+      link:"https://github.com/hkprodduturi/AirEngine">"GitHub"
+      link:"https://github.com/hkprodduturi/AirEngine/blob/main/docs/quickstart-local.md">"Docs"
+      link:"https://github.com/hkprodduturi/AirEngine/blob/main/SPEC.md">"Spec"
     )
   )
 )

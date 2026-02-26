@@ -225,6 +225,25 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
     return lines;
   }
 
+  // Section-based pages with @nav hash routes → render sticky nav bar
+  const hashNavRoutes = ctx.navRoutes.filter(r => r.path.startsWith('/#'));
+  if (hashNavRoutes.length > 0 && !analysis.hasPages && analysis.sections.length > 0) {
+    const appTitle = capitalize(ctx.appName).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    lines.push('    <nav className="sticky top-0 z-50 backdrop-blur-md bg-[var(--bg)]/80 border-b border-[var(--border)] py-3 px-6 flex items-center justify-between">');
+    lines.push(`      <a href="#${analysis.sections[0]?.name || ''}" className="flex items-center gap-2 no-underline hover:opacity-90 transition-opacity">`);
+    lines.push('        <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M18 4L8 18h6l-2 10 10-14h-6l2-10z" fill="white" /></svg>');
+    lines.push(`        <span className="font-bold text-lg text-[var(--fg)]">${appTitle}</span>`);
+    lines.push('      </a>');
+    lines.push('      <div className="flex gap-6 text-sm">');
+    for (const route of hashNavRoutes) {
+      const sectionName = route.path.slice(2); // strip "/#"
+      const label = capitalize(sectionName).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      lines.push(`        <a href="#${sectionName}" className="text-[var(--muted)] no-underline hover:text-[var(--fg)] transition-colors">${label}</a>`);
+    }
+    lines.push('      </div>');
+    lines.push('    </nav>');
+  }
+
   if (hasSidebar) {
     lines.push('  <div className="flex min-h-screen">');
   } else if (wrapperClass) {
@@ -862,6 +881,14 @@ export function generateFlowJSX(
         }
       }
 
+      // CTA button on section-based page → anchor link to matching section
+      if (!scope.insideNav && (leftResolved.element === 'btn' || leftResolved.element === 'button') && !analysis.hasPages && analysis.sections.length > 0) {
+        const sectionTarget = matchCtaToSection(node.right.text, analysis);
+        if (sectionTarget) {
+          return `${pad}<a href="#${sectionTarget}"${classAttr(mapping.className + ' inline-flex items-center justify-center no-underline')}>${escapeText(node.right.text)}</a>`;
+        }
+      }
+
       // img/a: text becomes src/href attribute, not children
       if (mapping.tag === 'img') {
         return `${pad}<img src="${escapeAttr(node.right.text)}"${classAttr(mapping.className)} alt="${escapeAttr(leftResolved.modifiers[0] || 'image')}" />`;
@@ -874,12 +901,21 @@ export function generateFlowJSX(
           const bindInfo = resolveBindChain(node.left);
           if (bindInfo?.label) href = bindInfo.label;
         }
+        // If href is still '#', check if text itself is a URL or file path
+        if (href === '#') {
+          if (/^https?:\/\//.test(textContent)) {
+            href = textContent;
+          } else if (/\.\w{2,4}$/.test(textContent) || (textContent.includes('/') && !textContent.includes(' '))) {
+            // Text looks like a file path (e.g., "docs/quickstart.md") — use as href
+            href = textContent;
+          }
+        }
         // For page-based navigation, internal paths use setCurrentPage
         if (href.startsWith('/') && analysis.hasPages) {
           const pageName = href.slice(1);
           return `${pad}<a href="#"${classAttr(mapping.className)} onClick={(e) => { e.preventDefault(); setCurrentPage('${pageName}'); }}>${escapeText(textContent)}</a>`;
         }
-        const external = (href.startsWith('http') || href.endsWith('.html'))
+        const external = (href.startsWith('http') || href.endsWith('.html') || href.endsWith('.md'))
           ? ' target="_blank" rel="noopener noreferrer"' : '';
         return `${pad}<a href="${escapeAttr(href)}"${classAttr(mapping.className)}${external}>${escapeText(textContent)}</a>`;
       }
@@ -1363,13 +1399,16 @@ export function generateBoundElement(
     return `${pad}<img src="${escapeAttr(src)}" alt="${escapeAttr(resolved.modifiers[0] || 'image')}" className="${mapping.className}" />`;
   }
 
-  // Link with href
+  // Link with href — detect URLs and file paths in text content
   if (resolved.element === 'link') {
-    const href = binding.kind === 'text' ? binding.text
+    let href = binding.kind === 'text' ? binding.text
       : binding.kind === 'element' ? binding.element
       : '#';
-    const externalLink = href.startsWith('http') ? ' target="_blank" rel="noopener noreferrer"' : '';
-    return `${pad}<a href="${escapeAttr(href.startsWith('/') ? '#' + href : href)}" className="${mapping.className}"${externalLink}>`;
+    // Detect file paths and URLs in text
+    const isUrl = /^https?:\/\//.test(href);
+    const isPath = !isUrl && (/\.\w{2,4}$/.test(href) || (href.includes('/') && !href.includes(' ')));
+    const externalLink = (isUrl || isPath) ? ' target="_blank" rel="noopener noreferrer"' : '';
+    return `${pad}<a href="${escapeAttr(href.startsWith('/') && !isPath ? '#' + href : href)}" className="${mapping.className}"${externalLink}>`;
   }
 
   // Generic: render element displaying the binding value
@@ -1984,6 +2023,46 @@ export function matchCtaToPage(
   // 4. Fallback: direct substring against all pages (admin included)
   for (const page of allPageNames) {
     if (lower.includes(page)) return page;
+  }
+
+  return null;
+}
+
+/**
+ * Match CTA button text to a section name for anchor links on section-based pages.
+ */
+const CTA_SECTION_SYNONYMS: [string[], string[]][] = [
+  [['get started', 'start', 'begin', 'try'], ['quickstart', 'getting-started', 'start']],
+  [['documentation', 'docs', 'learn more', 'read'], ['docs', 'documentation']],
+  [['view', 'browse', 'explore', 'showcase'], ['showcase', 'flagship', 'gallery', 'templates']],
+  [['pricing', 'plans', 'cost'], ['pricing']],
+  [['contact', 'reach', 'touch'], ['contact', 'cta', 'footer']],
+];
+
+export function matchCtaToSection(
+  text: string,
+  analysis: UIAnalysis,
+): string | null {
+  const sectionNames = analysis.sections.map(s => s.name);
+  if (sectionNames.length === 0) return null;
+
+  const lower = text.toLowerCase();
+
+  // 1. Exact match
+  if (sectionNames.includes(lower)) return lower;
+
+  // 2. Direct substring
+  for (const name of sectionNames) {
+    if (lower.includes(name)) return name;
+  }
+
+  // 3. Synonym matching
+  for (const [keywords, candidates] of CTA_SECTION_SYNONYMS) {
+    if (keywords.some(k => lower.includes(k))) {
+      for (const cand of candidates) {
+        if (sectionNames.includes(cand)) return cand;
+      }
+    }
   }
 
   return null;

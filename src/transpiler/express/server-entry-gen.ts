@@ -49,8 +49,21 @@ export function generateServerEntry(ctx: TranspileContext): string {
   lines.push('');
 
   // Middleware stack (order matters: security → parsing → logging → rate limit → auth → routes → errors)
-  lines.push('// Security');
-  lines.push('app.use(helmet());');
+  lines.push('// Security — CSP configured for React SPA compatibility');
+  lines.push('app.use(helmet({');
+  lines.push('  contentSecurityPolicy: {');
+  lines.push('    directives: {');
+  lines.push("      defaultSrc: [\"'self'\"],");
+  lines.push("      scriptSrc: [\"'self'\"],");
+  lines.push("      styleSrc: [\"'self'\", \"'unsafe-inline'\"],");
+  lines.push("      imgSrc: [\"'self'\", \"data:\", \"blob:\"],");
+  lines.push("      connectSrc: [\"'self'\"],");
+  lines.push("      fontSrc: [\"'self'\", \"https:\", \"data:\"],");
+  lines.push("      objectSrc: [\"'none'\"],");
+  lines.push("      frameAncestors: [\"'self'\"],");
+  lines.push('    },');
+  lines.push('  },');
+  lines.push('}));');
   lines.push(`app.use(cors({ origin: ${corsOrigin}, credentials: true, exposedHeaders: ['X-Total-Count'] }));`);
   lines.push('');
   lines.push('// Parsing');

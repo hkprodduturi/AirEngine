@@ -1889,7 +1889,10 @@ describe('Batch 2: security hardening defaults', () => {
     const result = transpileFile('fullstack-todo');
     const server = result.files.find(f => f.path === 'server/server.ts')!;
     expect(server.content).toContain("import helmet from 'helmet'");
-    expect(server.content).toContain('app.use(helmet())');
+    expect(server.content).toContain('app.use(helmet({');
+    expect(server.content).toContain("scriptSrc: [\"'self'\"]");
+    expect(server.content).toContain("styleSrc: [\"'self'\", \"'unsafe-inline'\"]");
+    expect(server.content).toContain("objectSrc: [\"'none'\"]");
   });
 
   it('server.ts includes request body size limit', () => {

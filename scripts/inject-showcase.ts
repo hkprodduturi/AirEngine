@@ -6,8 +6,8 @@
  * Example: npx tsx scripts/inject-showcase.ts ./site gallery/catalog.json
  */
 
-import { readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from 'fs';
+import { join, resolve } from 'path';
 
 const siteDir = process.argv[2] || './site';
 const catalogPath = process.argv[3] || 'gallery/catalog.json';
@@ -48,11 +48,20 @@ if (!content.includes('useMemo')) {
   );
 }
 
-// Replace the templates section with <TemplatesShowcase />
-content = content.replace(
-  /<section id="templates"[^]*?<\/section>/,
-  '<TemplatesShowcase />'
-);
+// Insert <TemplatesShowcase /> before the footer section
+// If there's an existing templates section, replace it; otherwise inject before footer
+if (/<section id="templates"/.test(content)) {
+  content = content.replace(
+    /<section id="templates"[^]*?<\/section>/,
+    '<TemplatesShowcase />'
+  );
+} else {
+  // Insert before the footer section
+  content = content.replace(
+    '<section id="footer"',
+    '<TemplatesShowcase />\n        <section id="footer"'
+  );
+}
 
 // Append the TemplatesShowcase component after the closing of App
 const showcaseComponent = `
@@ -86,7 +95,7 @@ function TemplatesShowcase() {
         {visible.map(t => (
           <a
             key={t.slug}
-            href={\`./gallery/previews/\${t.slug}/\`}
+            href={\`./gallery/previews/\${t.slug}/index.html\`}
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -188,3 +197,28 @@ if (lastExportEnd !== -1) {
 
 writeFileSync(appJsxPath, content, 'utf-8');
 console.log(`  ✓ Injected template showcase (${picks.length} cards) into ${appJsxPath}`);
+
+// --- Copy gallery preview dist files into output/public so Vite serves them ---
+const projectRoot = resolve(siteDir, '..');
+const publicGalleryDir = join(siteDir, 'public', 'gallery');
+
+// Copy each template preview's dist/ into public/gallery/previews/{slug}/
+let copiedCount = 0;
+for (const t of picks) {
+  const previewDist = join(projectRoot, 'gallery', 'previews', t.slug, 'dist');
+  const targetDir = join(publicGalleryDir, 'previews', t.slug);
+  if (existsSync(previewDist)) {
+    mkdirSync(targetDir, { recursive: true });
+    cpSync(previewDist, targetDir, { recursive: true });
+    copiedCount++;
+  }
+}
+
+// Copy gallery main dist/ (browse all page)
+const galleryDist = join(projectRoot, 'gallery', 'dist');
+if (existsSync(galleryDist)) {
+  mkdirSync(publicGalleryDir, { recursive: true });
+  cpSync(galleryDist, publicGalleryDir, { recursive: true });
+}
+
+console.log(`  ✓ Copied ${copiedCount} gallery previews into ${publicGalleryDir}`);

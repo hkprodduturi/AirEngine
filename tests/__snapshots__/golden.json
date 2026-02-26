@@ -46,7 +46,7 @@
       "server/validation.ts": "55ec69844a040b3c",
       "server/api.ts": "a8a0bdf7f95028c7",
       "server/middleware.ts": "44ffd301340de395",
-      "server/server.ts": "32454b78bc663c0f",
+      "server/server.ts": "0a6e62b1deea38f7",
       "README.md": "cbf33b433033362f"
     }
   },
@@ -76,7 +76,7 @@
       "server/api.ts": "596be7cb504eae41",
       "server/auth.ts": "0350389423899b06",
       "server/middleware.ts": "87624c22b4f28033",
-      "server/server.ts": "55067f4237303b6b",
+      "server/server.ts": "c32badc51bcd82b6",
       "README.md": "c816adcdcc4b69d8"
     }
   },
@@ -89,8 +89,8 @@
       "postcss.config.cjs": "fa650b380adfabb1",
       "index.html": "6960caefbd92e137",
       "src/main.jsx": "ebd6c45b5da28f33",
-      "src/index.css": "c0bf612d979db863",
-      "src/App.jsx": "c6dbc515347e54f5"
+      "src/index.css": "faed89259c528255",
+      "src/App.jsx": "e70dd171664482fc"
     }
   },
   "fullstack-todo": {
@@ -118,7 +118,7 @@
       "server/validation.ts": "040c91a1c83d8c83",
       "server/api.ts": "3e943ee9eb91f63f",
       "server/middleware.ts": "71af63a0c52369d2",
-      "server/server.ts": "2cf253fc811d45d9",
+      "server/server.ts": "9281e87011424935",
       "README.md": "d21c6c2aae4276ff"
     }
   },
@@ -162,7 +162,7 @@
       "server/queue.ts": "7f9da900cc7fcd7b",
       "server/templates.ts": "1caec2e903f01e79",
       "server/middleware.ts": "674f65b0f8f1d673",
-      "server/server.ts": "50dc4222a5aa1b8d",
+      "server/server.ts": "8c3be7c87bf41db8",
       "server/Dockerfile": "697686029d7d84e1",
       "server/.dockerignore": "8919c6124bfd1683",
       "server/.env.example": "9fd34caa169dfa3a",
@@ -205,7 +205,7 @@
       "server/env.ts": "a1f76d41f6db4b67",
       "server/templates.ts": "ec938e9b283be6c0",
       "server/middleware.ts": "9b45ac29343a584c",
-      "server/server.ts": "8bc42c938051befa",
+      "server/server.ts": "0af809cb6fe7b354",
       "README.md": "1fd46ca966fb5135"
     }
   }
