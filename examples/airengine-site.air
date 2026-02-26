@@ -1,0 +1,231 @@
+# ================================================================
+# AirEngine — Marketing Site
+# ================================================================
+# The AirEngine marketing site, built with AirEngine itself.
+# Frontend-only: dark theme, flagship showcase, self-heal system,
+# quickstart commands, and documentation links.
+# ================================================================
+
+@app:airengine-site
+
+@style(theme:dark,accent:#6366f1,radius:12,font:display+sans,maxWidth:1200,variant:modern-dark)
+
+@nav(/#hero,/#stats,/#flagship,/#how-it-works,/#self-heal,/#quickstart,/#docs)
+
+@ui(
+  @section:hero(
+    h1:hero>"The Compiler for AI-Authored Software"
+    p:lead>"AirEngine is a deterministic compiler for .air files — a structured IR that AI models generate when building full-stack applications. One file in, production-ready React + Express + Prisma out. Every time."
+    p:muted>"Not a template pack. Not a black-box prompt toy. A real compiler that produces owned, readable code in milliseconds."
+    row(
+      btn:primary>"Get Started"
+      btn:secondary>"View on GitHub"
+    )
+    code:block(
+      "@app:helpdesk"
+      +"  @db{Ticket{subject:str,status:str,priority:str,agent_id:?int}}"
+      +"  @api(tickets:crud,tickets/assign:post)"
+      +"  @auth(roles:[admin,agent],redirect:/login)"
+      +"  @ui(@page:tickets(table>tickets[subject,status,priority]))"
+    )
+    p:small>"5 lines of .air — a fullstack ticket system with auth, REST API, and Prisma database."
+  )
+
+  @section:stats(
+    h2>"Production-Grade Quality"
+    p:muted>"Every number is verified by automated gates that run on every commit."
+    grid:3(
+      stat("5","Flagship Apps")+p:small>"Production-quality fullstack apps with golden-run validation"
+      stat("1131","Tests Passing")+p:small>"Parser, transpiler, backend, MCP, conformance, benchmarks"
+      stat("65","Golden Checks")+p:small>"32 HelpDesk + 33 Photography capability verifications"
+    )
+    grid:3(
+      stat("6/6","Complex Eval")+p:small>"Replay fixtures through full validate-repair-transpile-smoke loop"
+      stat("10/10","Stability Sweep")+p:small>"All showcase + fixture apps pass deterministic sweep"
+      stat("< 50ms","Transpile Time")+p:small>"360-line Photography app to 45 files in under 50 milliseconds"
+    )
+  )
+
+  @section:flagship(
+    h2>"Flagship Showcase Apps"
+    p:lead>"Real-world, fullstack applications — not toy demos. Each is golden-run validated and complex-eval tested."
+
+    card(
+      h3>"Lumiere Photography Studio"
+      badge:"360 lines"+badge:"6 models"+badge:"SH8 Validated"
+      p>"Premium portfolio CMS with 6-stage inquiry pipeline, services catalog, testimonials, FAQ, and studio CRM-lite backoffice. Public pages + admin dashboard. Runtime QA validated with real browser testing."
+    )
+    card(
+      h3>"SalesPipe CRM"
+      badge:"318 lines"+badge:"8 models"+badge:"424 records"
+      p>"Full CRM with contacts, accounts, leads, deal pipeline stages, tasks, activities, profile management, and dashboard analytics. The most data-rich flagship app."
+    )
+    card(
+      h3>"HelpDesk"
+      badge:"137 lines"+badge:"4 models"+badge:"32 golden checks"
+      p>"Ticket support system with agents, departments, SLA tracking, priority workflows, reply threads, email notifications, and analytics dashboard."
+    )
+    card(
+      h3>"ProjectFlow"
+      badge:"301 lines"+badge:"5 models"+badge:"all 16 blocks"
+      p>"Project management suite demonstrating every AirEngine block type: cron jobs, webhooks, queues, email templates, and deployment config."
+    )
+    card(
+      h3>"E-Commerce"
+      badge:"131 lines"+badge:"4 models"+badge:"webhooks"
+      p>"Online store with products, categories, cart mutations, order workflow, checkout, webhooks, and inventory tracking."
+    )
+  )
+
+  @section:how-it-works(
+    h2>"How It Works"
+    p:lead>"AI generates the .air file. AirEngine compiles it. You own the code."
+
+    grid:3(
+      card(
+        h3>"1. AI Authors .air"
+        p>"Claude or any LLM generates a structured .air file from a prompt. The .air format is a compact IR covering frontend, backend, database, auth, jobs, and deployment."
+      )
+      card(
+        h3>"2. Deterministic Compile"
+        p>"AirEngine transpiles .air into production-ready code: React + Tailwind (client), Express + Prisma + SQLite (server). Same input, same output."
+      )
+      card(
+        h3>"3. Own the Code"
+        p>"Every line of generated code is readable, modifiable, and yours. No lock-in, no runtime dependency. Standard tools: Vite, npm, Prisma."
+      )
+    )
+
+    h3>"16 Supported Blocks"
+    p:muted>"One file defines everything: @app, @state, @style, @ui, @db, @api, @auth, @nav, @persist, @hook, @env, @cron, @webhook, @queue, @email, @deploy"
+
+    h3>"What Gets Generated"
+    grid:2(
+      card(
+        h3>"Frontend"
+        p>"Vite + React + Tailwind CSS. Lazy-loaded pages, auto-imported components (DataTable, StatCard, EmptyState), theme variables, responsive layouts."
+      )
+      card(
+        h3>"Backend"
+        p>"Express + Prisma + SQLite. JWT auth (HMAC-SHA256), request validation, rate limiting, helmet headers, CORS, FK-safe seeding, public and protected routes."
+      )
+    )
+  )
+
+  @section:self-heal(
+    h2>"Self-Healing Runtime QA"
+    p:lead>"SH0-SH8: An autonomous system that detects, classifies, and proposes fixes for runtime failures in generated apps."
+
+    grid:2(
+      card(
+        h3>"Runtime QA (SH8)"
+        p>"Real Playwright browser sessions test generated apps: navigate pages, click CTAs, check for dead buttons, capture console errors. Step-aware dead CTA detection with rich evidence."
+      )
+      card(
+        h3>"Incident Capture and Classify (SH1-SH2)"
+        p>"Failed QA steps are automatically bridged into structured incidents with severity, subsystem attribution, and evidence. Pattern-based classifier identifies dead CTAs and navigation failures."
+      )
+    )
+    grid:2(
+      card(
+        h3>"Patch Proposal (SH3)"
+        p>"Deterministic patch proposals for known failure patterns — no API key required. Optional LLM-enriched proposals for complex issues. Bounded, safe patches."
+      )
+      card(
+        h3>"Verify and Promote (SH4-SH6)"
+        p>"Patches verified in isolated git worktrees: TypeScript compilation, full test suite, golden runs. Promoted fixes become regression tests and knowledge store entries."
+      )
+    )
+
+    h3>"Three Modes"
+    grid:3(
+      card(h3>"Shadow"+p>"Observe and report. QA runs, incidents captured, no patches applied.")
+      card(h3>"Propose"+p>"QA plus incidents plus deterministic patch proposals. Review before applying. Works offline.")
+      card(h3>"Patch-Verify"+p>"Full loop: QA, incidents, patches, verification in worktree, promotion.")
+    )
+  )
+
+  @section:quickstart(
+    h2>"Get Started"
+    p:lead>"Everything works offline. No API key required for the core pipeline."
+
+    h3>"Install and Verify"
+    code:block(
+      "git clone https://github.com/hkprodduturi/AirEngine.git"
+      +"cd AirEngine && npm install"
+      +"npx tsx src/cli/index.ts doctor"
+      +"npm run quality-gate -- --mode offline"
+    )
+
+    h3>"Transpile a Flagship App"
+    code:block(
+      "npx tsx src/cli/index.ts transpile examples/photography-studio-premium.air -o ./output --no-incremental"
+    )
+
+    h3>"Run the Generated App"
+    code:block(
+      "# Terminal 1 - Server:"
+      +"cd output/server && npm install"
+      +"printf DATABASE_URL=file:./dev.db JWT_SECRET=dev-secret SMTP_HOST=localhost PORT=3001 > .env"
+      +"npx prisma db push && npx prisma generate && npx tsx seed.ts && npx tsx server.ts"
+      +""
+      +"# Terminal 2 - Client:"
+      +"cd output/client && npm install && npx vite --port 5173"
+    )
+
+    h3>"Validation Commands"
+    code:block(
+      "npm run helpdesk-golden         # 32 capability checks"
+      +"npm run photography-golden      # 33 capability checks"
+      +"npm run eval-complex            # 6/6 replay fixtures"
+      +"npm run stability-sweep -- --mode offline  # 10/10 sweep"
+    )
+  )
+
+  @section:docs(
+    h2>"Documentation"
+    p:lead>"Detailed guides for local setup, flagship apps, and troubleshooting."
+
+    grid:2(
+      card(
+        h3>"Quickstart"
+        p>"Step-by-step local setup guide. No API key needed."
+        link>"docs/quickstart-local.md"
+      )
+      card(
+        h3>"Run Flagship Apps"
+        p>"Copy-paste instructions for all 5 flagship apps."
+        link>"docs/run-flagship-apps-locally.md"
+      )
+    )
+    grid:2(
+      card(
+        h3>"What to Expect"
+        p>"What AirEngine is, what it generates, output structure."
+        link>"docs/what-to-expect.md"
+      )
+      card(
+        h3>"Troubleshooting"
+        p>"Common issues: ports, Prisma, tsx, env vars, stale output."
+        link>"docs/troubleshooting-local.md"
+      )
+    )
+
+    row:center(
+      btn:primary>"Read the Full Spec"
+      btn:secondary>"MCP Integration"
+    )
+  )
+
+  @section:footer(
+    divider
+    p:muted>"AirEngine v0.2.0 — AI-authored IR, deterministic compiler, owned code."
+    p:small>"MIT License"
+    row:center(
+      link>"GitHub"
+      link>"Docs"
+      link>"Spec"
+    )
+  )
+)
+

@@ -478,16 +478,26 @@
       "auth": true,
       "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
       "notes": "Wizard/step-flow base template."
+    },
+    {
+      "id": "airengine-site",
+      "file": "examples/airengine-site.air",
+      "tier": "fixture",
+      "lines": 232,
+      "fullstack": false,
+      "auth": false,
+      "usedBy": ["amplify.yml", "scripts/inject-showcase.ts", "scripts/build-gallery.ts"],
+      "notes": "AirEngine marketing site — built with AirEngine itself. Frontend-only, dark theme, flagship showcase content."
     }
   ],
   "summary": {
-    "total": 46,
+    "total": 47,
     "byTier": {
       "showcase": 5,
-      "fixture": 7,
+      "fixture": 8,
       "gallery": 14,
       "template": 20
     },
-    "totalLines": 6713
+    "totalLines": 6945
   }
 }
