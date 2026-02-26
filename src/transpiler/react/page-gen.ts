@@ -830,6 +830,15 @@ function generateCrudPage(
     }
   }
 
+  // C2/G4: Declare filter state variables early (before load/useEffect use them)
+  for (const fv of filterStateVars) {
+    if (!declaredVars.has(fv.stateVar)) {
+      lines.push(`  const [${fv.stateVar}, set${capitalize(fv.stateVar)}] = useState('all');`);
+      declaredVars.add(fv.stateVar);
+      declaredVars.add('set' + capitalize(fv.stateVar));
+    }
+  }
+
   // C2/G4: Add sort state when model has enum filters (implying a filterable/sortable list)
   if (filterStateVars.length > 0) {
     lines.push("  const [sortField, setSortField] = useState('created_at');");
@@ -1055,9 +1064,20 @@ function generateCrudPage(
   // T1.1: If page has substantive .air content, render it via generateJSX()
   // instead of the generic CRUD wrapper. Inject data handlers above the return.
   if (hasSubstantiveContent) {
-    const childJsx = mainChildren.map(c =>
+    let childJsx = mainChildren.map(c =>
       generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)
     ).filter(Boolean).join('\n');
+
+    // Wire "New {Model}" / "Create {Model}" buttons to showForm toggle
+    if (postFnName && declaredVars.has('showForm')) {
+      const label = singularLabel;
+      const patterns = [`New ${label}`, `New ${capitalize(modelPlural)}`, `Create ${label}`, `Add ${label}`];
+      for (const pat of patterns) {
+        // Match buttons with text but no onClick
+        const btnRe = new RegExp(`(<button[^>]*class(?:Name)?="[^"]*")(>\\s*${pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</button>)`);
+        childJsx = childJsx.replace(btnRe, `$1 onClick={() => setShowForm(!showForm)}$2`);
+      }
+    }
 
     // Scan JSX for undeclared state variables and add them
     const extraState = detectUndeclaredStateVars(childJsx, declaredVars, ctx);

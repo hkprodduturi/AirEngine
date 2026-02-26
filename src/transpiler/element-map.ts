@@ -57,7 +57,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   card: {
     tag: 'div',
-    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-6 space-y-3 shadow-[var(--card-shadow)] hover:border-[color-mix(in_srgb,var(--border)_60%,var(--accent))] transition-all',
+    className: 'rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-6 space-y-3 shadow-[var(--card-shadow)] hover:border-[color-mix(in_srgb,var(--border)_50%,var(--accent))] transition-colors duration-200',
   },
   btn: {
     tag: 'button',
@@ -235,7 +235,7 @@ const ELEMENT_MAP: Record<string, MappingEntry> = {
   },
   section: {
     tag: 'section',
-    className: 'py-16 px-6 space-y-6',
+    className: 'py-8 px-6 space-y-6',
   },
   code: {
     tag: 'code',

@@ -359,14 +359,21 @@ form > button[type="submit"] { width: 100%; }
   display: contents;
 }
 .auth-form-wrapper > main > div[class*="grid-cols"] > div[class*="rounded"] {
-  padding: 2rem;
-  space-y: 1.25rem;
+  padding: 2rem 2.25rem;
 }
-.auth-form-wrapper h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
-.auth-form-wrapper form { margin-top: 0.5rem; }
+.auth-form-wrapper > main > div[class*="grid-cols"] > div[class*="rounded"] > * + * {
+  margin-top: 1.25rem;
+}
+.auth-form-wrapper h1 { font-size: 1.75rem; margin-bottom: 0.125rem; }
+.auth-form-wrapper p { color: var(--muted); font-size: 0.9375rem; }
+.auth-form-wrapper form { margin-top: 0.75rem; }
+.auth-form-wrapper form button[type="submit"] {
+  margin-top: 0.5rem; padding: 12px 20px; font-size: 0.9375rem;
+}
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
+  background: rgba(var(--accent-rgb), 0.03);
 }
 input::placeholder, textarea::placeholder {
   color: var(--muted);
@@ -389,8 +396,11 @@ button {
   font-weight: 600; cursor: pointer; transition: all 0.15s ease; border: none;
   color: inherit; background: transparent;
 }
-button:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-button:active { transform: scale(0.97) translateY(0); box-shadow: none; }
+button:hover { opacity: 0.92; }
+button:active { transform: scale(0.98); }
+button[class*="bg-[var(--accent)"]:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.25); }
+button[class*="bg-[var(--accent)"]:active { transform: scale(0.98) translateY(0); box-shadow: none; }
+button[class*="bg-red"]:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(239,68,68,0.2); }
 button:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 
 /* ---- Cards ---- */
@@ -402,9 +412,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
-  box-shadow: 0 8px 24px rgba(var(--accent-rgb), 0.06), 0 2px 8px rgba(0,0,0,0.12);
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
 
 /* ---- Empty state ---- */
