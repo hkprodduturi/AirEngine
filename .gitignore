@@ -5,13 +5,9 @@ package-lock.json
 *.tsbuildinfo
 *.tgz
 .DS_Store
-output/.air-cache/
+output/
 .air-artifacts/
 .air-cache/
-output/client/
-output/server/
-output/docker-compose.yml
-output/README.md
 gallery/node_modules/
 gallery/previews/
 gallery/src/
