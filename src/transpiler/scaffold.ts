@@ -511,7 +511,25 @@ aside::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; 
   background: rgba(var(--accent-rgb), 0.3);
   color: inherit;
 }
-`;
+`
+  + (ctx.publicPageNames.length > 0 ? `
+/* ---- Public Layout ---- */
+.public-nav { transition: background 0.3s ease; }
+.public-footer { background: var(--bg); }
+
+/* ---- Hero Section ---- */
+section#hero { min-height: 80vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; position: relative; padding: 5rem 1.5rem; }
+section#hero::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(var(--accent-rgb), 0.15), transparent 70%); pointer-events: none; }
+section#hero h1 { font-size: 3.5rem; font-weight: 800; letter-spacing: -0.04em; line-height: 1.1; }
+section#hero p { font-size: 1.25rem; max-width: 600px; }
+@media (max-width: 640px) { section#hero h1 { font-size: 2.25rem; } section#hero p { font-size: 1rem; } }
+
+/* ---- FAQ Accordion ---- */
+.faq-group details summary { cursor: pointer; font-weight: 600; padding: 12px 0; list-style: none; }
+.faq-group details summary::-webkit-details-marker { display: none; }
+.faq-group details[open] summary { color: var(--accent); }
+.faq-group details > div { padding: 0 0 16px 0; color: var(--muted); }
+` : '');
 }
 
 function getFontFamily(ctx: TranspileContext): string {

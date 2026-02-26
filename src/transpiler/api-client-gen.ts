@@ -76,6 +76,7 @@ export function generateApiClient(ctx: TranspileContext): string {
     const isList = method === 'GET' && pathParams.length === 0 && isListHandler(route.handler);
     const isDelete = method === 'DELETE';
     const isAuthEndpoint = route.path.includes('/auth/');
+    const isPublicEndpoint = route.path.startsWith('/public/');
 
     // JSDoc
     const modelName = extractModelFromHandler(route.handler);
@@ -124,12 +125,13 @@ export function generateApiClient(ctx: TranspileContext): string {
       lines.push(`  const url = qs ? ${urlExpr} + '?' + qs : ${urlExpr};`);
     }
 
-    // Use authHeaders() for non-auth endpoints, plain headers for auth endpoints
-    const headersExpr = hasAuth && !isAuthEndpoint ? 'authHeaders()' : "{ 'Content-Type': 'application/json' }";
+    // Use authHeaders() for non-auth, non-public endpoints; plain headers for auth/public endpoints
+    const needsAuth = hasAuth && !isAuthEndpoint && !isPublicEndpoint;
+    const headersExpr = needsAuth ? 'authHeaders()' : "{ 'Content-Type': 'application/json' }";
 
     if (method === 'GET' || method === 'DELETE') {
       const fetchUrl = wantsPagination ? 'url' : urlExpr;
-      if (hasAuth && !isAuthEndpoint) {
+      if (needsAuth) {
         const opts = method === 'DELETE'
           ? `{ method: 'DELETE', headers: authHeaders() }`
           : '{ headers: authHeaders() }';

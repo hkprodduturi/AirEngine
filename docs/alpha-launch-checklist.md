@@ -33,7 +33,8 @@ Pre-release verification for AirEngine v0.2.0-alpha.
 - [ ] `docs/quickstart-ai-first.md` exists
 - [ ] `docs/mcp-quickstart.md` exists
 - [ ] `docs/troubleshooting-ai-first.md` exists
-- [ ] `examples/showcase-manifest.json` exists and lists 7 examples
+- [ ] `examples/showcase-manifest.json` exists and lists 8+ complex showcase examples
+- [ ] `examples/fixtures-manifest.json` exists and classifies all example files
 - [ ] Schema files present: loop-result, online-eval-result, quality-gate-result, canonical-live-demo-result, prompt-replay-result, diagnostics
 
 ## Error Messages

@@ -17,7 +17,7 @@ import { generateRootJSX } from './jsx-gen.js';
 import { detectDetailPageModels } from './page-gen.js';
 
 // Re-exports
-export { generateLayout } from './layout-gen.js';
+export { generateLayout, generatePublicLayout } from './layout-gen.js';
 export { generatePageComponents, detectDetailPageModels } from './page-gen.js';
 
 // ---- Main entry ----
@@ -67,8 +67,11 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
   }
   // Import Layout for non-auth apps that have a generated Layout component
   if (!hasAuthGating && hasLayout && ctx.hasBackend) {
-    const withAuth = hasAuthMutations;
     lines.push("import Layout from './Layout.jsx';");
+  }
+  // Import PublicLayout when public pages exist
+  if (ctx.publicPageNames.length > 0 && ctx.hasBackend) {
+    lines.push("import PublicLayout from './PublicLayout.jsx';");
   }
   // Import reusable components when patterns detected (skip when auth-gated — pages import their own)
   // Also skip when Layout handles navigation — components are used in page files, not App.jsx
@@ -86,9 +89,10 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
   if (hasAuthGating) {
     // ---- Slim App: only auth state ----
     const postLoginPage = getPostLoginPage(analysis);
+    const defaultPage = ctx.publicPageNames.length > 0 ? ctx.publicPageNames[0] : 'login';
     lines.push('  const [user, setUser] = useState(null);');
     lines.push('  const [authError, setAuthError] = useState(null);');
-    lines.push(`  const [currentPage, setCurrentPage] = useState('login');`);
+    lines.push(`  const [currentPage, setCurrentPage] = useState('${defaultPage}');`);
     // Include loading/error state if declared (used by auth mutations)
     const hasLoading = ctx.state.some(f => f.name === 'loading');
     const hasError = ctx.state.some(f => f.name === 'error');
@@ -137,7 +141,7 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
     lines.push('    setUser(null);');
     lines.push(`    localStorage.removeItem('${ctx.appName}_user');`);
     lines.push(`    localStorage.removeItem('auth_token');`);
-    lines.push("    setCurrentPage('login');");
+    lines.push(`    setCurrentPage('${defaultPage}');`);
     lines.push('  };');
     lines.push('');
 

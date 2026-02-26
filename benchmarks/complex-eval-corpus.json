@@ -36,6 +36,13 @@
       "category": "saas",
       "complexity": "complex",
       "replay_fixture": "examples/crm.air"
+    },
+    {
+      "id": "complex-photography",
+      "prompt": "Build a fullstack photography studio with public portfolio, services, inquiry form, and admin CRM with inquiry pipeline and RBAC.",
+      "category": "creative",
+      "complexity": "complex",
+      "replay_fixture": "examples/photography-studio-premium.air"
     }
   ]
 }

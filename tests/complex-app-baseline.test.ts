@@ -21,6 +21,38 @@ function transpileFile(name: string) {
   return transpile(ast, { sourceLines: source.split('\n').length });
 }
 
+// ---- Photography Premium Baseline ----
+
+describe('Photography Premium baseline', () => {
+  it('generates expected file count for photography app', () => {
+    const result = transpileFile('photography-studio-premium');
+    // Baseline: 45 files (6 public pages + PublicLayout + 5 admin pages + Layout + server + API + seed + schema + etc.)
+    expect(result.files.length).toBeGreaterThanOrEqual(35);
+  });
+
+  it('all stages produce valid output', () => {
+    const result = transpileFile('photography-studio-premium');
+    expect(result.files.length).toBeGreaterThan(0);
+    expect(result.stats.outputLines).toBeGreaterThan(1500);
+  });
+
+  it('no broken imports in generated client files', () => {
+    const result = transpileFile('photography-studio-premium');
+    const clientFiles = result.files.filter(f =>
+      f.path.startsWith('client/') && f.path.endsWith('.jsx')
+    );
+
+    for (const f of clientFiles) {
+      const imports = f.content.match(/from\s+['"]([^'"]+)['"]/g) || [];
+      for (const imp of imports) {
+        const path = imp.match(/['"]([^'"]+)['"]/)?.[1];
+        if (!path || path.startsWith('react') || path.startsWith('@')) continue;
+        expect(path).not.toContain('undefined');
+      }
+    }
+  });
+});
+
 // ---- Helpdesk Baseline ----
 
 describe('Helpdesk baseline (C0)', () => {

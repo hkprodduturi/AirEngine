@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/photography-premium-golden-result.schema.json",
+  "title": "PhotographyGoldenResult",
+  "description": "Schema for AirEngine photography premium golden run results.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "run_metadata",
+    "fixture",
+    "pipeline",
+    "capabilities",
+    "verdict"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "run_metadata": { "$ref": "#/$defs/runMetadata" },
+    "fixture": { "type": "string" },
+    "pipeline": { "$ref": "#/$defs/pipelineInfo" },
+    "capabilities": { "$ref": "#/$defs/capabilitiesInfo" },
+    "verdict": { "type": "string", "enum": ["pass", "fail"] }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "runMetadata": {
+      "type": "object",
+      "required": ["airengine_version", "node_version", "platform"],
+      "properties": {
+        "airengine_version": { "type": "string" },
+        "node_version": { "type": "string" },
+        "platform": { "type": "string" },
+        "git_commit": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "stageEntry": {
+      "type": "object",
+      "required": ["name", "status", "duration_ms"],
+      "properties": {
+        "name": { "type": "string" },
+        "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+        "duration_ms": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "pipelineInfo": {
+      "type": "object",
+      "required": ["stages", "all_passed", "total_duration_ms", "file_count", "output_lines", "deterministic"],
+      "properties": {
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/stageEntry" }
+        },
+        "all_passed": { "type": "boolean" },
+        "total_duration_ms": { "type": "number", "minimum": 0 },
+        "file_count": { "type": "number", "minimum": 0 },
+        "output_lines": { "type": "number", "minimum": 0 },
+        "deterministic": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "capabilityCheck": {
+      "type": "object",
+      "required": ["description", "passed"],
+      "properties": {
+        "description": { "type": "string" },
+        "passed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "capabilityGroup": {
+      "type": "object",
+      "required": ["group", "name", "checks", "all_passed"],
+      "properties": {
+        "group": { "type": "string" },
+        "name": { "type": "string" },
+        "checks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capabilityCheck" }
+        },
+        "all_passed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "capabilitiesInfo": {
+      "type": "object",
+      "required": ["groups", "total_checks", "passed_checks", "all_passed"],
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capabilityGroup" }
+        },
+        "total_checks": { "type": "number", "minimum": 0 },
+        "passed_checks": { "type": "number", "minimum": 0 },
+        "all_passed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

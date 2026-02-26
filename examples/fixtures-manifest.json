@@ -1,0 +1,493 @@
+{
+  "schema_version": "1.0",
+  "description": "Complete inventory of all AirEngine example .air files, classified by role. Used by internal tooling for regression testing, benchmarks, and eval harnesses.",
+  "generated": "2026-02-25",
+  "tiers": {
+    "showcase": "Complex production-quality apps for public demos (see showcase-manifest.json)",
+    "fixture": "Internal regression/benchmark fixtures — not for public showcase",
+    "template": "Base templates for AI-first generation guidance — not individually tested",
+    "gallery": "Gallery-featured medium-complexity apps — transpile-tested via stability sweep"
+  },
+  "examples": [
+    {
+      "id": "todo",
+      "file": "examples/todo.air",
+      "tier": "fixture",
+      "lines": 11,
+      "fullstack": false,
+      "auth": false,
+      "usedBy": ["tests/transpiler.test.ts", "tests/snapshots.test.ts", "tests/bench.test.ts", "tests/mcp.test.ts", "tests/backend.test.ts", "scripts/eval-local.ts", "scripts/foundation-check.ts", "src/generator.ts", "src/mcp/server.ts"],
+      "notes": "Simplest example. Parser/transpiler unit tests, MCP smoke test, replay fixture."
+    },
+    {
+      "id": "expense-tracker",
+      "file": "examples/expense-tracker.air",
+      "tier": "fixture",
+      "lines": 32,
+      "fullstack": false,
+      "auth": false,
+      "usedBy": ["tests/transpiler.test.ts", "tests/bench.test.ts", "tests/backend.test.ts", "scripts/eval-local.ts", "src/generator.ts", "src/mcp/server.ts"],
+      "notes": "Filtering + computed values pattern. Replay fixture."
+    },
+    {
+      "id": "landing",
+      "file": "examples/landing.air",
+      "tier": "fixture",
+      "lines": 31,
+      "fullstack": false,
+      "auth": false,
+      "usedBy": ["tests/transpiler.test.ts", "tests/bench.test.ts", "tests/backend.test.ts", "scripts/eval-local.ts", "src/generator.ts", "src/mcp/server.ts"],
+      "notes": "Multi-section layout, nav routes. Replay fixture."
+    },
+    {
+      "id": "auth",
+      "file": "examples/auth.air",
+      "tier": "fixture",
+      "lines": 24,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["tests/transpiler.test.ts", "tests/snapshots.test.ts", "tests/bench.test.ts", "tests/backend.test.ts", "tests/mcp.test.ts", "scripts/eval-local.ts", "src/mcp/server.ts"],
+      "notes": "JWT auth pattern. Heavily referenced in test assertions."
+    },
+    {
+      "id": "dashboard",
+      "file": "examples/dashboard.air",
+      "tier": "fixture",
+      "lines": 37,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["tests/transpiler.test.ts", "tests/bench.test.ts", "tests/backend.test.ts", "tests/mcp.test.ts", "scripts/eval-local.ts", "scripts/demo-canonical.ts", "src/generator.ts", "src/mcp/server.ts"],
+      "notes": "Auth-gated dashboard. Replay fixture, canonical demo alternative."
+    },
+    {
+      "id": "fullstack-todo",
+      "file": "examples/fullstack-todo.air",
+      "tier": "fixture",
+      "lines": 20,
+      "fullstack": true,
+      "auth": false,
+      "usedBy": ["tests/transpiler.test.ts", "tests/snapshots.test.ts", "tests/bench.test.ts", "tests/backend.test.ts", "tests/mcp.test.ts", "tests/conformance.test.ts", "scripts/eval-local.ts", "scripts/demo-canonical.ts", "src/generator.ts", "src/mcp/server.ts"],
+      "notes": "PRIMARY CANONICAL DEMO. Conformance suite fixture. Most cross-referenced fullstack example."
+    },
+    {
+      "id": "portfolio",
+      "file": "examples/portfolio.air",
+      "tier": "fixture",
+      "lines": 59,
+      "fullstack": false,
+      "auth": false,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Frontend-only portfolio site. Gallery entry only, no dedicated tests."
+    },
+    {
+      "id": "helpdesk",
+      "file": "examples/helpdesk.air",
+      "tier": "showcase",
+      "lines": 137,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["tests/snapshots.test.ts", "tests/complex-app-baseline.test.ts", "tests/complex-app-gaps.test.ts", "tests/helpdesk-golden.test.ts", "scripts/helpdesk-golden-run.ts", "benchmarks/complex-eval-corpus.json"],
+      "notes": "PRIMARY FLAGSHIP. Golden run (32/32 checks). Complex eval replay fixture."
+    },
+    {
+      "id": "projectflow",
+      "file": "examples/projectflow.air",
+      "tier": "showcase",
+      "lines": 301,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["tests/transpiler.test.ts", "tests/snapshots.test.ts", "tests/bench.test.ts", "tests/backend.test.ts", "tests/stability-sweep.test.ts", "scripts/eval-local.ts", "benchmarks/complex-eval-corpus.json"],
+      "notes": "Demonstrates all block types. 48+ dedicated backend tests. Complex eval replay fixture."
+    },
+    {
+      "id": "ecommerce",
+      "file": "examples/ecommerce.air",
+      "tier": "showcase",
+      "lines": 131,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["benchmarks/complex-eval-corpus.json", "benchmarks/online-eval-corpus.json", "gallery/catalog.json", "scripts/inject-showcase.ts"],
+      "notes": "Cart, orders, webhooks. Complex eval replay fixture."
+    },
+    {
+      "id": "crm-sales-pipeline",
+      "file": "examples/crm-sales-pipeline.air",
+      "tier": "showcase",
+      "lines": 318,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/generate-crm-seed.ts"],
+      "notes": "Most complete CRM. 8 data models, 424-record seed, profile management. Flagship demo app."
+    },
+    {
+      "id": "clinic",
+      "file": "examples/clinic.air",
+      "tier": "showcase",
+      "lines": 159,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["benchmarks/complex-eval-corpus.json", "gallery/catalog.json", "scripts/inject-showcase.ts"],
+      "notes": "Healthcare domain. Complex eval replay fixture."
+    },
+    {
+      "id": "crm",
+      "file": "examples/crm.air",
+      "tier": "showcase",
+      "lines": 169,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["benchmarks/complex-eval-corpus.json", "gallery/catalog.json", "scripts/inject-showcase.ts"],
+      "notes": "CRM with deal stages. Complex eval replay fixture."
+    },
+    {
+      "id": "inventory",
+      "file": "examples/inventory.air",
+      "tier": "showcase",
+      "lines": 146,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Warehouse management with cron, queue, composite indexes."
+    },
+    {
+      "id": "monitoring",
+      "file": "examples/monitoring.air",
+      "tier": "showcase",
+      "lines": 168,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Server monitoring with alerts and incident management."
+    },
+    {
+      "id": "photography-studio-premium",
+      "file": "examples/photography-studio-premium.air",
+      "tier": "showcase",
+      "lines": 284,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["examples/showcase-manifest.json"],
+      "notes": "Premium photography studio with portfolio CMS, inquiry pipeline, services, testimonials, and studio CRM-lite."
+    },
+    {
+      "id": "analytics",
+      "file": "examples/analytics.air",
+      "tier": "gallery",
+      "lines": 171,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Analytics dashboard with cron jobs. Gallery entry."
+    },
+    {
+      "id": "blog",
+      "file": "examples/blog.air",
+      "tier": "gallery",
+      "lines": 126,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json", "scripts/inject-showcase.ts"],
+      "notes": "Blog CMS with m:n relations. Gallery entry."
+    },
+    {
+      "id": "booking",
+      "file": "examples/booking.air",
+      "tier": "gallery",
+      "lines": 138,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Appointment scheduling with email and cron. Gallery entry."
+    },
+    {
+      "id": "chat",
+      "file": "examples/chat.air",
+      "tier": "gallery",
+      "lines": 103,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Messaging app with m:n relations. Gallery entry."
+    },
+    {
+      "id": "kanban",
+      "file": "examples/kanban.air",
+      "tier": "gallery",
+      "lines": 109,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json", "scripts/inject-showcase.ts"],
+      "notes": "Kanban board with cards and columns. Gallery entry."
+    },
+    {
+      "id": "lms",
+      "file": "examples/lms.air",
+      "tier": "gallery",
+      "lines": 137,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json", "scripts/inject-showcase.ts"],
+      "notes": "Learning management with queue, email. Gallery entry."
+    },
+    {
+      "id": "music",
+      "file": "examples/music.air",
+      "tier": "gallery",
+      "lines": 136,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Music library with deep nesting, m:n relations. Gallery entry."
+    },
+    {
+      "id": "property-listing",
+      "file": "examples/property-listing.air",
+      "tier": "gallery",
+      "lines": 168,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Real estate listings. Gallery entry."
+    },
+    {
+      "id": "restaurant-pos",
+      "file": "examples/restaurant-pos.air",
+      "tier": "gallery",
+      "lines": 165,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Point of sale system. Gallery entry."
+    },
+    {
+      "id": "social-feed",
+      "file": "examples/social-feed.air",
+      "tier": "gallery",
+      "lines": 126,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Social network feed with m:n follows. Gallery entry."
+    },
+    {
+      "id": "survey",
+      "file": "examples/survey.air",
+      "tier": "gallery",
+      "lines": 128,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["gallery/catalog.json"],
+      "notes": "Survey builder with deep nested relations, queue. Gallery entry."
+    },
+    {
+      "id": "base-ai-chat",
+      "file": "examples/base-ai-chat.air",
+      "tier": "template",
+      "lines": 124,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "AI chat base template."
+    },
+    {
+      "id": "base-analytics",
+      "file": "examples/base-analytics.air",
+      "tier": "template",
+      "lines": 140,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Analytics base template."
+    },
+    {
+      "id": "base-command-center",
+      "file": "examples/base-command-center.air",
+      "tier": "template",
+      "lines": 177,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Command center base template."
+    },
+    {
+      "id": "base-crud-admin",
+      "file": "examples/base-crud-admin.air",
+      "tier": "template",
+      "lines": 179,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)", "docs/transpiler-roadmap.md"],
+      "notes": "CRUD admin base template. Referenced in roadmap docs."
+    },
+    {
+      "id": "base-doc-editor",
+      "file": "examples/base-doc-editor.air",
+      "tier": "template",
+      "lines": 147,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Document editor base template."
+    },
+    {
+      "id": "base-feed",
+      "file": "examples/base-feed.air",
+      "tier": "template",
+      "lines": 217,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)", "docs/transpiler-readiness-audit.md"],
+      "notes": "Social feed base template. Referenced in readiness audit."
+    },
+    {
+      "id": "base-gantt",
+      "file": "examples/base-gantt.air",
+      "tier": "template",
+      "lines": 206,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Gantt chart base template."
+    },
+    {
+      "id": "base-inbox",
+      "file": "examples/base-inbox.air",
+      "tier": "template",
+      "lines": 150,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Inbox base template."
+    },
+    {
+      "id": "base-kanban",
+      "file": "examples/base-kanban.air",
+      "tier": "template",
+      "lines": 144,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Kanban base template."
+    },
+    {
+      "id": "base-learning",
+      "file": "examples/base-learning.air",
+      "tier": "template",
+      "lines": 163,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Learning management base template."
+    },
+    {
+      "id": "base-ledger",
+      "file": "examples/base-ledger.air",
+      "tier": "template",
+      "lines": 202,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Ledger/accounting base template."
+    },
+    {
+      "id": "base-marketplace",
+      "file": "examples/base-marketplace.air",
+      "tier": "template",
+      "lines": 144,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Marketplace base template."
+    },
+    {
+      "id": "base-noc",
+      "file": "examples/base-noc.air",
+      "tier": "template",
+      "lines": 117,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Network operations center base template."
+    },
+    {
+      "id": "base-patient-chart",
+      "file": "examples/base-patient-chart.air",
+      "tier": "template",
+      "lines": 263,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Patient chart base template."
+    },
+    {
+      "id": "base-portal",
+      "file": "examples/base-portal.air",
+      "tier": "template",
+      "lines": 220,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Portal base template."
+    },
+    {
+      "id": "base-pos",
+      "file": "examples/base-pos.air",
+      "tier": "template",
+      "lines": 148,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Point of sale base template."
+    },
+    {
+      "id": "base-scheduler",
+      "file": "examples/base-scheduler.air",
+      "tier": "template",
+      "lines": 141,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Scheduler base template."
+    },
+    {
+      "id": "base-storefront",
+      "file": "examples/base-storefront.air",
+      "tier": "template",
+      "lines": 225,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)", "docs/transpiler-readiness-audit.md"],
+      "notes": "Storefront base template. Referenced in readiness audit."
+    },
+    {
+      "id": "base-warehouse",
+      "file": "examples/base-warehouse.air",
+      "tier": "template",
+      "lines": 196,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Warehouse base template."
+    },
+    {
+      "id": "base-wizard",
+      "file": "examples/base-wizard.air",
+      "tier": "template",
+      "lines": 160,
+      "fullstack": true,
+      "auth": true,
+      "usedBy": ["scripts/eval-local.ts (dynamic base-* glob)"],
+      "notes": "Wizard/step-flow base template."
+    }
+  ],
+  "summary": {
+    "total": 46,
+    "byTier": {
+      "showcase": 8,
+      "fixture": 7,
+      "gallery": 10,
+      "template": 20
+    },
+    "totalLines": 6713
+  }
+}

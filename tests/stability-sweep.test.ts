@@ -307,15 +307,22 @@ describe('Schema conformance', () => {
 describe('Showcase manifest', () => {
   it('loads and parses', () => {
     const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8'));
-    expect(manifest.schema_version).toBe('1.0');
+    expect(manifest.schema_version).toBe('2.0');
     expect(Array.isArray(manifest.examples)).toBe(true);
   });
 
-  it('has 7 entries', () => {
+  it('has 9 complex showcase entries', () => {
     const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8'));
-    expect(manifest.examples).toHaveLength(7);
+    expect(manifest.examples).toHaveLength(9);
     const ids = manifest.examples.map((e: any) => e.id);
-    expect(ids).toContain('todo');
+    expect(ids).toContain('helpdesk');
     expect(ids).toContain('projectflow');
+    expect(ids).toContain('ecommerce');
+    expect(ids).toContain('crm-sales-pipeline');
+    expect(ids).toContain('photography-studio-premium');
+    // All entries should be complex
+    for (const ex of manifest.examples) {
+      expect(ex.complexity).toBe('complex');
+    }
   });
 });

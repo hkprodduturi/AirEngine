@@ -476,6 +476,7 @@ export function mapHandlerToPrismaInfo(
 
   // Check if :id param exists → extract with type coercion
   const hasIdParam = route.path.includes(':id');
+  const hasSlugParam = route.path.includes(':slug');
   const idExpr = getIdExpression(modelName, db);
 
   // Use destructured param names if typed body is available
@@ -491,7 +492,9 @@ export function mapHandlerToPrismaInfo(
       return {
         call: hasIdParam
           ? `await prisma.${modelVar}.findFirst({ where: { id: ${idExpr} } })`
-          : `await prisma.${modelVar}.findFirst({ where: req.query })`,
+          : hasSlugParam
+            ? `await prisma.${modelVar}.findFirst({ where: { slug: req.params.slug } })`
+            : `await prisma.${modelVar}.findFirst({ where: req.query })`,
         needs404: true,
         isDelete: false,
       };

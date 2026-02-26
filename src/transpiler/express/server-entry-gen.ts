@@ -111,7 +111,7 @@ export function generateServerEntry(ctx: TranspileContext): string {
   if (ctx.auth) {
     lines.push('// Protect API routes except auth endpoints and health check');
     lines.push("app.use('/api', (req, res, next) => {");
-    lines.push("  if (req.path === '/health' || req.path.startsWith('/auth/')) return next();");
+    lines.push("  if (req.path === '/health' || req.path.startsWith('/auth/') || req.path.startsWith('/public/')) return next();");
     lines.push('  requireAuth(req, res, next);');
     lines.push('});');
     lines.push('');

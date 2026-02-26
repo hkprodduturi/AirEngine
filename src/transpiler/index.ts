@@ -13,7 +13,7 @@ import type { AirAST } from '../parser/types.js';
 import { createHash } from 'crypto';
 import { extractContext } from './context.js';
 import { analyzeUI } from './normalize-ui.js';
-import { generateApp, generateLayout, generatePageComponents } from './react.js';
+import { generateApp, generateLayout, generatePublicLayout, generatePageComponents } from './react.js';
 import { generateScaffold } from './scaffold.js';
 import { generateServer, generateReadme } from './express.js';
 import { generateApiClient } from './api-client-gen.js';
@@ -90,7 +90,7 @@ function computeDeadLines(files: OutputFile[]): number {
     /App\.jsx$/, /main\.jsx$/, /server\.ts$/, /seed\.ts$/,
     /api\.ts$/, /prisma\.ts$/, /middleware\.ts$/, /validation\.ts$/,
     /\.json$/, /\.css$/, /\.html$/, /\.prisma$/, /\.cjs$/, /\.md$/,
-    /Layout\.jsx$/, /api\.js$/, /types\.ts$/, /index\.css$/,
+    /Layout\.jsx$/, /PublicLayout\.jsx$/, /api\.js$/, /types\.ts$/, /index\.css$/,
     /vite\.config/, /tailwind\.config/, /postcss\.config/,
     // Server block stubs — standalone config files consumed by runtime
     /env\.ts$/, /cron\.ts$/, /queue\.ts$/, /templates\.ts$/, /auth\.ts$/, /webhooks\.ts$/,
@@ -159,6 +159,10 @@ export function transpile(
       const layoutCode = generateLayout(ctx, analysis);
       if (layoutCode) {
         files.push({ path: 'client/src/Layout.jsx', content: layoutCode });
+      }
+      const publicLayoutCode = generatePublicLayout(ctx, analysis);
+      if (publicLayoutCode) {
+        files.push({ path: 'client/src/PublicLayout.jsx', content: publicLayoutCode });
       }
       if (ctx.apiRoutes.length > 0) {
         files.push({ path: 'client/src/api.js', content: generateApiClient(ctx) });

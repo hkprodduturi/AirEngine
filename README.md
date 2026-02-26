@@ -112,18 +112,20 @@ Plus: `header`, `footer`, `main`, `sidebar`, `list`, `table`, `tabs`, `badge`, `
 
 ---
 
-## Examples
+## Showcase Apps
 
-Eight example apps ship with the package in `examples/`:
+Production-quality flagship apps in `examples/` — complex, fullstack, demo-ready:
 
-- **todo.air** — Classic todo with filters and persistence
-- **expense-tracker.air** — Category tracking with budget stats
-- **auth.air** — Login/register flow with protected routes
-- **dashboard.air** — Admin dashboard with stats and data tables
-- **landing.air** — Marketing landing page with multi-section layout
-- **fullstack-todo.air** — Todo app with Express API and Prisma/SQLite
-- **projectflow.air** — Full SaaS project management (5 models, 18 routes, 5 pages)
-- **airengine-site.air** — AirEngine marketing site with code blocks and hero layout
+- **crm-sales-pipeline.air** — Full CRM with 8 models, deal pipeline, lead qualification, dashboard analytics (318 lines)
+- **projectflow.air** — Project management with 5 models, cron, webhooks, queues, email (301 lines)
+- **helpdesk.air** — Ticket support system with agents, SLA tracking, reply threads (137 lines)
+- **ecommerce.air** — Online store with cart, orders, webhooks, inventory (131 lines)
+- **crm.air** — CRM with contacts, companies, deal stages, activity tracking (169 lines)
+- **clinic.air** — Clinic management with patients, doctors, scheduling (159 lines)
+- **inventory.air** — Warehouse management with stock transactions, cron, queues (146 lines)
+- **monitoring.air** — Server monitoring with alerts, incidents, severity tracking (168 lines)
+
+Plus 7 internal regression fixtures (todo, fullstack-todo, auth, etc.), 10 gallery examples, and 20 base templates. See `examples/showcase-manifest.json` for the curated list.
 
 ---
 

@@ -76,7 +76,7 @@
       "server/api.ts": "596be7cb504eae41",
       "server/auth.ts": "0350389423899b06",
       "server/middleware.ts": "87624c22b4f28033",
-      "server/server.ts": "23b0782f461c65a4",
+      "server/server.ts": "55067f4237303b6b",
       "README.md": "c816adcdcc4b69d8"
     }
   },
@@ -89,7 +89,7 @@
       "postcss.config.cjs": "fa650b380adfabb1",
       "index.html": "6960caefbd92e137",
       "src/main.jsx": "ebd6c45b5da28f33",
-      "src/index.css": "b0ec2c34418a74c2",
+      "src/index.css": "c0bf612d979db863",
       "src/App.jsx": "c6dbc515347e54f5"
     }
   },
@@ -132,7 +132,7 @@
       "client/index.html": "0a52e135952fb9fe",
       "client/src/main.jsx": "6a2fdfd95a3cebca",
       "client/src/index.css": "73e02982862c520e",
-      "client/src/App.jsx": "6ed3719c4de21aca",
+      "client/src/App.jsx": "5a43d74839895c32",
       "client/src/Layout.jsx": "451448c62587dae4",
       "client/src/api.js": "e58ba1e91c7558d6",
       "client/src/types.ts": "ef8760e57f4f53d8",
@@ -162,7 +162,7 @@
       "server/queue.ts": "7f9da900cc7fcd7b",
       "server/templates.ts": "1caec2e903f01e79",
       "server/middleware.ts": "674f65b0f8f1d673",
-      "server/server.ts": "316c70431f3f6734",
+      "server/server.ts": "50dc4222a5aa1b8d",
       "server/Dockerfile": "697686029d7d84e1",
       "server/.dockerignore": "8919c6124bfd1683",
       "server/.env.example": "9fd34caa169dfa3a",
@@ -180,7 +180,7 @@
       "client/index.html": "eaa16a1714b9177a",
       "client/src/main.jsx": "b2a693f727e9e4f0",
       "client/src/index.css": "2d9f9e6a05c5a25c",
-      "client/src/App.jsx": "bc04a60864360d8b",
+      "client/src/App.jsx": "1d188d6e7ebc717b",
       "client/src/Layout.jsx": "7c324999e504b0b8",
       "client/src/api.js": "fc95907c7cd33bc1",
       "client/src/types.ts": "98dd0de09389c018",
@@ -205,7 +205,7 @@
       "server/env.ts": "a1f76d41f6db4b67",
       "server/templates.ts": "ec938e9b283be6c0",
       "server/middleware.ts": "9b45ac29343a584c",
-      "server/server.ts": "94b0190e9b202268",
+      "server/server.ts": "8bc42c938051befa",
       "README.md": "1fd46ca966fb5135"
     }
   }

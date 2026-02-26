@@ -91,27 +91,75 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
   const lines: string[] = [];
   lines.push(`<div className="${rootClasses}">`);
 
-  // When auth-gated, render pages without the constraining wrapper.
-  // - With Layout: all non-auth pages are self-contained (import their own Layout)
-  // - Without Layout: auth pages render full-screen, non-auth pages get wrapper
+  // When auth-gated, render pages in three tiers:
+  // 1. Auth pages (login/register): no guard, no layout
+  // 2. Public pages: no auth guard, PublicLayout wrapper
+  // 3. Protected pages: isAuthed guard, Layout wrapper (self-contained)
   if (hasAuthGating && hasLayout && analysis.hasPages) {
-    // All pages self-contained — render directly without wrapper
     const allPages: AirUINode[] = [];
     for (const node of ctx.uiNodes) {
       allPages.push(...extractScopedPages(node));
     }
 
-    if (useLazy) {
-      lines.push(`  <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>}>`);
-      for (const pn of allPages) {
-        const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, 4);
-        if (jsx) lines.push(jsx);
+    const hasPublicPages = ctx.publicPageNames.length > 0;
+    const authPages = allPages.filter(p => p.kind === 'scoped' && isAuthPageName(p.name));
+    const publicPages = allPages.filter(p => p.kind === 'scoped' && ctx.publicPageNames.includes(p.name));
+    const protectedPages = allPages.filter(p =>
+      p.kind === 'scoped' && !isAuthPageName(p.name) && !ctx.publicPageNames.includes(p.name)
+    );
+
+    const suspenseFallback = '<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>';
+
+    // Auth pages — no guard, no layout
+    if (authPages.length > 0) {
+      if (useLazy) {
+        lines.push(`  <Suspense fallback={${suspenseFallback}}>`);
+        for (const pn of authPages) {
+          lines.push(generateJSX(pn, ctx, analysis, ROOT_SCOPE, 4));
+        }
+        lines.push('  </Suspense>');
+      } else {
+        for (const pn of authPages) {
+          lines.push(generateJSX(pn, ctx, analysis, ROOT_SCOPE, 2));
+        }
       }
-      lines.push('  </Suspense>');
-    } else {
-      for (const pn of allPages) {
-        const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, 2);
-        if (jsx) lines.push(jsx);
+    }
+
+    // Public pages — no auth guard needed, PublicLayout wrapper
+    if (publicPages.length > 0) {
+      for (const pn of publicPages) {
+        if (pn.kind !== 'scoped') continue;
+        const pageName = capitalize(pn.name);
+        if (useLazy) {
+          lines.push(`  {currentPage === '${pn.name}' && (`);
+          lines.push(`    <Suspense fallback={${suspenseFallback}}>`);
+          lines.push(`      <PublicLayout currentPage={currentPage} setCurrentPage={setCurrentPage}>`);
+          lines.push(`        <${pageName}Page currentPage={currentPage} setCurrentPage={setCurrentPage} />`);
+          lines.push(`      </PublicLayout>`);
+          lines.push(`    </Suspense>`);
+          lines.push('  )}');
+        } else {
+          lines.push(`  {currentPage === '${pn.name}' && (`);
+          lines.push(`    <PublicLayout currentPage={currentPage} setCurrentPage={setCurrentPage}>`);
+          lines.push(`      <${pageName}Page currentPage={currentPage} setCurrentPage={setCurrentPage} />`);
+          lines.push(`    </PublicLayout>`);
+          lines.push('  )}');
+        }
+      }
+    }
+
+    // Protected pages — isAuthed guard, self-contained (with Layout inside page component)
+    if (protectedPages.length > 0) {
+      if (useLazy) {
+        lines.push(`  <Suspense fallback={${suspenseFallback}}>`);
+        for (const pn of protectedPages) {
+          lines.push(generateJSX(pn, ctx, analysis, ROOT_SCOPE, 4));
+        }
+        lines.push('  </Suspense>');
+      } else {
+        for (const pn of protectedPages) {
+          lines.push(generateJSX(pn, ctx, analysis, ROOT_SCOPE, 2));
+        }
       }
     }
 

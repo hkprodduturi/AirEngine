@@ -87,8 +87,8 @@ function detectPageResource(
     if (getRoutes.length > 1) {
       binding.isDashboard = true;
       for (const r of getRoutes) {
-        // Skip auth routes
-        if (r.path.includes('/auth/')) continue;
+        // Skip auth routes and public routes (public pages have their own data loading)
+        if (r.path.includes('/auth/') || r.path.includes('/public/')) continue;
         const fnName = routeToFunctionName('GET', r.path);
         const resource = toCamelCase(r.path.replace(/^\//, '').split('/').pop() || '');
         binding.dataSources.push({ stateVar: resource, getFnName: fnName });
@@ -232,8 +232,15 @@ export function generatePageComponents(
     const pageName = capitalize(page.name);
     const deps = analyzePageDependencies(page.children, ctx, analysis);
     const binding = hasAuthGating ? detectPageResource(page.name, ctx, analysis, deps) : null;
+    const isPublicPage = ctx.publicPageNames.includes(page.name);
 
-    if (hasAuthGating && binding && !binding.isAuthPage) {
+    if (isPublicPage) {
+      // ---- Public page (no auth, no Layout wrapper, uses public API) ----
+      files.push({
+        path: `src/pages/${pageName}Page.jsx`,
+        content: generatePublicPage(pageName, page, ctx, analysis),
+      });
+    } else if (hasAuthGating && binding && !binding.isAuthPage) {
       // ---- Self-contained page (auth-gated mode) ----
       files.push({
         path: `src/pages/${pageName}Page.jsx`,
@@ -262,6 +269,215 @@ export function generatePageComponents(
   }
 
   return files;
+}
+
+// ---- Public Page Generation ----
+
+/**
+ * Generate a public page component — no Layout wrapper, no auth,
+ * uses public API functions (getPublic*) for data loading.
+ */
+function generatePublicPage(
+  pageName: string,
+  page: { name: string; children: AirUINode[] },
+  ctx: TranspileContext,
+  analysis: UIAnalysis,
+): string {
+  const lines: string[] = [];
+  lines.push("import { useState, useEffect } from 'react';");
+  lines.push("import * as api from '../api.js';");
+  lines.push('');
+  lines.push(`export default function ${pageName}Page({ currentPage, setCurrentPage }) {`);
+
+  // Detect data sources used in this page by scanning children for pipe expressions
+  const dataSources = detectPublicPageDataSources(page.children, ctx);
+  const declaredVars = new Set<string>(['currentPage', 'setCurrentPage']);
+
+  for (const ds of dataSources) {
+    lines.push(`  const [${ds.stateVar}, set${capitalize(ds.stateVar)}] = useState([]);`);
+    declaredVars.add(ds.stateVar);
+    declaredVars.add('set' + capitalize(ds.stateVar));
+  }
+
+  // Pre-generate child JSX
+  let childJsx = page.children.map(c =>
+    generateJSX(c, ctx, analysis, ROOT_SCOPE, 4)
+  ).filter(Boolean).join('\n');
+
+  // Apply semantic badge colors
+  const hasBadges = childJsx.includes(BADGE_STATIC_MARKER);
+  if (hasBadges) childJsx = applyBadgeColors(childJsx);
+
+  // Inject visual card headers for data sources with cover_color or image fields
+  childJsx = injectCardVisualHeaders(childJsx, dataSources, ctx);
+
+  // Scan JSX for undeclared state variables and add them
+  const extraState = detectUndeclaredStateVars(childJsx, declaredVars, ctx);
+  for (const { name, defaultVal } of extraState) {
+    lines.push(`  const [${name}, set${capitalize(name)}] = useState(${defaultVal});`);
+    declaredVars.add(name);
+    declaredVars.add('set' + capitalize(name));
+  }
+
+  lines.push('');
+
+  // Data fetching via public API functions
+  if (dataSources.length > 0) {
+    lines.push('  useEffect(() => {');
+    for (const ds of dataSources) {
+      lines.push(`    api.${ds.fnName}().then(r => set${capitalize(ds.stateVar)}(r.data ?? r)).catch(() => {});`);
+    }
+    lines.push('  }, []);');
+    lines.push('');
+  }
+
+  // Badge color helper if needed
+  if (hasBadges) {
+    lines.push(BADGE_COLOR_FN);
+    lines.push('');
+  }
+
+  // Render — no Layout wrapper (PublicLayout wrapping happens in App.jsx)
+  lines.push('  return (');
+  lines.push('    <div className="max-w-7xl mx-auto">');
+  lines.push(childJsx);
+  lines.push('    </div>');
+  lines.push('  );');
+  lines.push('}');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Detect data sources referenced in public page children.
+ * Matches pipe expressions like `projects|filter>*item(...)` and
+ * direct state references like `testimonials>*t(...)`.
+ */
+function detectPublicPageDataSources(
+  children: AirUINode[],
+  ctx: TranspileContext,
+): { stateVar: string; fnName: string }[] {
+  const sources: { stateVar: string; fnName: string }[] = [];
+  const seen = new Set<string>();
+
+  function tryAddSource(name: string): void {
+    if (seen.has(name)) return;
+    // Check if there's a matching public API route
+    const publicRoute = ctx.expandedRoutes.find(r =>
+      r.method === 'GET' && r.path === `/public/${name}`
+    );
+    if (publicRoute) {
+      sources.push({ stateVar: name, fnName: `getPublic${capitalize(name)}` });
+      seen.add(name);
+    } else {
+      // Fall back to regular API route
+      const regularRoute = ctx.expandedRoutes.find(r =>
+        r.method === 'GET' && r.path === `/${name}` && r.handler.endsWith('.findMany')
+      );
+      if (regularRoute) {
+        sources.push({ stateVar: name, fnName: `get${capitalize(name)}` });
+        seen.add(name);
+      }
+    }
+  }
+
+  function walk(node: AirUINode): void {
+    if (node.kind === 'binary') {
+      // Check both sides for data source names
+      const leftName = getNodeStateName(node.left);
+      if (leftName) tryAddSource(leftName);
+      const rightName = getNodeStateName(node.right);
+      if (rightName) tryAddSource(rightName);
+      walk(node.left);
+      walk(node.right);
+    } else if (node.kind === 'element' && node.children) {
+      for (const child of node.children) walk(child);
+    } else if (node.kind === 'scoped' && node.children) {
+      for (const child of node.children) walk(child);
+    } else if (node.kind === 'unary' && node.operand) {
+      walk(node.operand);
+    }
+  }
+
+  for (const child of children) walk(child);
+  return sources;
+}
+
+function getNodeStateName(node: AirUINode): string | null {
+  if (node.kind === 'element' && !node.children?.length) return node.element;
+  return null;
+}
+
+// ---- Visual Card Enhancement for Public Pages ----
+
+const IMAGE_FIELD_NAMES = new Set([
+  'image', 'image_url', 'cover_image', 'photo', 'thumbnail', 'avatar', 'banner', 'banner_url', 'photo_url',
+]);
+
+/**
+ * Post-process generated JSX for public pages: inject visual header elements
+ * into cards that iterate over models with cover_color or image fields.
+ * Uses negative margins to extend the header beyond the card's p-6 padding
+ * without restructuring the card DOM.
+ */
+function injectCardVisualHeaders(
+  jsx: string,
+  dataSources: { stateVar: string; fnName: string }[],
+  ctx: TranspileContext,
+): string {
+  if (!ctx.db) return jsx;
+
+  // Non-global regex: replaces only the FIRST card match per iteration block
+  const cardOpenRe = /(<div className="rounded-\[var\(--radius\)\] border border-\[var\(--border\)\] bg-\[var\(--surface\)\]) (p-6 space-y-3) (shadow-\[var\(--card-shadow\)\][^"]*)">/;
+
+  for (const ds of dataSources) {
+    // Find the @db model for this data source
+    const singular = ds.stateVar.replace(/ies$/, 'y').replace(/s$/, '');
+    const model = ctx.db.models.find(m =>
+      m.name.toLowerCase() === singular.toLowerCase() ||
+      pluralize(m.name.toLowerCase()) === ds.stateVar.toLowerCase()
+    );
+    if (!model) continue;
+
+    const hasCoverColor = model.fields.some(f => f.name === 'cover_color');
+    const imageField = model.fields.find(f => IMAGE_FIELD_NAMES.has(f.name));
+    if (!hasCoverColor && !imageField) continue;
+
+    // Find iteration variable: stateVar.map((iterVar) =>
+    const mapRe = new RegExp(`${ds.stateVar}\\.map\\(\\((\\w+)\\)\\s*=>`);
+    const mapMatch = jsx.match(mapRe);
+    if (!mapMatch) continue;
+    const iterVar = mapMatch[1];
+
+    // Locate the block of JSX inside this .map() call
+    const mapIdx = jsx.indexOf(mapMatch[0]);
+    if (mapIdx === -1) continue;
+
+    // Find the end of this .map() block — look for the closing ))}
+    const mapEnd = jsx.indexOf('))}', mapIdx);
+    if (mapEnd === -1) continue;
+
+    // Only modify the card within THIS .map() block, not subsequent ones
+    const before = jsx.slice(0, mapIdx);
+    const mapBlock = jsx.slice(mapIdx, mapEnd + 3);
+    const remaining = jsx.slice(mapEnd + 3);
+
+    let header: string;
+    if (imageField) {
+      header = `\n            {${iterVar}.${imageField.name} ? <img src={${iterVar}.${imageField.name}} alt="" className="h-48 w-full object-cover -mx-6 -mt-6 mb-4 rounded-t-[var(--radius)]" style={{ width: 'calc(100% + 3rem)' }} /> : <div className="h-40 -mx-6 -mt-6 mb-4 rounded-t-[var(--radius)] bg-gradient-to-br from-[var(--accent)]/20 to-[var(--accent)]/5" />}`;
+    } else {
+      header = `\n            <div className="h-32 -mx-6 -mt-6 mb-4 rounded-t-[var(--radius)]" style={{ backgroundColor: ${iterVar}.cover_color || '#374151' }} />`;
+    }
+
+    // Replace FIRST card opening tag in this scoped .map() block only
+    const modifiedBlock = mapBlock.replace(cardOpenRe, (match, prefix, padding, suffix) => {
+      return `${prefix} ${padding} ${suffix}">` + header;
+    });
+
+    jsx = before + modifiedBlock + remaining;
+  }
+  return jsx;
 }
 
 // ---- C1/G3: Detail Page Detection and Generation ----

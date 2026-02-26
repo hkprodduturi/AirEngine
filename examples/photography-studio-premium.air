@@ -1,0 +1,360 @@
+# ================================================================
+# Lumière Studio — Premium Photography & Visual Storytelling
+# ================================================================
+# Full-stack photography studio site with public portfolio,
+# services, inquiry funnel, testimonials, FAQ, plus a
+# studio CRM-lite backoffice for inquiry/lead management,
+# project CMS, and dashboard analytics.
+# ================================================================
+
+@app:lumiere
+
+@style(theme:dark,accent:#c4a35a,radius:8,font:sans,density:comfortable,maxWidth:1400)
+
+# ---- Client State ----
+
+@state{
+  user:?{id:int,name:str,email:str,role:str},
+  projects:[{id:int,title:str,category:str,location:str,description:str,cover_color:?str,date:str,client_type:?str,featured:bool,story:?str}],
+  services:[{id:int,name:str,starting_price:str,description:str,includes:str,popular:bool,details:?str}],
+  testimonials:[{id:int,name:str,role:?str,text:str,rating:int,event_type:?str}],
+  faqs:[{id:int,question:str,answer:str,sort_order:int}],
+  inquiries:[{id:int,name:str,email:str,phone:?str,event_type:str,event_date:?str,location:?str,budget:?str,message:?str,referral_source:?str,status:str,created_at:str}],
+  stats:{totalProjects:int,activeInquiries:int,avgRating:float,totalClients:int,bookedThisMonth:int,conversionRate:float},
+  categoryFilter:enum(all,weddings,portraits,commercial,editorial,events),
+  inquiryStatusFilter:enum(all,new,contacted,qualified,proposal_sent,booked,closed_lost),
+  search:str
+}
+
+# ---- Database Models ----
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,role:enum(admin,studio_manager,editor),password:str:required,created_at:datetime:auto}
+  Project{id:int:primary:auto,title:str:required,slug:str:required,category:enum(weddings,portraits,commercial,editorial,events):required,location:str:required,description:str:required,story:?str,cover_color:?str,date:str:required,client_type:?str,featured:bool:default(false),sort_order:int:default(0),created_at:datetime:auto}
+  Service{id:int:primary:auto,name:str:required,starting_price:str:required,description:str:required,includes:str:required,details:?str,popular:bool:default(false),sort_order:int:default(0)}
+  Testimonial{id:int:primary:auto,name:str:required,role:?str,text:str:required,rating:int:default(5),event_type:?str,project_id:?int,featured:bool:default(false),created_at:datetime:auto}
+  Faq{id:int:primary:auto,question:str:required,answer:str:required,category:enum(booking,pricing,process,general):default(general),sort_order:int:default(0)}
+  Inquiry{id:int:primary:auto,name:str:required,email:str:required,phone:?str,event_type:enum(wedding,portrait,commercial,editorial,event,other):required,event_date:?str,location:?str,budget:?str,guest_count:?int,referral_source:?str,message:?str,status:enum(new,contacted,qualified,proposal_sent,booked,closed_lost):default(new),created_at:datetime:auto}
+  @relation(Testimonial.project<>Project.testimonials)
+  @index(Project.slug:unique)
+  @index(Project.category)
+  @index(Project.featured)
+  @index(Inquiry.status)
+  @index(Inquiry.event_type)
+}
+
+# ---- Environment ----
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:required
+  PORT:int:3001
+)
+
+# ---- API Routes ----
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str,role:str)>auth.register
+  GET:/projects>~db.Project.findMany
+  GET:/projects/:id>~db.Project.findUnique
+  POST:/projects(title:str,slug:str,category:str,location:str,description:str,story:?str,cover_color:?str,date:str,client_type:?str,featured:bool)>~db.Project.create
+  PUT:/projects/:id(title:?str,category:?str,location:?str,description:?str,story:?str,featured:?bool)>~db.Project.update
+  DELETE:/projects/:id>~db.Project.delete
+  GET:/services>~db.Service.findMany
+  POST:/services(name:str,starting_price:str,description:str,includes:str,details:?str,popular:bool)>~db.Service.create
+  PUT:/services/:id(name:?str,starting_price:?str,description:?str,popular:?bool)>~db.Service.update
+  GET:/testimonials>~db.Testimonial.findMany
+  GET:/faqs>~db.Faq.findMany
+  GET:/inquiries>~db.Inquiry.findMany
+  POST:/inquiries(name:str,email:str,phone:?str,event_type:str,event_date:?str,location:?str,budget:?str,guest_count:?int,referral_source:?str,message:?str)>~db.Inquiry.create
+  PUT:/inquiries/:id(status:str)>~db.Inquiry.update
+  DELETE:/inquiries/:id>~db.Inquiry.delete
+  GET:/stats>~db.Project.aggregate
+  GET:/public/projects>~db.Project.findMany
+  GET:/public/projects/:slug>~db.Project.findFirst
+  GET:/public/services>~db.Service.findMany
+  GET:/public/testimonials>~db.Testimonial.findMany
+  GET:/public/faqs>~db.Faq.findMany
+  POST:/public/inquiries(name:str,email:str,phone:?str,event_type:str,event_date:?str,location:?str,budget:?str,guest_count:?int,referral_source:?str,message:?str)>~db.Inquiry.create
+)
+
+# ---- Authentication ----
+
+@auth(required,role:enum(admin,studio_manager,editor),redirect:/login)
+
+# ---- Email Templates ----
+
+@email(
+  inquiryReceived(name:str,event_type:str)>"New inquiry from your website"
+  inquiryConfirmation(name:str)>"Thank you for your inquiry"
+)
+
+# ---- Navigation ----
+
+@nav(
+  /home>home
+  /gallery>gallery
+  /packages>packages
+  /studio>studio
+  /book>booking
+  /faq>faq
+  /login>?user>dashboard:login
+  /dashboard>?user>dashboard:login
+  /portfolio>?user>portfolio:login
+  /services>?user>services:login
+  /inquiries>?user>inquiries:login
+  /testimonials>?user>testimonials:login
+)
+
+# ---- Session ----
+
+@persist:cookie(user,httpOnly,7d)
+
+# ---- Lifecycle Hooks ----
+
+@hook(
+  onMount>~api.projects+~api.services+~api.testimonials+~api.faqs+~api.stats+~api.inquiries
+  onChange:categoryFilter>~api.projects
+  onChange:inquiryStatusFilter>~api.inquiries
+)
+
+# ---- User Interface (14 pages: 6 public + 1 auth + 7 admin) ----
+
+@ui(
+  @page:home(
+    @section:hero(
+      h1>"Lumiere Studio"
+      p:"muted">"Light. Artistry. Story."
+      row(btn:primary>"View Portfolio",btn:ghost>"Book a Session")
+    )
+    @section:featured(
+      h2>"Featured Work"
+      grid:3>projects>*project(
+        card(h3>#project.title,badge:#project.category,text:"muted">#project.location)
+      )
+    )
+    @section:testimonials(
+      h2>"What Clients Say"
+      grid:2>testimonials>*t(
+        card(p>#t.text,row(h3>#t.name+text:"muted">#t.role),badge:#t.event_type)
+      )
+    )
+    @section:cta(
+      h2>"Ready to Tell Your Story?"
+      p:"muted">"Let's create something beautiful together."
+      btn:primary>"Get in Touch"
+    )
+  )
+  @page:gallery(
+    header>h1>"Portfolio"
+    grid:3>projects>*project(
+      card(h3>#project.title,badge:#project.category,text:"muted">#project.location,text:"muted">#project.date,p>#project.description)
+    )
+  )
+  @page:packages(
+    header>h1>"Services & Packages"
+    grid:3>services>*svc(
+      card(h2>#svc.name,h3>#svc.starting_price,p>#svc.description,p:"muted">#svc.includes,badge:#svc.popular)
+    )
+  )
+  @page:studio(
+    header>h1>"About Lumiere Studio"
+    @section:story(h2>"Our Story"+p>"Founded in 2018, Lumiere Studio began with a simple belief: every moment deserves to be captured with artistry and intention.")
+    @section:approach(h2>"Our Approach"+grid:3(card(h3>"Discovery"+p>"Understanding your vision, your story, and what matters most."),card(h3>"Create"+p>"Blending documentary and editorial styles for authentic imagery."),card(h3>"Deliver"+p>"Carefully edited images delivered in a curated private gallery.")))
+    @section:team(h2>"The Team"+grid:2(card(h3>"Elena Marchetti"+text:"muted">"Lead Photographer"+p>"Award-winning photographer with 12+ years of experience."),card(h3>"James Chen"+text:"muted">"Senior Photographer"+p>"Specializes in warm, natural light portraiture.")))
+  )
+  @page:booking(
+    @section:hero(
+      h1>"Let's Work Together"
+      p:"muted">"Tell us about your project"
+    )
+    card(
+      form(
+        input:text>#inquiry.name
+        input:email>#inquiry.email
+        input:text>#inquiry.phone
+        input:text>#inquiry.event_type
+        input:text>#inquiry.event_date
+        input:text>#inquiry.location
+        input:text>#inquiry.budget
+        input:text>#inquiry.message
+        btn:primary>"Send Inquiry"
+      )
+    )
+  )
+  @page:faq(
+    header>h1>"Frequently Asked Questions"
+    list>faqs>*f(card(h3>#f.question,p>#f.answer))
+  )
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Lumiere Studio"
+        p:"muted">"Studio administration"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"LS"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Portfolio"
+        btn:ghost>"Services"
+        btn:ghost>"Inquiries"
+        btn:ghost>"Testimonials"
+        btn:ghost>"About"
+      )
+    )+main(
+      header>h1>"Studio Dashboard"
+      grid:3(
+        stat:"Total Projects">#stats.totalProjects
+        stat:"Active Inquiries">#stats.activeInquiries
+        stat:"Avg Rating">#stats.avgRating
+      )
+      grid:3(
+        stat:"Total Clients">#stats.totalClients
+        stat:"Booked This Month">#stats.bookedThisMonth
+        stat:"Conversion Rate">#stats.conversionRate
+      )
+      @section:recentInquiries(
+        h2>"Recent Inquiries"
+        table>inquiries>*inq(
+          text>#inq.name
+          text:"muted">#inq.email
+          badge:#inq.event_type
+          badge:#inq.status
+          text:"muted">#inq.created_at
+          row(btn:ghost>"Contact">!contact(#inq.id),btn:ghost>"Qualify">!qualify(#inq.id))
+        )
+      )
+      @section:featuredProjects(
+        h2>"Featured Projects"
+        grid:3>projects>*project(
+          card(
+            h3>#project.title
+            badge:#project.category
+            text:"muted">#project.location
+            text:"muted">#project.date
+          )
+        )
+      )
+    )
+  )
+  @page:portfolio(
+    sidebar(
+      logo>"LS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Portfolio",btn:ghost>"Services",btn:ghost>"Inquiries",btn:ghost>"Testimonials",btn:ghost>"About")
+    )+main(
+      header>h1>"Portfolio"+tabs>categoryFilter.set(all,weddings,portraits,commercial,editorial,events)+search:input>#search+btn:primary>"New Project"
+      grid:3>projects|categoryFilter|search>*project(
+        card(
+          h3>#project.title
+          badge:#project.category
+          text:"muted">#project.location
+          p>#project.description
+          text:"muted">#project.date
+          text:"muted">#project.client_type
+          row(btn:ghost>"Edit">!edit(#project.id),btn:ghost>"Feature">!feature(#project.id))
+        )
+      )
+    )
+  )
+  @page:services(
+    sidebar(
+      logo>"LS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Portfolio",btn:ghost>"Services",btn:ghost>"Inquiries",btn:ghost>"Testimonials",btn:ghost>"About")
+    )+main(
+      header>h1>"Services & Packages"+btn:primary>"New Package"
+      grid:3>services>*svc(
+        card(
+          h2>#svc.name
+          h3>#svc.starting_price
+          p>#svc.description
+          p:"muted">#svc.includes
+          badge:#svc.popular
+        )
+      )
+    )
+  )
+  @page:inquiries(
+    sidebar(
+      logo>"LS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Portfolio",btn:ghost>"Services",btn:ghost>"Inquiries",btn:ghost>"Testimonials",btn:ghost>"About")
+    )+main(
+      header>h1>"Inquiry Pipeline"+tabs>inquiryStatusFilter.set(all,new,contacted,qualified,proposal_sent,booked,closed_lost)+search:input>#search
+      table>inquiries|inquiryStatusFilter|search>*inq(
+        text>#inq.name
+        text:"muted">#inq.email
+        text:"muted">#inq.phone
+        badge:#inq.event_type
+        text:"muted">#inq.location
+        text:"muted">#inq.event_date
+        text:"muted">#inq.budget
+        badge:#inq.status
+        text:"muted">#inq.created_at
+        row(btn:ghost>"Advance">!advance(#inq.id),btn:ghost>"Book">!book(#inq.id),btn:ghost>"Lost">!lost(#inq.id))
+      )
+    )
+  )
+  @page:testimonials(
+    sidebar(
+      logo>"LS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Portfolio",btn:ghost>"Services",btn:ghost>"Inquiries",btn:ghost>"Testimonials",btn:ghost>"About")
+    )+main(
+      header>h1>"Testimonials"
+      grid:2>testimonials>*test(
+        card(
+          p>#test.text
+          row(h3>#test.name+text:"muted">#test.role)
+          badge:#test.event_type
+          badge:#test.rating
+        )
+      )
+    )
+  )
+  @page:about(
+    sidebar(
+      logo>"LS"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Portfolio",btn:ghost>"Services",btn:ghost>"Inquiries",btn:ghost>"Testimonials",btn:ghost>"About")
+    )+main(
+      header>h1>"About Lumiere Studio"
+      @section:story(
+        h2>"Our Story"
+        p>"Founded in 2018, Lumiere Studio began with a simple belief: every moment deserves to be captured with artistry and intention. What started as one photographer with a vision has grown into a boutique studio known for its emotive, editorial approach to visual storytelling."
+        p>"We chase light, shape it, and use it to reveal the beauty in every frame. From intimate elopements on the coast to commercial campaigns for global brands, we bring the same passion and precision to every project."
+      )
+      @section:approach(
+        h2>"Our Approach"
+        grid:3(
+          card(h3>"Discovery"+p>"We start every project with a conversation. Understanding your vision, your story, and what matters most to you.")
+          card(h3>"Create"+p>"On the day, we blend documentary and editorial styles. Candid moments alongside intentional compositions.")
+          card(h3>"Deliver"+p>"Your images are carefully edited and delivered in a private gallery. Every frame curated, every detail refined.")
+        )
+      )
+      @section:team(
+        h2>"The Team"
+        grid:2(
+          card(h3>"Elena Marchetti"+text:"muted">"Lead Photographer & Founder"+p>"Award-winning photographer with 12+ years of experience. Published in Vogue, Elle, and Architectural Digest. Known for her dramatic, editorial style.")
+          card(h3>"James Chen"+text:"muted">"Senior Photographer"+p>"Specializes in wedding and portrait photography. Known for his warm, natural light style and ability to put even the most camera-shy clients at ease.")
+        )
+      )
+      @section:press(
+        h2>"As Featured In"
+        grid:4(
+          card(h3>"Vogue Weddings")
+          card(h3>"Elle Decor")
+          card(h3>"Architectural Digest")
+          card(h3>"The Knot")
+        )
+      )
+    )
+  )
+)

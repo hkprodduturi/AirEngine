@@ -10,6 +10,7 @@ import type {
   AirEmailBlock, AirEnvBlock, AirDeployBlock,
 } from '../parser/types.js';
 import { expandCrud } from './route-utils.js';
+import { isAuthPageName } from './react/helpers.js';
 
 export interface TranspileContext {
   appName: string;
@@ -34,6 +35,8 @@ export interface TranspileContext {
   hasBackend: boolean;
   /** Pre-expanded API routes (CRUD → GET/POST/PUT/DELETE). Computed once eagerly. */
   expandedRoutes: AirRoute[];
+  /** Page names that are public (no auth guard) — derived from unconditional @nav routes */
+  publicPageNames: string[];
 }
 
 export function extractContext(ast: AirAST): TranspileContext {
@@ -58,6 +61,7 @@ export function extractContext(ast: AirAST): TranspileContext {
     deploy: null,
     hasBackend: false,
     expandedRoutes: [],
+    publicPageNames: [],
   };
 
   for (const block of ast.app.blocks) {
@@ -120,6 +124,12 @@ export function extractContext(ast: AirAST): TranspileContext {
 
   // Pre-expand CRUD routes once
   ctx.expandedRoutes = expandCrud(ctx.apiRoutes);
+
+  // Derive public page names: unconditional @nav routes that aren't auth pages
+  // Also filter out routes with empty paths (parser artifacts from complex nav syntax)
+  ctx.publicPageNames = ctx.navRoutes
+    .filter(r => r.path && !r.condition && !isAuthPageName(r.target))
+    .map(r => r.target);
 
   return ctx;
 }
