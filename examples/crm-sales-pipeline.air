@@ -1,0 +1,318 @@
+# ================================================================
+# CRM + Sales Pipeline — Flagship Showcase App
+# ================================================================
+# Real-world CRM with leads, contacts, accounts, deals, tasks,
+# activity timeline, pipeline stages, and role-based views.
+# Demonstrates complex multi-model workflows, messy data handling,
+# premium UI, and enterprise-grade patterns.
+# ================================================================
+
+@app:crm-sales-pipeline
+
+@style(theme:dark,accent:#6366f1,radius:8,font:sans,density:comfortable,maxWidth:1440,variant:enterprise-clean)
+
+# ---- Client State ----
+
+@state{
+  user:?{id:int,name:str,email:str,role:str,avatar:?str},
+  leads:[{id:int,first_name:str,last_name:str,email:str,phone:?str,company:str,title:?str,source:str,status:str,owner:?str,created_at:str}],
+  contacts:[{id:int,first_name:str,last_name:str,email:str,phone:?str,title:?str,company:str,owner:?str,status:str}],
+  accounts:[{id:int,name:str,industry:str,website:?str,phone:?str,city:?str,annual_revenue:?float,employee_count:?int,owner:?str,status:str,contactCount:int}],
+  opportunities:[{id:int,name:str,amount:float,stage:str,close_date:?str,account:?str,contact:?str,owner:?str,probability:int}],
+  tasks:[{id:int,title:str,status:str,priority:str,due_date:?str,owner:?str,related_type:?str,related_name:?str}],
+  activities:[{id:int,type:str,subject:str,body:?str,contact:?str,user:str,created_at:str}],
+  stats:{totalRevenue:float,dealsInPipeline:int,winRate:float,tasksDueToday:int,newLeads:int,avgDealSize:float},
+  leadStatusFilter:enum(all,new,contacted,qualified,unqualified),
+  dealStageFilter:enum(all,prospecting,qualification,proposal,negotiation,closed_won,closed_lost),
+  taskStatusFilter:enum(all,pending,in_progress,completed),
+  accountStatusFilter:enum(all,active,inactive,prospect),
+  search:str,
+  sortField:str,
+  sortOrder:str
+}
+
+# ---- Database Models (8 core entities) ----
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,phone:?str,title:?str,avatar:?str,role:enum(admin,sales_manager,sales_rep),password:str:required,created_at:datetime:auto}
+  Account{id:int:primary:auto,name:str:required,industry:?str,website:?str,phone:?str,address:?str,city:?str,state:?str,country:?str,annual_revenue:?float,employee_count:?int,owner_id:?int,status:enum(active,inactive,prospect):default(prospect),notes:?str,created_at:datetime:auto}
+  Contact{id:int:primary:auto,first_name:str:required,last_name:str:required,email:?str,phone:?str,title:?str,account_id:?int,owner_id:?int,lead_source:?str,status:enum(active,inactive):default(active),created_at:datetime:auto}
+  Lead{id:int:primary:auto,first_name:str:required,last_name:str:required,email:?str,phone:?str,company:?str,title:?str,source:enum(web,referral,cold_call,trade_show,partner,other):default(web),status:enum(new,contacted,qualified,unqualified,converted):default(new),owner_id:?int,notes:?str,created_at:datetime:auto}
+  Opportunity{id:int:primary:auto,name:str:required,amount:float:default(0),stage:enum(prospecting,qualification,proposal,negotiation,closed_won,closed_lost):default(prospecting),close_date:?date,probability:int:default(10),description:?str,account_id:?int,contact_id:?int,owner_id:?int,created_at:datetime:auto}
+  Task{id:int:primary:auto,title:str:required,description:?str,status:enum(pending,in_progress,completed,cancelled):default(pending),priority:enum(low,medium,high,urgent):default(medium),due_date:?date,owner_id:?int,related_type:?str,related_id:?int,created_at:datetime:auto}
+  Activity{id:int:primary:auto,type:enum(call,email,meeting,note):default(note),subject:str:required,body:?str,duration_minutes:?int,contact_id:?int,opportunity_id:?int,user_id:int:required,created_at:datetime:auto}
+  Tag{id:int:primary:auto,name:str:required,entity_type:str:required,entity_id:int:required}
+  @relation(Account.owner<>User.accounts)
+  @relation(Account.contacts<>Contact.account)
+  @relation(Contact.owner<>User.contacts)
+  @relation(Lead.owner<>User.leads)
+  @relation(Opportunity.account<>Account.opportunities)
+  @relation(Opportunity.contact<>Contact.opportunities)
+  @relation(Opportunity.owner<>User.opportunities)
+  @relation(Task.owner<>User.tasks)
+  @relation(Activity.contact<>Contact.activities)
+  @relation(Activity.opportunity<>Opportunity.activities)
+  @relation(Activity.user<>User.activities)
+  @index(User.email:unique)
+  @index(Lead.status)
+  @index(Opportunity.stage)
+  @index(Task.status+Task.due_date)
+  @index(Activity.user_id+Activity.created_at)
+  @index(Tag.entity_type+Tag.entity_id)
+}
+
+# ---- Environment ----
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:required
+  PORT:int:3001
+)
+
+# ---- API Routes (28 endpoints) ----
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str,role:str)>auth.register
+  GET:/users>~db.User.findMany
+  PUT:/users/:id(name:str,phone:?str,title:?str)>~db.User.update
+  GET:/accounts>~db.Account.findMany
+  POST:/accounts(name:str,industry:?str,website:?str,phone:?str,city:?str,status:str)>~db.Account.create
+  PUT:/accounts/:id(name:?str,industry:?str,status:?str,owner_id:?int)>~db.Account.update
+  DELETE:/accounts/:id>~db.Account.delete
+  GET:/contacts>~db.Contact.findMany
+  POST:/contacts(first_name:str,last_name:str,email:?str,phone:?str,title:?str,account_id:?int)>~db.Contact.create
+  PUT:/contacts/:id(first_name:?str,last_name:?str,email:?str,phone:?str,status:?str)>~db.Contact.update
+  DELETE:/contacts/:id>~db.Contact.delete
+  GET:/leads>~db.Lead.findMany
+  POST:/leads(first_name:str,last_name:str,email:?str,company:?str,source:str)>~db.Lead.create
+  PUT:/leads/:id(status:?str,owner_id:?int,notes:?str)>~db.Lead.update
+  DELETE:/leads/:id>~db.Lead.delete
+  GET:/opportunities>~db.Opportunity.findMany
+  POST:/opportunities(name:str,amount:float,stage:str,account_id:?int,contact_id:?int)>~db.Opportunity.create
+  PUT:/opportunities/:id(stage:?str,amount:?float,probability:?int,close_date:?str)>~db.Opportunity.update
+  DELETE:/opportunities/:id>~db.Opportunity.delete
+  GET:/opportunities/:id/activities>~db.Activity.findMany
+  POST:/opportunities/:id/activities(type:str,subject:str,body:?str)>~db.Activity.create
+  GET:/tasks>~db.Task.findMany
+  POST:/tasks(title:str,priority:str,due_date:?str,owner_id:?int,related_type:?str,related_id:?int)>~db.Task.create
+  PUT:/tasks/:id(status:?str,priority:?str)>~db.Task.update
+  DELETE:/tasks/:id>~db.Task.delete
+  GET:/activities>~db.Activity.findMany
+  GET:/stats>~db.Opportunity.aggregate
+)
+
+# ---- Authentication ----
+
+@auth(required,role:enum(admin,sales_manager,sales_rep),redirect:/login)
+
+# ---- Scheduled Jobs ----
+
+@cron(
+  staleLeads>"0 9 * * *">!db.leads.markStale
+  taskReminders>"0 8 * * *">!email.sendTaskReminders
+)
+
+# ---- Background Jobs ----
+
+@queue(
+  sendEmail(to:str,template:str)>!email.send
+  importLeads(file:str)>!leads.importBatch
+)
+
+# ---- Email Templates ----
+
+@email(
+  leadAssigned(name:str,company:str)>"New lead assigned to you"
+  dealWon(name:str,amount:float)>"Deal closed won!"
+  taskDue(name:str,title:str)>"Task due reminder"
+)
+
+# ---- Navigation ----
+
+@nav(
+  />?user>dashboard:login
+  /leads>?user>leads:login
+  /contacts>?user>contacts:login
+  /accounts>?user>accounts:login
+  /deals>?user>deals:login
+  /tasks>?user>tasks:login
+  /activities>?user>activities:login
+  /login>login
+)
+
+# ---- Session ----
+
+@persist:cookie(user,httpOnly,7d)
+
+# ---- Lifecycle Hooks ----
+
+@hook(
+  onMount>~api.stats+~api.opportunities
+  onChange:leadStatusFilter>~api.leads
+  onChange:dealStageFilter>~api.opportunities
+  onChange:taskStatusFilter>~api.tasks
+)
+
+# ---- User Interface (8 pages) ----
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"SalesPipe CRM"
+        p:"muted">"Manage your pipeline, close more deals"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+        )
+      )
+    )
+  )
+  @page:dashboard(
+    sidebar(
+      logo>"SP"
+      nav:vertical(
+        btn:ghost>"Dashboard"
+        btn:ghost>"Leads"
+        btn:ghost>"Contacts"
+        btn:ghost>"Accounts"
+        btn:ghost>"Deals"
+        btn:ghost>"Tasks"
+        btn:ghost>"Activities"
+      )
+    )+main(
+      header>h1>"Sales Dashboard"
+      grid:3(
+        stat:"Pipeline Value">#stats.totalRevenue
+        stat:"Active Deals">#stats.dealsInPipeline
+        stat:"Win Rate">#stats.winRate
+      )
+      grid:3(
+        stat:"New Leads">#stats.newLeads
+        stat:"Avg Deal Size">#stats.avgDealSize
+        stat:"Tasks Due">#stats.tasksDueToday
+      )
+      @section:pipeline(
+        h2>"Deal Pipeline"
+        table>opportunities|dealStageFilter>*opp(
+          text>#opp.name
+          badge:#opp.stage
+          text:amount:$#opp.amount
+          text:"muted">#opp.account
+          text:"muted">#opp.close_date
+          text:"muted">#opp.owner
+        )
+      )
+      @section:recentActivity(
+        h2>"Recent Activity"
+        list>activities>*activity(
+          text>#activity.subject+badge:#activity.type+text:"muted">#activity.user+text:"muted">#activity.created_at
+        )
+      )
+    )
+  )
+  @page:leads(
+    sidebar(
+      logo>"SP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Leads",btn:ghost>"Contacts",btn:ghost>"Accounts",btn:ghost>"Deals",btn:ghost>"Tasks",btn:ghost>"Activities")
+    )+main(
+      header>h1>"Leads"+search:input>#search+tabs>leadStatusFilter.set(all,new,contacted,qualified,unqualified)+btn:primary>"New Lead"
+      table>leads|leadStatusFilter|search>*lead(
+        text>#lead.first_name+" "+#lead.last_name
+        text:"muted">#lead.company
+        badge:#lead.source
+        badge:#lead.status
+        text:"muted">#lead.phone
+        text:"muted">#lead.owner
+        text:"muted">#lead.created_at
+        row(btn:ghost>"Qualify">!qualify(#lead.id),btn:ghost>"Convert">!convert(#lead.id),btn:ghost>"Assign">!assign(#lead.id))
+      )
+    )
+  )
+  @page:contacts(
+    sidebar(
+      logo>"SP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Leads",btn:ghost>"Contacts",btn:ghost>"Accounts",btn:ghost>"Deals",btn:ghost>"Tasks",btn:ghost>"Activities")
+    )+main(
+      header>h1>"Contacts"+search:input>#search+btn:primary>"New Contact"
+      table>contacts|search>*contact(
+        text>#contact.first_name+" "+#contact.last_name
+        text:"muted">#contact.email
+        text:"muted">#contact.phone
+        text:"muted">#contact.title
+        text:"muted">#contact.company
+        badge:#contact.status
+        text:"muted">#contact.owner
+      )
+    )
+  )
+  @page:accounts(
+    sidebar(
+      logo>"SP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Leads",btn:ghost>"Contacts",btn:ghost>"Accounts",btn:ghost>"Deals",btn:ghost>"Tasks",btn:ghost>"Activities")
+    )+main(
+      header>h1>"Accounts"+tabs>accountStatusFilter.set(all,active,inactive,prospect)+btn:primary>"New Account"
+      table>accounts|accountStatusFilter>*account(
+        text>#account.name
+        badge:#account.industry
+        badge:#account.status
+        text:amount:$#account.annual_revenue
+        text:"muted">#account.city
+        text:"muted">#account.owner
+      )
+    )
+  )
+  @page:deals(
+    sidebar(
+      logo>"SP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Leads",btn:ghost>"Contacts",btn:ghost>"Accounts",btn:ghost>"Deals",btn:ghost>"Tasks",btn:ghost>"Activities")
+    )+main(
+      header>h1>"Deal Pipeline"+tabs>dealStageFilter.set(all,prospecting,qualification,proposal,negotiation,closed_won,closed_lost)+btn:primary>"New Deal"
+      table>opportunities|dealStageFilter>*deal(
+        text>#deal.name
+        text:amount:$#deal.amount
+        badge:#deal.stage
+        text:"muted">#deal.probability+"%"
+        text:"muted">#deal.close_date
+        text:"muted">#deal.account
+        text:"muted">#deal.owner
+        row(btn:ghost>"Advance">!advance(#deal.id),btn:ghost>"Won">!done(#deal.id),btn:ghost>"Lost">!archive(#deal.id))
+      )
+    )
+  )
+  @page:tasks(
+    sidebar(
+      logo>"SP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Leads",btn:ghost>"Contacts",btn:ghost>"Accounts",btn:ghost>"Deals",btn:ghost>"Tasks",btn:ghost>"Activities")
+    )+main(
+      header>h1>"Tasks"+tabs>taskStatusFilter.set(all,pending,in_progress,completed)+btn:primary>"New Task"
+      table>tasks|taskStatusFilter>*task(
+        text>#task.title
+        badge:#task.status
+        badge:#task.priority
+        text:"muted">#task.due_date
+        text:"muted">#task.owner
+        text:"muted">#task.related_type+": "+#task.related_name
+        row(btn:ghost>"Complete">!done(#task.id),btn:ghost>"Assign">!assign(#task.id))
+      )
+    )
+  )
+  @page:activities(
+    sidebar(
+      logo>"SP"
+      nav:vertical(btn:ghost>"Dashboard",btn:ghost>"Leads",btn:ghost>"Contacts",btn:ghost>"Accounts",btn:ghost>"Deals",btn:ghost>"Tasks",btn:ghost>"Activities")
+    )+main(
+      header>h1>"Activity Timeline"+btn:primary>"Log Activity"
+      list>activities>*activity(
+        card(
+          row(badge:#activity.type+h3>#activity.subject+text:"muted">#activity.user)
+          p>#activity.body
+          text:"muted">#activity.contact+" · "+#activity.created_at
+        )
+      )
+    )
+  )
+)
