@@ -11,7 +11,7 @@
     PUT:/users/:id(role:enum)>~users.update
     DELETE:/users/:id>~users.remove
   )
-  @style(theme:dark,accent:#10b981,radius:8,font:mono,density:compact)
+  @style(theme:dark,accent:#a855f7,radius:12,font:mono,density:compact,variant:premium-dark)
   @ui(
     sidebar(
       logo+"Dashboard"

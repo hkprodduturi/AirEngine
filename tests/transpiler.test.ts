@@ -731,8 +731,8 @@ describe('golden: landing.air codegen shape', () => {
 
   it('uses light theme CSS variables', () => {
     expect(css).toContain('--bg: #ffffff');
-    expect(css).toContain('--fg: #111827');
-    expect(css).toContain('--accent: #7c3aed');
+    expect(css).toContain('--fg: #0c4a6e');  // modern-bright variant
+    expect(css).toContain('--accent: #0ea5e9');
   });
 
   it('respects maxWidth from @style', () => {
@@ -797,8 +797,8 @@ describe('semantics: supported features', () => {
     expect(todoCss).toContain('--border:');
     expect(todoCss).toContain('--hover:');
     const landingCss = transpileFile('landing').files.find(f => f.path === 'src/index.css')!.content;
-    expect(landingCss).toContain('--bg: #ffffff');  // light theme
-    expect(landingCss).toContain('--fg: #111827');
+    expect(landingCss).toContain('--bg: #ffffff');  // modern-bright variant (light)
+    expect(landingCss).toContain('--fg: #0c4a6e');
     expect(getAppJsx('todo')).toContain('bg-[var(--bg)]');
     expect(getAppJsx('landing')).toContain('bg-[var(--bg)]');
   });

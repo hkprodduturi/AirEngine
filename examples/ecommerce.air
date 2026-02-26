@@ -7,7 +7,7 @@
 
 @app:ecommerce
 
-@style(theme:dark,accent:#f59e0b,radius:12,font:sans,maxWidth:1400)
+@style(theme:dark,accent:#f59e0b,radius:8,font:sans,maxWidth:1400,variant:enterprise-clean)
 
 @state{
   user:?{id:int,name:str,email:str,role:str},

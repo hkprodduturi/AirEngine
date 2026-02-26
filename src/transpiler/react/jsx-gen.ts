@@ -91,6 +91,66 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
   const lines: string[] = [];
   lines.push(`<div className="${rootClasses}">`);
 
+  // When auth-gated without Layout, render auth pages outside the constrained wrapper
+  // so login/register get full-screen centering without conflicting max-width/padding
+  if (hasAuthGating && !hasLayout && analysis.hasPages) {
+    const allPages: AirUINode[] = [];
+    for (const node of ctx.uiNodes) {
+      allPages.push(...extractScopedPages(node));
+    }
+    const authPages = allPages.filter(p => p.kind === 'scoped' && isAuthPageName(p.name));
+    const nonAuthPages = allPages.filter(p => !(p.kind === 'scoped' && isAuthPageName(p.name)));
+
+    // Auth pages: render directly in root (full-screen, no wrapper)
+    if (authPages.length > 0) {
+      if (useLazy) {
+        lines.push(`  <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>}>`);
+        for (const pn of authPages) {
+          const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, 4);
+          if (jsx) lines.push(jsx);
+        }
+        lines.push('  </Suspense>');
+      } else {
+        for (const pn of authPages) {
+          const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, 2);
+          if (jsx) lines.push(jsx);
+        }
+      }
+    }
+
+    // Non-auth pages: wrap in constrained container behind auth gate
+    if (nonAuthPages.length > 0) {
+      lines.push('  {isAuthed && (');
+      if (hasSidebar) {
+        lines.push('    <div className="flex min-h-screen">');
+      } else if (wrapperClass) {
+        lines.push(`    <div className="${wrapperClass}">`);
+      }
+      const innerIndent = hasSidebar || wrapperClass ? 6 : 4;
+      if (useLazy) {
+        const suspenseIndent = ' '.repeat(innerIndent);
+        lines.push(`${suspenseIndent}<Suspense fallback={<div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>}>`);
+        for (const pn of nonAuthPages) {
+          const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, innerIndent + 2);
+          if (jsx) lines.push(jsx);
+        }
+        lines.push(`${suspenseIndent}</Suspense>`);
+      } else {
+        for (const pn of nonAuthPages) {
+          const jsx = generateJSX(pn, ctx, analysis, ROOT_SCOPE, innerIndent);
+          if (jsx) lines.push(jsx);
+        }
+      }
+      if (hasSidebar || wrapperClass) {
+        lines.push('    </div>');
+      }
+      lines.push('  )}');
+    }
+
+    lines.push('</div>');
+    return lines;
+  }
+
   if (hasSidebar) {
     lines.push('  <div className="flex min-h-screen">');
   } else if (wrapperClass) {

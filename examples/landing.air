@@ -1,5 +1,5 @@
 @app:landing
-  @style(theme:light,accent:#7c3aed,radius:16,font:display+sans,maxWidth:1200)
+  @style(theme:light,accent:#0ea5e9,radius:10,font:display+sans,maxWidth:1200,variant:modern-bright)
   @nav(/#hero,/#features,/#pricing,/#cta)
   @ui(
     @section:hero(

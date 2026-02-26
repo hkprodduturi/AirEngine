@@ -101,6 +101,7 @@ export function generateLayout(ctx: TranspileContext, analysis: UIAnalysis): str
   lines.push('      <aside className={`');
   lines.push('        fixed lg:sticky top-0 left-0 z-50 h-screen w-64');
   lines.push('        bg-[var(--surface)] border-r border-[var(--border)]');
+  lines.push('        shadow-[1px_0_8px_rgba(0,0,0,0.08)]');
   lines.push('        flex flex-col transition-transform duration-200 ease-in-out');
   lines.push("        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}");
   lines.push('      `}>');

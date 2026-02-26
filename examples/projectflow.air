@@ -10,7 +10,7 @@
 
 # ---- Design System ----
 
-@style(theme:dark,accent:#6366f1,radius:12,font:sans,density:comfortable,maxWidth:1400)
+@style(theme:dark,accent:#2563eb,radius:6,font:sans,density:comfortable,maxWidth:1400,variant:enterprise-clean)
 
 # ---- Client State ----
 

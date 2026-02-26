@@ -578,17 +578,18 @@ function generateOriginalPage(
 
   lines.push('  return (');
   if (isShallowForm && !hasSidebar) {
-    // Auth-style centered form page
-    lines.push('    <div className="flex items-center justify-center min-h-screen p-4 bg-[var(--bg)]">');
+    // Auth-style centered form page — no redundant bg (root div handles it)
+    lines.push('    <div className="flex items-center justify-center min-h-screen">');
     lines.push('      <div className="w-full max-w-md animate-fade-in">');
-    lines.push('        <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-8 shadow-lg space-y-6">');
+    lines.push('        <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-8 shadow-xl space-y-5">');
     const childJsx = page.children.map(c => generateJSX(c, ctx, analysis, ROOT_SCOPE, 10)).filter(Boolean).join('\n');
     lines.push(childJsx);
     lines.push('        </div>');
     lines.push('      </div>');
     lines.push('    </div>');
   } else if (isDeepForm && !hasSidebar) {
-    lines.push('    <div className="flex items-center justify-center min-h-screen p-4 bg-[var(--bg)]">');
+    // Deep form page (e.g. main>grid:1(card(form(...)))) — no redundant bg
+    lines.push('    <div className="flex items-center justify-center min-h-screen">');
     lines.push('      <div className="w-full max-w-md animate-fade-in">');
     const childJsx = page.children.map(c => generateJSX(c, ctx, analysis, ROOT_SCOPE, 8)).filter(Boolean).join('\n');
     lines.push(childJsx);
