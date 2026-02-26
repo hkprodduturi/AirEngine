@@ -186,7 +186,7 @@
       "client/src/types.ts": "98dd0de09389c018",
       "client/src/pages/LoginPage.jsx": "8a76b0f6deba1445",
       "client/src/pages/DashboardPage.jsx": "8f38a5f20242974c",
-      "client/src/pages/TicketsPage.jsx": "c8320ee646fe60a6",
+      "client/src/pages/TicketsPage.jsx": "f4db2df9d0289d09",
       "client/src/pages/AgentsPage.jsx": "7908fb9806389cc9",
       "client/src/pages/TicketDetailPage.jsx": "91b874009c7b80dd",
       "server/package.json": "e7b2e642383f56bb",

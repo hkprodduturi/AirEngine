@@ -789,7 +789,12 @@ function generateCrudPage(
 
   // Local state
   const declaredVars = new Set<string>(['user', 'logout', 'currentPage', 'setCurrentPage']);
-  if (detailSetterProp) declaredVars.add(detailSetterProp);
+  if (detailSetterProp) {
+    declaredVars.add(detailSetterProp);
+    // Also mark the state variable name so detectUndeclaredStateVars doesn't re-declare it
+    const stateVarName = detailSetterProp.replace(/^set/, '');
+    declaredVars.add(stateVarName.charAt(0).toLowerCase() + stateVarName.slice(1));
+  }
   lines.push(`  const [${modelPlural}, set${capitalize(modelPlural)}] = useState([]);`);
   lines.push('  const [loading, setLoading] = useState(true);');
   declaredVars.add(modelPlural);
