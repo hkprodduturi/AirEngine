@@ -790,6 +790,13 @@ function generateCrudPage(
     lines.push("  const isAdmin = user?.role === 'admin';");
     declaredVars.add('isAdmin');
   }
+  // C3/G9: Pagination state — dedicated pageNum (not nav currentPage)
+  if (getFnName) {
+    lines.push('  const [pageNum, setPageNum] = useState(1);');
+    lines.push('  const [totalPages, setTotalPages] = useState(1);');
+    declaredVars.add('pageNum'); declaredVars.add('setPageNum');
+    declaredVars.add('totalPages'); declaredVars.add('setTotalPages');
+  }
   // Mark handler names as known
   if (postFnName) declaredVars.add('handleCreate');
   if (putFnName) declaredVars.add('handleUpdate');
@@ -834,15 +841,17 @@ function generateCrudPage(
     lines.push(`  const load = async () => {`);
     lines.push('    try {');
     if (filterStateVars.length > 0) {
-      // C2/G4: Pass filter and sort state to API call
+      // C2/G4 + C3/G9: Pass filter, sort, and pagination state to API call
       const filterArgs = filterStateVars.map(fv =>
         `${fv.fieldName}: ${fv.stateVar} !== 'all' ? ${fv.stateVar} : undefined`
       ).join(', ');
-      lines.push(`      const data = await api.${getFnName}({ ${filterArgs}, sort: sortField + ':' + sortOrder });`);
+      lines.push(`      const res = await api.${getFnName}({ page: pageNum, ${filterArgs}, sort: sortField + ':' + sortOrder });`);
     } else {
-      lines.push(`      const data = await api.${getFnName}();`);
+      lines.push(`      const res = await api.${getFnName}({ page: pageNum });`);
     }
-    lines.push(`      set${capitalize(modelPlural)}(data);`);
+    // C3/G9: Extract paginated response — server returns { data, meta }
+    lines.push(`      set${capitalize(modelPlural)}(res.data ?? res);`);
+    lines.push('      if (res.meta) setTotalPages(res.meta.totalPages || 1);');
     lines.push('    } catch (err) {');
     lines.push("      setError(err.message || 'Failed to load data');");
     lines.push('    } finally {');
@@ -851,11 +860,13 @@ function generateCrudPage(
     lines.push('  };');
     lines.push('');
     if (filterStateVars.length > 0) {
-      // C2/G4: Re-fetch when filter/sort state changes
+      // C2/G4 + C3/G9: Re-fetch when filter/sort/page state changes
       const deps = filterStateVars.map(fv => fv.stateVar).join(', ');
-      lines.push(`  useEffect(() => { load(); }, [${deps}, sortField, sortOrder]);`);
+      lines.push(`  useEffect(() => { load(); }, [${deps}, sortField, sortOrder, pageNum]);`);
+      // C3/G9: Reset to page 1 when filters change
+      lines.push(`  useEffect(() => { setPageNum(1); }, [${deps}]);`);
     } else {
-      lines.push('  useEffect(() => { load(); }, []);');
+      lines.push('  useEffect(() => { load(); }, [pageNum]);');
     }
     lines.push('');
   }
@@ -1096,6 +1107,11 @@ function generateCrudPage(
         lines.push('        )}');
       }
 
+      // C3/G9: Pagination controls
+      if (getFnName) {
+        for (const l of renderPaginationControls(8)) lines.push(l);
+      }
+
       lines.push('        </div>');
     } else {
       lines.push('        <div className="space-y-6 animate-fade-in" />');
@@ -1265,6 +1281,12 @@ function generateCrudPage(
     lines.push(`            )}`);
     lines.push(`          </div>`);
     lines.push('        )}');
+
+    // C3/G9: Pagination controls in generic CRUD path
+    if (getFnName) {
+      for (const l of renderPaginationControls(8)) lines.push(l);
+    }
+
     lines.push(`      </div>`);
 
   // Delete confirmation modal
@@ -1291,6 +1313,21 @@ function generateCrudPage(
   lines.push('');
 
   return lines.join('\n');
+}
+
+/** C3/G9: Generate pagination controls JSX */
+function renderPaginationControls(indent: number): string[] {
+  const pad = ' '.repeat(indent);
+  return [
+    `${pad}{/* C3/G9: Pagination controls */}`,
+    `${pad}<div className="flex items-center justify-between pt-4">`,
+    `${pad}  <p className="text-sm text-[var(--muted)]">Page {pageNum} of {totalPages}</p>`,
+    `${pad}  <div className="flex gap-2">`,
+    `${pad}    <button onClick={() => setPageNum(p => Math.max(1, p - 1))} disabled={pageNum <= 1} className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--border)] text-sm hover:bg-[var(--hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Prev</button>`,
+    `${pad}    <button onClick={() => setPageNum(p => Math.min(totalPages, p + 1))} disabled={pageNum >= totalPages} className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--border)] text-sm hover:bg-[var(--hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Next</button>`,
+    `${pad}  </div>`,
+    `${pad}</div>`,
+  ];
 }
 
 /** Render a single form field with smart type mapping */
