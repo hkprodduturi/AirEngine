@@ -1,29 +1,51 @@
 {
   "schema_version": "2.0",
-  "description": "Public showcase — complex, production-quality AirEngine apps only. Simple/medium apps are internal fixtures (see fixtures-manifest.json).",
-  "policy": "Complex apps (100+ lines, 3+ models, fullstack with auth). Simple/basic examples live in fixtures-manifest.json for regression testing.",
+  "description": "Public showcase — flagship, production-quality AirEngine apps only. Internal fixtures, gallery entries, and templates are classified in fixtures-manifest.json.",
+  "policy": "Flagship apps: 100+ lines, 3+ models, fullstack with auth, golden-run or complex-eval coverage. Only apps that demonstrate real-world production patterns belong here.",
   "examples": [
+    {
+      "id": "photography-studio-premium",
+      "file": "examples/photography-studio-premium.air",
+      "name": "Lumiere Studio",
+      "description": "Premium photography studio with portfolio CMS, 6-stage inquiry pipeline (lead funnel), services catalog, testimonials, FAQ, and studio CRM-lite backoffice. Public pages + admin dashboard.",
+      "complexity": "complex",
+      "category": "creative",
+      "lines": 360,
+      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@email", "@env"],
+      "features": ["6 data models", "inquiry pipeline", "lead funnel stages", "portfolio CMS", "services catalog", "testimonials", "stats dashboard", "RBAC", "public pages", "runtime QA validated"]
+    },
+    {
+      "id": "crm-sales-pipeline",
+      "file": "examples/crm-sales-pipeline.air",
+      "name": "SalesPipe CRM",
+      "description": "Full CRM with contacts, accounts, leads, deals pipeline, tasks, activities, profile management, and dashboard analytics. 8 data models with 424-record seed.",
+      "complexity": "complex",
+      "category": "saas",
+      "lines": 318,
+      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@env"],
+      "features": ["8 data models", "deal pipeline stages", "lead qualification", "activity logging", "dashboard stats", "profile management", "424-record seed"]
+    },
     {
       "id": "helpdesk",
       "file": "examples/helpdesk.air",
       "name": "HelpDesk",
-      "description": "Ticket support system with agents, departments, SLA tracking, priority workflows, reply threads, and analytics dashboard.",
+      "description": "Ticket support system with agents, departments, SLA tracking, priority workflows, reply threads, and analytics dashboard. 32 golden capability checks.",
       "complexity": "complex",
       "category": "saas",
       "lines": 137,
       "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@email", "@env"],
-      "features": ["4 data models", "ticket workflows", "agent assignment", "email notifications", "analytics dashboard", "RBAC"]
+      "features": ["4 data models", "ticket workflows", "agent assignment", "email notifications", "analytics dashboard", "RBAC", "32 golden checks"]
     },
     {
       "id": "projectflow",
       "file": "examples/projectflow.air",
       "name": "ProjectFlow",
-      "description": "Project management suite with 5 models, relations, cron jobs, webhooks, queues, and email notifications.",
+      "description": "Project management suite with 5 models, relations, cron jobs, webhooks, queues, and email notifications. Demonstrates all 16 block types.",
       "complexity": "complex",
       "category": "saas",
       "lines": 301,
       "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@cron", "@webhook", "@queue", "@email", "@env", "@deploy"],
-      "features": ["5 data models", "relations", "cron jobs", "webhooks", "queues", "email", "deployment config"]
+      "features": ["5 data models", "relations", "cron jobs", "webhooks", "queues", "email", "deployment config", "all 16 blocks"]
     },
     {
       "id": "ecommerce",
@@ -35,72 +57,6 @@
       "lines": 131,
       "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@webhook", "@email", "@env"],
       "features": ["4 data models", "cart mutations", "order workflow", "webhooks", "inventory tracking"]
-    },
-    {
-      "id": "crm-sales-pipeline",
-      "file": "examples/crm-sales-pipeline.air",
-      "name": "SalesPipe CRM",
-      "description": "Full CRM with contacts, accounts, leads, deals pipeline, tasks, activities, profile management, and dashboard analytics.",
-      "complexity": "complex",
-      "category": "saas",
-      "lines": 318,
-      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@env"],
-      "features": ["8 data models", "deal pipeline stages", "lead qualification", "activity logging", "dashboard stats", "profile management"]
-    },
-    {
-      "id": "clinic",
-      "file": "examples/clinic.air",
-      "name": "MediClinic",
-      "description": "Clinic management with patients, doctors, appointments, departments, and scheduling workflows.",
-      "complexity": "complex",
-      "category": "healthcare",
-      "lines": 159,
-      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@env"],
-      "features": ["4 data models", "appointment scheduling", "department filters", "status workflows", "stats dashboard"]
-    },
-    {
-      "id": "crm",
-      "file": "examples/crm.air",
-      "name": "SalesCRM",
-      "description": "CRM with contacts, companies, deals pipeline, and activity tracking with kanban-style deal stages.",
-      "complexity": "complex",
-      "category": "saas",
-      "lines": 169,
-      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@env", "@deploy"],
-      "features": ["4 data models", "deal stages", "company associations", "activity logging", "revenue metrics"]
-    },
-    {
-      "id": "inventory",
-      "file": "examples/inventory.air",
-      "name": "Inventory Manager",
-      "description": "Warehouse and stock management with products, suppliers, movements, and automated reorder alerts.",
-      "complexity": "complex",
-      "category": "logistics",
-      "lines": 146,
-      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@cron", "@queue", "@env"],
-      "features": ["5 data models", "stock transactions", "cron jobs", "queue processing", "composite indexes"]
-    },
-    {
-      "id": "monitoring",
-      "file": "examples/monitoring.air",
-      "name": "Monitoring Dashboard",
-      "description": "Server monitoring with metrics, alerts, incidents, and severity-based notification workflows.",
-      "complexity": "complex",
-      "category": "operations",
-      "lines": 168,
-      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@env"],
-      "features": ["4 data models", "alert filtering", "incident management", "severity tracking", "real-time status"]
-    },
-    {
-      "id": "photography-studio-premium",
-      "file": "examples/photography-studio-premium.air",
-      "name": "Lumiere Studio",
-      "description": "Premium photography studio with portfolio CMS, inquiry pipeline (6-stage lead funnel), services catalog, testimonials, FAQ, and studio CRM-lite backoffice.",
-      "complexity": "complex",
-      "category": "creative",
-      "lines": 284,
-      "blocks": ["@app", "@state", "@style", "@ui", "@db", "@api", "@auth", "@nav", "@persist", "@hook", "@email", "@env"],
-      "features": ["6 data models", "inquiry pipeline", "lead funnel stages", "portfolio CMS", "services catalog", "testimonials", "stats dashboard", "RBAC"]
     }
   ]
 }

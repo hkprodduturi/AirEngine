@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
   "description": "Complete inventory of all AirEngine example .air files, classified by role. Used by internal tooling for regression testing, benchmarks, and eval harnesses.",
-  "generated": "2026-02-25",
+  "generated": "2026-02-26",
   "tiers": {
-    "showcase": "Complex production-quality apps for public demos (see showcase-manifest.json)",
+    "showcase": "Flagship production-quality apps for public demos (see showcase-manifest.json — 5 apps)",
     "fixture": "Internal regression/benchmark fixtures — not for public showcase",
     "template": "Base templates for AI-first generation guidance — not individually tested",
     "gallery": "Gallery-featured medium-complexity apps — transpile-tested via stability sweep"
@@ -122,7 +122,7 @@
     {
       "id": "clinic",
       "file": "examples/clinic.air",
-      "tier": "showcase",
+      "tier": "gallery",
       "lines": 159,
       "fullstack": true,
       "auth": true,
@@ -132,7 +132,7 @@
     {
       "id": "crm",
       "file": "examples/crm.air",
-      "tier": "showcase",
+      "tier": "gallery",
       "lines": 169,
       "fullstack": true,
       "auth": true,
@@ -142,7 +142,7 @@
     {
       "id": "inventory",
       "file": "examples/inventory.air",
-      "tier": "showcase",
+      "tier": "gallery",
       "lines": 146,
       "fullstack": true,
       "auth": true,
@@ -152,7 +152,7 @@
     {
       "id": "monitoring",
       "file": "examples/monitoring.air",
-      "tier": "showcase",
+      "tier": "gallery",
       "lines": 168,
       "fullstack": true,
       "auth": true,
@@ -163,11 +163,11 @@
       "id": "photography-studio-premium",
       "file": "examples/photography-studio-premium.air",
       "tier": "showcase",
-      "lines": 284,
+      "lines": 360,
       "fullstack": true,
       "auth": true,
-      "usedBy": ["examples/showcase-manifest.json"],
-      "notes": "Premium photography studio with portfolio CMS, inquiry pipeline, services, testimonials, and studio CRM-lite."
+      "usedBy": ["examples/showcase-manifest.json", "scripts/photography-premium-golden-run.ts", "benchmarks/complex-eval-corpus.json", "qa-flows/photography-public.json"],
+      "notes": "PRIMARY FLAGSHIP. Golden run (33 checks), runtime QA validated (SH8). Portfolio CMS, inquiry pipeline, services, testimonials, studio CRM-lite."
     },
     {
       "id": "analytics",
@@ -483,9 +483,9 @@
   "summary": {
     "total": 46,
     "byTier": {
-      "showcase": 8,
+      "showcase": 5,
       "fixture": 7,
-      "gallery": 10,
+      "gallery": 14,
       "template": 20
     },
     "totalLines": 6713

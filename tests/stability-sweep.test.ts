@@ -311,9 +311,9 @@ describe('Showcase manifest', () => {
     expect(Array.isArray(manifest.examples)).toBe(true);
   });
 
-  it('has 9 complex showcase entries', () => {
+  it('has 5 flagship showcase entries', () => {
     const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8'));
-    expect(manifest.examples).toHaveLength(9);
+    expect(manifest.examples).toHaveLength(5);
     const ids = manifest.examples.map((e: any) => e.id);
     expect(ids).toContain('helpdesk');
     expect(ids).toContain('projectflow');
