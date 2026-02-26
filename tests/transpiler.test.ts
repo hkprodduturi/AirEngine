@@ -7,6 +7,8 @@ import { resolveBindChain, analyzeUI, extractMutations } from '../src/transpiler
 import { mapElement } from '../src/transpiler/element-map.js';
 import { expandCrud } from '../src/transpiler/route-utils.js';
 import { deriveEmptyLabel } from '../src/transpiler/react/helpers.js';
+import { matchCtaToPage } from '../src/transpiler/react/jsx-gen.js';
+import { analyzeUI } from '../src/transpiler/normalize-ui.js';
 import type { AirUINode, AirUIBinaryNode } from '../src/parser/types.js';
 
 // ---- Helpers ----
@@ -1676,5 +1678,65 @@ describe('deriveEmptyLabel', () => {
     const jsx = getAppJsx('expense-tracker');
     expect(jsx).toContain('No expenses yet');
     expect(jsx).not.toMatch(/No\s{2,}yet/);  // no double-space from empty label
+  });
+});
+
+// ---- CTA button wiring ----
+
+describe('matchCtaToPage', () => {
+  const ast = parseFile('photography-studio-premium');
+  const ctx = extractContext(ast);
+  const analysis = analyzeUI(ctx.uiNodes);
+
+  it('maps "View Portfolio" to gallery (public page, not admin portfolio)', () => {
+    expect(matchCtaToPage('View Portfolio', ctx, analysis)).toBe('gallery');
+  });
+
+  it('maps "Book a Session" to booking', () => {
+    expect(matchCtaToPage('Book a Session', ctx, analysis)).toBe('booking');
+  });
+
+  it('maps "Get in Touch" to booking', () => {
+    expect(matchCtaToPage('Get in Touch', ctx, analysis)).toBe('booking');
+  });
+
+  it('returns null for text that does not match any page', () => {
+    expect(matchCtaToPage('Click Here', ctx, analysis)).toBeNull();
+  });
+
+  it('matches exact page name', () => {
+    expect(matchCtaToPage('gallery', ctx, analysis)).toBe('gallery');
+  });
+});
+
+describe('photography CTA buttons have onClick handlers', () => {
+  const result = transpileFile('photography-studio-premium');
+  const homePage = result.files.find(f => f.path.includes('HomePage'))!;
+
+  it('View Portfolio button navigates to gallery', () => {
+    expect(homePage.content).toContain("setCurrentPage('gallery')");
+    expect(homePage.content).toContain('View Portfolio');
+  });
+
+  it('Book a Session button navigates to booking', () => {
+    expect(homePage.content).toContain('Book a Session');
+    // Find the line with "Book a Session" and verify onClick
+    const lines = homePage.content.split('\n');
+    const bookLine = lines.find(l => l.includes('Book a Session'));
+    expect(bookLine).toContain("setCurrentPage('booking')");
+  });
+
+  it('Get in Touch CTA navigates to booking', () => {
+    const lines = homePage.content.split('\n');
+    const touchLine = lines.find(l => l.includes('Get in Touch'));
+    expect(touchLine).toContain("setCurrentPage('booking')");
+  });
+
+  it('no CTA buttons are unwired (have onClick)', () => {
+    const lines = homePage.content.split('\n');
+    const btnLines = lines.filter(l => /<button[^>]*>(?:View Portfolio|Book a Session|Get in Touch)<\/button>/.test(l));
+    for (const line of btnLines) {
+      expect(line).toContain('onClick');
+    }
   });
 });

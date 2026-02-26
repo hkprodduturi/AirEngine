@@ -2,7 +2,7 @@
  * Photography Premium Golden Run
  *
  * Runs photography-studio-premium.air through the full AirEngine pipeline
- * and verifies 30 capability checks across 10 groups (G1–G10).
+ * and verifies 33 capability checks across 11 groups (G1–G11).
  *
  * Usage:  node --import tsx scripts/photography-premium-golden-run.ts
  * Output: artifacts/demo/photography-premium-golden-result.json
@@ -468,6 +468,35 @@ export const CAPABILITY_CHECKS: CapabilityGroupDef[] = [
             allJsx.includes('formatDate') ||
             allJsx.includes('new Date(')
           );
+        },
+      },
+    ],
+  },
+
+  // G11: Public CTA wiring (3)
+  {
+    group: 'G11',
+    name: 'Public CTA wiring',
+    checks: [
+      {
+        description: 'View Portfolio button navigates to gallery page',
+        verify: (files) => {
+          const home = getFileContent(files, 'client/src/pages/HomePage.jsx');
+          return home.includes("setCurrentPage('gallery')") && home.includes('View Portfolio');
+        },
+      },
+      {
+        description: 'Book a Session button navigates to booking page',
+        verify: (files) => {
+          const home = getFileContent(files, 'client/src/pages/HomePage.jsx');
+          return home.includes("setCurrentPage('booking')") && home.includes('Book a Session');
+        },
+      },
+      {
+        description: 'Get in Touch CTA navigates to booking page',
+        verify: (files) => {
+          const home = getFileContent(files, 'client/src/pages/HomePage.jsx');
+          return home.includes("setCurrentPage('booking')") && home.includes('Get in Touch');
         },
       },
     ],

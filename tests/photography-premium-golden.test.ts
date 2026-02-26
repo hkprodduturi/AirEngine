@@ -14,18 +14,18 @@ import { validateJsonSchema } from './schema-validator.js';
 // ---- Structural Tests ----
 
 describe('photography golden: CAPABILITY_CHECKS structure', () => {
-  const expectedGroups = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10'];
+  const expectedGroups = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10', 'G11'];
 
-  it('covers groups G1-G10', () => {
+  it('covers groups G1-G11', () => {
     const groups = CAPABILITY_CHECKS.map(g => g.group);
     for (const expected of expectedGroups) {
       expect(groups).toContain(expected);
     }
   });
 
-  it('has 30 total checks', () => {
+  it('has 33 total checks', () => {
     const total = CAPABILITY_CHECKS.reduce((sum, g) => sum + g.checks.length, 0);
-    expect(total).toBe(30);
+    expect(total).toBe(33);
   });
 
   it('each check has verify function and description', () => {
@@ -54,13 +54,14 @@ describe('photography golden: CAPABILITY_CHECKS structure', () => {
     expect(countMap['G8']).toBe(3);
     expect(countMap['G9']).toBe(3);
     expect(countMap['G10']).toBe(2);
+    expect(countMap['G11']).toBe(3);
   });
 });
 
 // ---- Integration Test ----
 
 describe('photography golden: runPhotographyGolden()', () => {
-  it('returns verdict=pass with 30/30 capabilities', async () => {
+  it('returns verdict=pass with 33/33 capabilities', async () => {
     const result = await runPhotographyGolden();
 
     // Log failing checks for debugging
@@ -73,8 +74,8 @@ describe('photography golden: runPhotographyGolden()', () => {
     }
 
     expect(result.verdict).toBe('pass');
-    expect(result.capabilities.total_checks).toBe(30);
-    expect(result.capabilities.passed_checks).toBe(30);
+    expect(result.capabilities.total_checks).toBe(33);
+    expect(result.capabilities.passed_checks).toBe(33);
     expect(result.capabilities.all_passed).toBe(true);
     expect(result.pipeline.all_passed).toBe(true);
     expect(result.pipeline.file_count).toBeGreaterThan(0);

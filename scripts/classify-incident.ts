@@ -140,6 +140,22 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     suggested_invariant: null,
   },
   {
+    id: 'codegen-dead-cta-button',
+    subsystem: 'jsx-gen',
+    confidence: 'high',
+    match: (inc) => {
+      const summary = getSummary(inc);
+      const stage = getStage(inc);
+      return (stage === 'runtime-ui' || stage === 'qa-visual')
+        && (hasTag(inc, 'public-cta') || hasTag(inc, 'navigation'))
+        && (summary.includes('cta') || summary.includes('button') || summary.includes('dead') || summary.includes('respond'));
+    },
+    notes: 'Public CTA button rendered without onClick handler. Buttons like "View Portfolio" or "Book a Session" need navigation wiring via setCurrentPage.',
+    next_step: 'Check jsx-gen.ts generateFlowJSX → element>text path for CTA button matching via matchCtaToPage.',
+    suggested_tests: ['test: photography CTA buttons have onClick handlers', 'golden: G11 public CTA wiring'],
+    suggested_invariant: null,
+  },
+  {
     id: 'codegen-route-navigation-bug',
     subsystem: 'jsx-gen',
     confidence: 'medium',

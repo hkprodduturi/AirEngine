@@ -854,6 +854,14 @@ export function generateFlowJSX(
         return `${pad}<button className={\`w-full text-left px-3 py-2 rounded-[var(--radius)] cursor-pointer transition-colors \${currentPage === '${pageName}' ? 'bg-[var(--accent)] text-white' : 'hover:bg-[var(--hover)]'}\`} onClick={() => setCurrentPage('${pageName}')}>${escapeText(node.right.text)}</button>`;
       }
 
+      // CTA button outside nav → match text to page name for navigation
+      if (!scope.insideNav && (leftResolved.element === 'btn' || leftResolved.element === 'button') && analysis.hasPages) {
+        const ctaTarget = matchCtaToPage(node.right.text, ctx, analysis);
+        if (ctaTarget) {
+          return `${pad}<button${classAttr(mapping.className)} onClick={() => setCurrentPage('${ctaTarget}')}>${escapeText(node.right.text)}</button>`;
+        }
+      }
+
       // img/a: text becomes src/href attribute, not children
       if (mapping.tag === 'img') {
         return `${pad}<img src="${escapeAttr(node.right.text)}"${classAttr(mapping.className)} alt="${escapeAttr(leftResolved.modifiers[0] || 'image')}" />`;
@@ -1923,4 +1931,60 @@ export function generateTabsElement(
   }
 
   return `${pad}<div className="flex gap-1 p-1 bg-[var(--surface)] rounded-[var(--radius)]">{/* tabs */}</div>`;
+}
+
+// ---- CTA-to-Page Matching ----
+
+/** CTA synonym groups: keywords that map to a list of candidate page stems (ordered by priority) */
+const CTA_SYNONYMS: [string[], string[]][] = [
+  // keywords → candidate page names (first match wins)
+  [['portfolio', 'work', 'gallery', 'projects'], ['gallery', 'portfolio']],
+  [['book', 'session', 'schedule', 'appointment', 'touch', 'reach', 'inquire', 'inquiry', 'contact'], ['booking', 'contact', 'book']],
+  [['package', 'pricing', 'price', 'plan'], ['packages', 'pricing']],
+  [['faq', 'question', 'help'], ['faq']],
+];
+
+/**
+ * Match CTA button text to a page name using page names and synonym heuristics.
+ * Prefers public pages over admin pages.
+ * Returns the target page name or null if no match.
+ */
+export function matchCtaToPage(
+  text: string,
+  ctx: TranspileContext,
+  analysis: UIAnalysis,
+): string | null {
+  const allPageNames = analysis.pages.map(p => p.name);
+  if (allPageNames.length === 0) return null;
+
+  const publicPages = ctx.publicPageNames;
+  const lower = text.toLowerCase();
+
+  // 1. Exact match — button text IS a page name
+  if (allPageNames.includes(lower)) return lower;
+
+  // 2. Direct substring — only match public pages (CTAs target public pages)
+  for (const page of publicPages) {
+    if (lower.includes(page)) return page;
+  }
+
+  // 3. Synonym matching — CTA keywords map to candidate page names
+  for (const [keywords, candidates] of CTA_SYNONYMS) {
+    if (keywords.some(k => lower.includes(k))) {
+      // Try candidates in priority order, prefer public pages
+      for (const cand of candidates) {
+        if (publicPages.includes(cand)) return cand;
+      }
+      for (const cand of candidates) {
+        if (allPageNames.includes(cand)) return cand;
+      }
+    }
+  }
+
+  // 4. Fallback: direct substring against all pages (admin included)
+  for (const page of allPageNames) {
+    if (lower.includes(page)) return page;
+  }
+
+  return null;
 }
