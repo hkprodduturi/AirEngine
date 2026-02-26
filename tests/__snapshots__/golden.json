@@ -162,7 +162,7 @@
       "server/queue.ts": "7f9da900cc7fcd7b",
       "server/templates.ts": "1caec2e903f01e79",
       "server/middleware.ts": "674f65b0f8f1d673",
-      "server/server.ts": "ce6645aa10a20e90",
+      "server/server.ts": "316c70431f3f6734",
       "server/Dockerfile": "697686029d7d84e1",
       "server/.dockerignore": "8919c6124bfd1683",
       "server/.env.example": "9fd34caa169dfa3a",

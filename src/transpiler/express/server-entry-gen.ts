@@ -30,6 +30,12 @@ export function generateServerEntry(ctx: TranspileContext): string {
   if (ctx.db) {
     lines.push("import { prisma } from './prisma.js';");
   }
+  if (ctx.cron) {
+    lines.push("import { startCronJobs } from './cron.js';");
+  }
+  if (ctx.queue) {
+    lines.push("import { queueJobs } from './queue.js';");
+  }
 
   // Resolve CORS origin from @env or default (true = reflect request origin, safe for dev)
   let corsOrigin = "process.env.CORS_ORIGIN || true";
@@ -136,6 +142,12 @@ export function generateServerEntry(ctx: TranspileContext): string {
   // Graceful shutdown
   lines.push('const server = app.listen(PORT, () => {');
   lines.push('  console.log(`Server running on port ${PORT}`);');
+  if (ctx.cron) {
+    lines.push('  startCronJobs();');
+  }
+  if (ctx.queue) {
+    lines.push('  console.log(`[Queue] ${Object.keys(queueJobs).length} job(s) registered — dispatch() available`);');
+  }
   lines.push('});');
   lines.push('');
 
