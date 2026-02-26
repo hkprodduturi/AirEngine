@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/self-heal-loop-result/1.0",
+  "title": "AirEngine Self-Heal Loop Result",
+  "description": "Schema for SH8 self-heal loop orchestrator output — QA detection through patch-verify cycle.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "loop_id",
+    "mode",
+    "timestamp",
+    "qa_result_path",
+    "bridged_incidents",
+    "patches",
+    "verifications",
+    "promotions",
+    "knowledge_entries",
+    "summary",
+    "verdict"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "loop_id": {
+      "type": "string",
+      "pattern": "^HL-\\d{8}-\\d{6}-[a-z0-9]{6}$",
+      "description": "Unique heal-loop ID: HL-YYYYMMDD-HHmmss-<random6>"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["shadow", "propose", "patch-verify"]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "qa_result_path": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+    "worktree_path": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+    "bridged_incidents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/bridgedIncident" }
+    },
+    "patches": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/patchRef" }
+    },
+    "verifications": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/verifyRef" }
+    },
+    "promotions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/promotionRef" }
+    },
+    "knowledge_entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/knowledgeRef" }
+    },
+    "summary": { "$ref": "#/$defs/loopSummary" },
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail", "partial"]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "bridgedIncident": {
+      "type": "object",
+      "required": ["incident_id", "incident_path", "classification", "severity"],
+      "properties": {
+        "incident_id": { "type": "string" },
+        "incident_path": { "type": "string" },
+        "classification": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "severity": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "patchRef": {
+      "type": "object",
+      "required": ["patch_id", "patch_path", "incident_id"],
+      "properties": {
+        "patch_id": { "type": "string" },
+        "patch_path": { "type": "string" },
+        "incident_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "verifyRef": {
+      "type": "object",
+      "required": ["verify_id", "verify_path", "patch_id", "verdict"],
+      "properties": {
+        "verify_id": { "type": "string" },
+        "verify_path": { "type": "string" },
+        "patch_id": { "type": "string" },
+        "verdict": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "promotionRef": {
+      "type": "object",
+      "required": ["incident_id", "promoted"],
+      "properties": {
+        "incident_id": { "type": "string" },
+        "promoted": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "knowledgeRef": {
+      "type": "object",
+      "required": ["knowledge_id", "incident_id"],
+      "properties": {
+        "knowledge_id": { "type": "string" },
+        "incident_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "loopSummary": {
+      "type": "object",
+      "required": [
+        "dead_ctas_found",
+        "incidents_created",
+        "patches_proposed",
+        "patches_verified",
+        "patches_passed"
+      ],
+      "properties": {
+        "dead_ctas_found": { "type": "integer", "minimum": 0 },
+        "incidents_created": { "type": "integer", "minimum": 0 },
+        "patches_proposed": { "type": "integer", "minimum": 0 },
+        "patches_verified": { "type": "integer", "minimum": 0 },
+        "patches_passed": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

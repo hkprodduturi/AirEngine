@@ -531,6 +531,56 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     suggested_tests: ['test: stability sweep all cases pass'],
     suggested_invariant: null,
   },
+
+  // --- Runtime QA (SH8) ---
+  {
+    id: 'runtime-dead-cta-detected',
+    subsystem: 'page-gen',
+    confidence: 'high',
+    match: (inc) => {
+      const source = String(inc.source || '');
+      const summary = getSummary(inc);
+      if (source !== 'runtime-qa') return false;
+      return (summary.includes('dead cta') || summary.includes('no effect'))
+        && (summary.includes('button') || summary.includes('click') || summary.includes('cta') || hasTag(inc, 'dead-cta'));
+    },
+    notes: 'Runtime QA detected a dead CTA button — click produced no URL change, DOM mutation, or network request. Button lacks onClick handler or navigation wiring.',
+    next_step: 'Check page-gen.ts CTA button wiring and jsx-gen.ts matchCtaToPage logic.',
+    suggested_tests: ['test: all CTA buttons in generated pages have onClick handlers', 'golden: public CTA navigation'],
+    suggested_invariant: null,
+  },
+  {
+    id: 'runtime-console-error',
+    subsystem: 'page-gen',
+    confidence: 'medium',
+    match: (inc) => {
+      const source = String(inc.source || '');
+      const stage = getStage(inc);
+      return (source === 'runtime-qa' || stage === 'runtime-ui')
+        && hasTag(inc, 'console-error');
+    },
+    notes: 'Runtime QA detected console errors during browser execution. May indicate undefined references, failed API calls, or component rendering errors.',
+    next_step: 'Check console error content and trace to generated component or API client.',
+    suggested_tests: ['test: generated app has zero console errors on page load'],
+    suggested_invariant: null,
+  },
+  {
+    id: 'runtime-navigation-failure',
+    subsystem: 'jsx-gen',
+    confidence: 'medium',
+    match: (inc) => {
+      const source = String(inc.source || '');
+      const stage = getStage(inc);
+      const summary = getSummary(inc);
+      return (source === 'runtime-qa' || stage === 'runtime-ui')
+        && (summary.includes('navigation') || summary.includes('route'))
+        && (summary.includes('fail') || summary.includes('stuck') || summary.includes('did not'));
+    },
+    notes: 'Runtime QA navigation step failed — expected page/element not reached. Route wiring or page rendering may be broken.',
+    next_step: 'Check jsx-gen.ts page routing and layout-gen.ts navigation component generation.',
+    suggested_tests: ['test: all navigation routes reach expected pages'],
+    suggested_invariant: null,
+  },
 ];
 
 // ---- Classifier ----

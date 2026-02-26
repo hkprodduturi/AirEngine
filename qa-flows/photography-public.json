@@ -1,0 +1,90 @@
+{
+  "flow_id": "photography-public",
+  "description": "Verify Photography app public homepage CTA buttons and navigation work correctly.",
+  "base_url_client": "http://localhost:5173",
+  "base_url_server": "http://localhost:3001",
+  "preflight_health_path": "/api/health",
+  "setup": ["ensure_logged_out"],
+  "steps": [
+    {
+      "step_id": "nav-home",
+      "label": "Navigate to homepage",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "h1:has-text('Lumiere')"
+      }
+    },
+    {
+      "step_id": "click-view-portfolio",
+      "label": "Click View Portfolio CTA",
+      "action": "click",
+      "selector": "button:has-text('View Portfolio')",
+      "expected": {
+        "url_change": true,
+        "dom_mutation": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "nav-back-1",
+      "label": "Navigate back to homepage",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "h1:has-text('Lumiere')"
+      }
+    },
+    {
+      "step_id": "click-book-session",
+      "label": "Click Book a Session CTA",
+      "action": "click",
+      "selector": "button:has-text('Book a Session')",
+      "expected": {
+        "url_change": true,
+        "dom_mutation": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "nav-back-2",
+      "label": "Navigate back to homepage",
+      "action": "navigate",
+      "target": "/",
+      "expected": {
+        "assert_visible": "h1:has-text('Lumiere')"
+      }
+    },
+    {
+      "step_id": "click-get-in-touch",
+      "label": "Click Get in Touch CTA",
+      "action": "click",
+      "selector": "button:has-text('Get in Touch')",
+      "expected": {
+        "url_change": true,
+        "dom_mutation": true
+      },
+      "dead_cta_check": true,
+      "severity": "p1"
+    },
+    {
+      "step_id": "click-nav-gallery",
+      "label": "Click Gallery nav link",
+      "action": "click",
+      "selector": "a:has-text('Gallery'), button:has-text('Gallery'), [data-nav='Gallery']",
+      "expected": {
+        "dom_mutation": true
+      }
+    },
+    {
+      "step_id": "check-console-errors",
+      "label": "Check for console errors",
+      "action": "check_console",
+      "expected": {
+        "no_errors": true
+      }
+    }
+  ]
+}

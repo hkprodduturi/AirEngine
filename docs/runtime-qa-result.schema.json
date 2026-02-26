@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airengine.dev/schemas/runtime-qa-result/1.0",
+  "title": "AirEngine Runtime QA Result",
+  "description": "Schema for runtime QA flow execution results — browser-based dead CTA detection, navigation checks, console error capture.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "qa_run_id",
+    "flow_id",
+    "timestamp",
+    "run_metadata",
+    "preflight",
+    "steps",
+    "summary",
+    "verdict",
+    "incident_paths"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "qa_run_id": {
+      "type": "string",
+      "pattern": "^QR-\\d{8}-\\d{6}-[a-z0-9]{6}$",
+      "description": "Unique QA run ID: QR-YYYYMMDD-HHmmss-<random6>"
+    },
+    "flow_id": { "type": "string", "minLength": 1 },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "run_metadata": { "$ref": "#/$defs/runMetadata" },
+    "preflight": { "$ref": "#/$defs/preflightResult" },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stepResult" }
+    },
+    "summary": { "$ref": "#/$defs/summaryResult" },
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail"]
+    },
+    "incident_paths": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "runMetadata": {
+      "type": "object",
+      "required": ["headless", "flow_path"],
+      "properties": {
+        "headless": { "type": "boolean" },
+        "flow_path": { "type": "string" },
+        "dry_run": { "type": "boolean" },
+        "timeout_ms": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "preflightResult": {
+      "type": "object",
+      "required": ["health_check_url", "status", "latency_ms"],
+      "properties": {
+        "health_check_url": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "skip"]
+        },
+        "latency_ms": { "type": "number" },
+        "error": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      },
+      "additionalProperties": false
+    },
+    "stepResult": {
+      "type": "object",
+      "required": ["step_id", "label", "action", "status", "duration_ms", "evidence"],
+      "properties": {
+        "step_id": { "type": "string" },
+        "label": { "type": "string" },
+        "action": {
+          "type": "string",
+          "enum": ["navigate", "click", "type", "check_console", "assert_visible", "screenshot"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "skip", "error"]
+        },
+        "duration_ms": { "type": "number" },
+        "evidence": { "$ref": "#/$defs/stepEvidence" },
+        "failure_reason": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "dead_cta_detected": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "stepEvidence": {
+      "type": "object",
+      "required": ["selector", "text_content", "url_before", "url_after"],
+      "properties": {
+        "selector": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "text_content": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "url_before": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "url_after": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "screenshot_path": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "console_errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "network_requests": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dom_snippet": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "dom_changed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "summaryResult": {
+      "type": "object",
+      "required": ["total", "passed", "failed", "skipped", "dead_ctas", "console_errors"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "dead_ctas": { "type": "integer", "minimum": 0 },
+        "console_errors": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -43,7 +43,8 @@
         "runtime-ui",
         "runtime-server",
         "local-preview",
-        "ci"
+        "ci",
+        "runtime-qa"
       ]
     },
     "command": {

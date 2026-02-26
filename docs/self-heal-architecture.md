@@ -229,6 +229,39 @@ incident resolved → knowledge entry created → retrieval index updated
 
 **Still gated by**: Human approval + verifier + all existing policies.
 
+### SH8 — Autonomous Runtime QA + Self-Heal Loop (Implemented)
+
+**Purpose**: Automate dead CTA detection by launching the app in a real browser, clicking buttons, and checking for response. Failed steps feed into the SH0-SH7 pipeline.
+
+**Components**:
+- `scripts/runtime-qa-run.ts` — Browser-based flow executor with step-aware dead CTA detection
+- `scripts/runtime-qa-bridge.ts` — Maps QA failures to SH1 incidents with rich evidence
+- `scripts/self-heal-loop.ts` — Orchestrator: QA → bridge → patch → verify → promote → knowledge
+- `qa-flows/photography-public.json` — Photography app public page flow spec (3 CTA buttons)
+
+**Modes**: shadow (observe only) | propose (deterministic patches) | patch-verify (worktree verification)
+
+**Key guardrails**:
+1. Step-aware dead CTA detection — each step declares expected signals (url_change, dom_mutation, network_request)
+2. Runtime QA preflight — health-check with retry+backoff before any flow execution
+3. patch-verify uses temp git worktree — never patches working tree directly
+4. propose mode works without LLM key — SH3 deterministic path, `--model-assisted` is opt-in
+5. Rich evidence capture — selector, text_content, url_before/after, screenshot, console_errors, network_requests, dom_snippet
+6. Flow-level preconditions — base_url_client, base_url_server, preflight_health_path, setup hooks
+7. Explicit incident tags — `['runtime-qa', flow_id, step.label]` plus action-specific tags
+8. CI-safe Playwright — mock Page objects by default, real browser gated behind `RUNTIME_QA_LIVE=1`
+
+**Schemas**: `docs/runtime-qa-result.schema.json`, `docs/self-heal-loop-result.schema.json`
+
+**Artifact chain**: `QR-xxx → SH-xxx → SP-xxx → SV-xxx → SK-xxx` (traceable IDs)
+
+**CLI**:
+```bash
+npm run runtime-qa -- --flow qa-flows/photography-public.json [--dry-run]
+npm run self-heal-loop -- --flow qa-flows/photography-public.json --mode shadow
+npm run self-heal-loop -- --flow qa-flows/photography-public.json --mode propose [--model-assisted]
+```
+
 ## Integration Matrix
 
 | System | Feeds Into | Feeds From |
@@ -241,6 +274,8 @@ incident resolved → knowledge entry created → retrieval index updated
 | foundation-check | SH1 (incidents) | — |
 | invariants | SH1 (evidence) | SH6 (new invariants) |
 | knowledge store | SH3 (context) | SH5 (entries from resolved) |
+| runtime-qa | SH1 (incidents) | SH8 (flow execution) |
+| self-heal-loop | SH3,SH4,SH5,SH6 | SH8 (orchestration) |
 
 ## Artifact Directory Structure
 
@@ -253,8 +288,19 @@ artifacts/self-heal/
 │       └── incident.json
 ├── patches/           (SH3, future)
 │   └── SP-20260226-160000-ghi789.json
-├── verifications/     (SH4, future)
+├── verifications/     (SH4)
 │   └── SV-20260226-161500-jkl012.json
-└── knowledge/         (SH5, future)
+├── loops/             (SH8)
+│   └── HL-20260226-170000-mno345.json
+└── knowledge/         (SH5)
     └── self-heal-knowledge.jsonl
+
+artifacts/runtime-qa/
+├── QR-20260226-143022-abc123/
+│   └── result.json
+└── screenshots/
+    └── step-id-1234567.png
+
+qa-flows/
+└── photography-public.json
 ```
