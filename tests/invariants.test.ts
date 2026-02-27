@@ -154,4 +154,100 @@ describe('Invariants', () => {
       expect(r.passed).toBe(false);
     });
   });
+
+  // ---- SH9 Invariants ----
+
+  describe('INV-007: CSS element selector specificity', () => {
+    it('positive: all selectors wrapped in :where()', () => {
+      const r = checkInvariant('INV-007', new Map([
+        ['index.css', ':where(h1) { font-size: 2rem; }\n:where(button) { padding: 10px; }'],
+      ]));
+      expect(r.passed).toBe(true);
+    });
+
+    it('negative: bare h1 selector', () => {
+      const r = checkInvariant('INV-007', new Map([
+        ['index.css', 'h1 { font-size: 2rem; }'],
+      ]));
+      expect(r.passed).toBe(false);
+      expect(r.details).toContain('h1');
+    });
+
+    it('positive: class selectors are fine', () => {
+      const r = checkInvariant('INV-007', new Map([
+        ['index.css', '.card { padding: 24px; }\n#root { z-index: 1; }'],
+      ]));
+      expect(r.passed).toBe(true);
+    });
+
+    it('negative: bare button selector', () => {
+      const r = checkInvariant('INV-007', new Map([
+        ['index.css', 'button { border: none; }'],
+      ]));
+      expect(r.passed).toBe(false);
+    });
+  });
+
+  describe('INV-008: Page import completeness', () => {
+    it('positive: all pages imported', () => {
+      const r = checkInvariant('INV-008', new Map([
+        ['App.jsx', 'const ShopPage = lazy(() => import("./pages/ShopPage.jsx"));\nconst CartPage = lazy(() => import("./pages/CartPage.jsx"));'],
+        ['pages/ShopPage.jsx', 'export default function ShopPage() {}'],
+        ['pages/CartPage.jsx', 'export default function CartPage() {}'],
+      ]));
+      expect(r.passed).toBe(true);
+    });
+
+    it('negative: missing page import', () => {
+      const r = checkInvariant('INV-008', new Map([
+        ['App.jsx', 'const ShopPage = lazy(() => import("./pages/ShopPage.jsx"));'],
+        ['pages/ShopPage.jsx', 'export default function ShopPage() {}'],
+        ['pages/ContactPage.jsx', 'export default function ContactPage() {}'],
+      ]));
+      expect(r.passed).toBe(false);
+      expect(r.details).toContain('ContactPage');
+    });
+  });
+
+  describe('INV-009: No double Layout wrapping', () => {
+    it('positive: pages do not import Layout', () => {
+      const r = checkInvariant('INV-009', new Map([
+        ['App.jsx', '<Layout><ShopPage /></Layout>'],
+        ['pages/ShopPage.jsx', 'export default function ShopPage() { return <div>Shop</div>; }'],
+      ]));
+      expect(r.passed).toBe(true);
+    });
+
+    it('negative: page imports Layout', () => {
+      const r = checkInvariant('INV-009', new Map([
+        ['App.jsx', '<Layout><ShopPage /></Layout>'],
+        ['pages/ShopPage.jsx', "import Layout from '../Layout.jsx';\nexport default function ShopPage() { return <Layout><div>Shop</div></Layout>; }"],
+      ]));
+      expect(r.passed).toBe(false);
+    });
+
+    it('positive: skipped when App has no Layout', () => {
+      const r = checkInvariant('INV-009', new Map([
+        ['App.jsx', '<div><ShopPage /></div>'],
+        ['pages/ShopPage.jsx', "import Layout from '../Layout.jsx';"],
+      ]));
+      expect(r.passed).toBe(true);
+    });
+  });
+
+  describe('INV-010: Sidebar padding consistency', () => {
+    it('positive: consistent padding', () => {
+      const r = checkInvariant('INV-010', new Map([
+        ['ShopPage.jsx', '<aside>\n  <h3 className="px-3 font-bold">Dept</h3>\n  <button className="px-3 text-sm">All</button>\n</aside>'],
+      ]));
+      expect(r.passed).toBe(true);
+    });
+
+    it('negative: mismatched padding', () => {
+      const r = checkInvariant('INV-010', new Map([
+        ['ShopPage.jsx', '<aside>\n  <h3 className="px-4 font-bold">Dept</h3>\n  <button className="px-2 text-sm">All</button>\n</aside>'],
+      ]));
+      expect(r.passed).toBe(false);
+    });
+  });
 });

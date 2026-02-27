@@ -24,6 +24,8 @@ export interface TriageResult {
   recommended_next_step: string;
   suggested_tests: string[];
   suggested_invariant: string | null;
+  /** SH9: Codegen trace ID for auto-fix mapping */
+  codegen_trace_id: string | null;
 }
 
 export interface PatternEntry {
@@ -35,6 +37,8 @@ export interface PatternEntry {
   next_step: string;
   suggested_tests: string[];
   suggested_invariant: string | null;
+  /** SH9: Codegen trace ID for auto-fix mapping */
+  codegen_trace_id: string | null;
 }
 
 // ---- Helpers ----
@@ -95,6 +99,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check page-gen.ts data fetch unwrapping — ensure `res.data ?? res` pattern is applied.',
     suggested_tests: ['invariant: paginated-list-unwrapping', 'test: dashboard data shape handling'],
     suggested_invariant: 'paginated-list-unwrapping',
+    codegen_trace_id: null, // no SH9 trace — data unwrapping issue
   },
   {
     id: 'codegen-state-ordering-or-missing-binding',
@@ -108,6 +113,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check page-gen.ts state variable detection and generation order.',
     suggested_tests: ['test: state variable completeness for page type'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'codegen-duplicate-declaration',
@@ -121,6 +127,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check page-gen.ts declaredVars tracking and public/auth route filtering in detectPageResource.',
     suggested_tests: ['test: no duplicate state declarations in dashboard', 'invariant: unique-state-declarations'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'codegen-unwired-action-handler',
@@ -138,6 +145,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check mutation-gen.ts for handler pattern matching and page-gen.ts for mutation wiring.',
     suggested_tests: ['test: action handlers are defined for all onClick references'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'codegen-dead-cta-button',
@@ -154,6 +162,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check jsx-gen.ts generateFlowJSX → element>text path for CTA button matching via matchCtaToPage.',
     suggested_tests: ['test: photography CTA buttons have onClick handlers', 'golden: G11 public CTA wiring'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'codegen-route-navigation-bug',
@@ -169,6 +178,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check jsx-gen.ts page routing and default currentPage assignment.',
     suggested_tests: ['test: default currentPage is correct for app type'],
     suggested_invariant: null,
+    codegen_trace_id: 'SH9-002',
   },
   {
     id: 'codegen-loading-deadlock',
@@ -182,6 +192,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check page-gen.ts loading state transitions in useEffect.',
     suggested_tests: ['test: loading state always resolves'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
 
   // --- Visual / Layout / CSS ---
@@ -201,6 +212,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check jsx-gen.ts auth page rendering path — ensure auth pages are not wrapped in Layout.',
     suggested_tests: ['test: auth pages render without Layout wrapper', 'invariant: auth-wrapper-composition'],
     suggested_invariant: 'auth-wrapper-composition',
+    codegen_trace_id: 'SH9-003',
   },
   {
     id: 'style-global-cta-width-regression',
@@ -217,6 +229,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check scaffold.ts generated CSS for overly broad button/submit width rules.',
     suggested_tests: ['invariant: global-auth-submit-width'],
     suggested_invariant: 'global-auth-submit-width',
+    codegen_trace_id: 'SH9-001',
   },
   {
     id: 'style-responsive-overflow',
@@ -233,6 +246,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check scaffold.ts responsive breakpoints and page-gen.ts grid/flex layouts.',
     suggested_tests: ['test: grid layouts have responsive column counts'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'style-contrast-unreadable',
@@ -247,6 +261,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check scaffold.ts CSS variable definitions for theme contrast ratios.',
     suggested_tests: ['test: text colors have sufficient contrast ratio'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'style-card-form-malformed',
@@ -263,6 +278,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check page-gen.ts component generation for the affected element type.',
     suggested_tests: ['test: generated cards/forms have valid structure'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
 
   // --- Backend / API / Runtime ---
@@ -282,6 +298,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check server-entry-gen.ts auth middleware exemption list and api-router-gen.ts requireAuth attachment.',
     suggested_tests: ['invariant: public-route-auth-exemption', 'test: /public/ routes accessible without token'],
     suggested_invariant: 'public-route-auth-exemption',
+    codegen_trace_id: null,
   },
   {
     id: 'backend-route-registration-gap',
@@ -297,6 +314,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check api-router-gen.ts route generation loop and expandedRoutes coverage.',
     suggested_tests: ['test: all declared API routes are registered'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'backend-query-param-handling',
@@ -311,6 +329,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check api-router-gen.ts query parameter extraction and Prisma where clause building.',
     suggested_tests: ['test: filter/sort/search params produce correct queries'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'backend-aggregate-shape-mismatch',
@@ -326,6 +345,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check api-router-gen.ts stats endpoint generation and dashboard page metric references.',
     suggested_tests: ['test: stats endpoint returns expected metric keys'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'backend-middleware-wiring',
@@ -339,6 +359,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check server-entry-gen.ts middleware registration order.',
     suggested_tests: ['test: middleware applied in correct order'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
 
   // --- DB / Schema / Seed / Data ---
@@ -356,6 +377,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check prisma.ts model field generation and .air @db block definition.',
     suggested_tests: ['test: all referenced fields exist in Prisma schema'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'data-seed-determinism-failure',
@@ -369,6 +391,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check seed-gen.ts for non-deterministic operations (random, Date.now, etc.).',
     suggested_tests: ['test: seed output is deterministic across runs'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'data-seed-shape-mismatch',
@@ -382,6 +405,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check seed-gen.ts data generation heuristics for domain-specific fields.',
     suggested_tests: ['test: seed data has appropriate values for display fields'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'data-null-handling',
@@ -396,6 +420,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check page-gen.ts optional field rendering — ensure `?? "--"` or similar fallback.',
     suggested_tests: ['test: optional fields render gracefully when null'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
 
   // --- Transpiler / Compiler ---
@@ -411,6 +436,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Compare golden snapshot hashes to identify changed files.',
     suggested_tests: ['test: snapshot hashes stable after change'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'transpiler-snapshot-drift',
@@ -424,6 +450,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Run SNAPSHOT_UPDATE=1 npx vitest run tests/snapshots.test.ts and review diffs.',
     suggested_tests: ['test: all snapshot hashes match golden baseline'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
 
   // --- Docs / Config / Operator ---
@@ -442,6 +469,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check .env template generation in scaffold.ts and docs for env var requirements.',
     suggested_tests: ['test: all required env vars documented and templated'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'config-port-mismatch',
@@ -457,6 +485,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check scaffold.ts env var generation for port/CORS consistency.',
     suggested_tests: ['test: client VITE_API_BASE_URL matches server PORT'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'docs-stale-command',
@@ -471,6 +500,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Update docs to match current codebase state.',
     suggested_tests: ['test: documented commands exist in package.json'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
 
   // --- .air Input ---
@@ -487,6 +517,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Run `air validate <file>` and fix syntax errors.',
     suggested_tests: ['test: .air file parses without errors'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'air-input-validation',
@@ -501,6 +532,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Run `air validate <file>` and address validation errors.',
     suggested_tests: ['test: .air file passes validation'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
 
   // --- Performance ---
@@ -517,6 +549,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Run bench.test.ts and check timing stats in TranspileResult.',
     suggested_tests: ['test: transpile time under 200ms budget'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'perf-stability-regression',
@@ -530,6 +563,73 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Run stability-sweep and compare with previous results.',
     suggested_tests: ['test: stability sweep all cases pass'],
     suggested_invariant: null,
+    codegen_trace_id: null,
+  },
+
+  // --- SH9 Style + Layout Patterns ---
+  {
+    id: 'style-specificity-conflict',
+    subsystem: 'scaffold',
+    confidence: 'high',
+    match: (inc) => {
+      const summary = getSummary(inc);
+      const msg = getErrorMessage(inc);
+      return (summary.includes('specificity') || summary.includes('css override') || summary.includes('tailwind'))
+        && (summary.includes('conflict') || summary.includes('fight') || summary.includes('ignored'));
+    },
+    notes: 'Bare CSS element selectors override Tailwind utility classes due to higher specificity.',
+    next_step: 'Check scaffold.ts generateIndexCss for bare element selectors without :where() wrapper.',
+    suggested_tests: ['invariant: INV-007 CSS element selector specificity'],
+    suggested_invariant: 'css-element-selector-specificity',
+    codegen_trace_id: 'SH9-001',
+  },
+  {
+    id: 'style-global-selector-leak',
+    subsystem: 'scaffold',
+    confidence: 'medium',
+    match: (inc) => {
+      const summary = getSummary(inc);
+      return (summary.includes('global') || summary.includes('leak'))
+        && (summary.includes('selector') || summary.includes('css') || summary.includes('style'))
+        && (summary.includes('unscoped') || summary.includes('bare'));
+    },
+    notes: 'Unscoped CSS selectors leak styles to unintended elements.',
+    next_step: 'Check scaffold.ts for broad selectors that should be scoped with :where() or container classes.',
+    suggested_tests: ['invariant: INV-007 CSS element selector specificity'],
+    suggested_invariant: 'css-element-selector-specificity',
+    codegen_trace_id: 'SH9-001',
+  },
+  {
+    id: 'layout-alignment-regression',
+    subsystem: 'page-gen',
+    confidence: 'medium',
+    match: (inc) => {
+      const summary = getSummary(inc);
+      const stage = getStage(inc);
+      return (stage === 'qa-visual' || stage === 'runtime-ui')
+        && (summary.includes('alignment') || summary.includes('padding') || summary.includes('misalign'))
+        && (summary.includes('sidebar') || summary.includes('button') || summary.includes('heading'));
+    },
+    notes: 'Sidebar or layout elements have inconsistent padding/alignment between headings and interactive elements.',
+    next_step: 'Check ecommerce page generation for consistent padding classes on sibling elements.',
+    suggested_tests: ['invariant: INV-010 Sidebar padding consistency'],
+    suggested_invariant: 'sidebar-padding-consistency',
+    codegen_trace_id: 'SH9-004',
+  },
+  {
+    id: 'lookfeel-token-drift',
+    subsystem: 'scaffold',
+    confidence: 'low',
+    match: (inc) => {
+      const summary = getSummary(inc);
+      return (summary.includes('token') || summary.includes('design token') || summary.includes('css var'))
+        && (summary.includes('drift') || summary.includes('hardcoded') || summary.includes('inconsistent'));
+    },
+    notes: 'CSS custom properties drifted from design system tokens. May require model-assisted analysis.',
+    next_step: 'Review scaffold.ts CSS variable definitions and compare with design system spec.',
+    suggested_tests: ['test: CSS variables match design system tokens'],
+    suggested_invariant: null,
+    codegen_trace_id: null, // model-assisted only
   },
 
   // --- Runtime QA (SH8) ---
@@ -548,6 +648,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check page-gen.ts CTA button wiring and jsx-gen.ts matchCtaToPage logic.',
     suggested_tests: ['test: all CTA buttons in generated pages have onClick handlers', 'golden: public CTA navigation'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'runtime-console-error',
@@ -563,6 +664,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check console error content and trace to generated component or API client.',
     suggested_tests: ['test: generated app has zero console errors on page load'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
   {
     id: 'runtime-navigation-failure',
@@ -580,6 +682,7 @@ export const PATTERN_REGISTRY: PatternEntry[] = [
     next_step: 'Check jsx-gen.ts page routing and layout-gen.ts navigation component generation.',
     suggested_tests: ['test: all navigation routes reach expected pages'],
     suggested_invariant: null,
+    codegen_trace_id: null,
   },
 ];
 
@@ -596,6 +699,7 @@ export function classifyIncident(incident: Record<string, unknown>): TriageResul
         recommended_next_step: pattern.next_step,
         suggested_tests: pattern.suggested_tests,
         suggested_invariant: pattern.suggested_invariant,
+        codegen_trace_id: pattern.codegen_trace_id ?? null,
       };
     }
   }
@@ -609,6 +713,7 @@ export function classifyIncident(incident: Record<string, unknown>): TriageResul
     recommended_next_step: 'Review incident details manually and determine subsystem.',
     suggested_tests: [],
     suggested_invariant: null,
+    codegen_trace_id: null,
   };
 }
 

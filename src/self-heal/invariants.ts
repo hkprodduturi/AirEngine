@@ -390,6 +390,229 @@ const slugRouteSupport: InvariantDef = {
   },
 };
 
+// ---- SH9 Invariants ----
+
+/**
+ * INV-007: CSS element selector specificity
+ *
+ * Generated CSS should not have bare element selectors (h1 {}, button {})
+ * without :where() wrappers. Bare selectors have specificity (0, 0, 1) and
+ * override Tailwind utility classes which also have specificity (0, 1, 0)
+ * only when order is unfavorable. Using :where() reduces to (0, 0, 0).
+ */
+const cssElementSelectorSpecificity: InvariantDef = {
+  id: 'INV-007',
+  name: 'CSS element selector specificity',
+  severity: 'p2',
+  check: (files) => {
+    const cssFiles = getFiles(files, '.css');
+    const violations: string[] = [];
+
+    // Bare element selectors that should be wrapped in :where()
+    // Note: code, pre, hr, a are low-risk reset-level rules — exclude from check
+    const barePattern = /^(h[1-6]|p|button|table|th|td|tbody\s+tr|input|select|textarea|aside)\s*[\{,]/;
+
+    for (const [path, content] of cssFiles) {
+      const lines = content.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        // Skip lines that are already wrapped in :where()
+        if (line.startsWith(':where(')) continue;
+        // Skip lines inside comments
+        if (line.startsWith('/*') || line.startsWith('*')) continue;
+        // Skip class selectors, ID selectors, and attribute selectors
+        if (line.startsWith('.') || line.startsWith('#') || line.startsWith('[')) continue;
+
+        if (barePattern.test(line)) {
+          violations.push(`${path}:${i + 1}: Bare selector: ${line.slice(0, 60)}`);
+        }
+      }
+    }
+
+    return {
+      id: 'INV-007',
+      name: 'CSS element selector specificity',
+      passed: violations.length === 0,
+      severity: 'p2',
+      details: violations.length === 0
+        ? 'All element selectors properly wrapped in :where().'
+        : `Found ${violations.length} bare element selector(s):\n${violations.join('\n')}`,
+      file_path: violations.length > 0 ? violations[0].split(':')[0] : null,
+      line_hint: null,
+    };
+  },
+};
+
+/**
+ * INV-008: Page import completeness
+ *
+ * Every *Page.jsx file in pages/ directory should have a corresponding
+ * import and route (currentPage conditional) in App.jsx.
+ */
+const pageImportCompleteness: InvariantDef = {
+  id: 'INV-008',
+  name: 'Page import completeness',
+  severity: 'p1',
+  check: (files) => {
+    const appJsx = getFile(files, 'App.jsx');
+    if (!appJsx) {
+      return {
+        id: 'INV-008', name: 'Page import completeness', passed: true,
+        severity: 'p1', details: 'No App.jsx found — skipped.', file_path: null, line_hint: null,
+      };
+    }
+
+    const [appPath, appContent] = appJsx;
+    const pageFiles = getFiles(files, 'pages/');
+    const violations: string[] = [];
+
+    for (const [pagePath] of pageFiles) {
+      const match = pagePath.match(/pages\/(\w+)Page\.jsx$/);
+      if (!match) continue;
+      const pageName = match[1];
+      // Check if App.jsx references this page (import or lazy)
+      if (!appContent.includes(`${pageName}Page`)) {
+        violations.push(`${pagePath}: ${pageName}Page not imported in App.jsx`);
+      }
+    }
+
+    return {
+      id: 'INV-008',
+      name: 'Page import completeness',
+      passed: violations.length === 0,
+      severity: 'p1',
+      details: violations.length === 0
+        ? 'All page components are imported and routed in App.jsx.'
+        : `${violations.length} page(s) missing from App.jsx:\n${violations.join('\n')}`,
+      file_path: violations.length > 0 ? appPath : null,
+      line_hint: null,
+    };
+  },
+};
+
+/**
+ * INV-009: No double Layout wrapping
+ *
+ * Page components rendered inside App.jsx's <Layout> should NOT also
+ * import and wrap content in their own <Layout>. This causes double
+ * sidebars and broken navigation.
+ */
+const noDoubleLayoutWrapping: InvariantDef = {
+  id: 'INV-009',
+  name: 'No double Layout wrapping',
+  severity: 'p1',
+  check: (files) => {
+    const appJsx = getFile(files, 'App.jsx');
+    if (!appJsx) {
+      return {
+        id: 'INV-009', name: 'No double Layout wrapping', passed: true,
+        severity: 'p1', details: 'No App.jsx found — skipped.', file_path: null, line_hint: null,
+      };
+    }
+
+    const [, appContent] = appJsx;
+    // Only relevant if App.jsx uses Layout
+    if (!appContent.includes('<Layout')) {
+      return {
+        id: 'INV-009', name: 'No double Layout wrapping', passed: true,
+        severity: 'p1', details: 'App.jsx does not use Layout — skipped.', file_path: null, line_hint: null,
+      };
+    }
+
+    const pageFiles = getFiles(files, 'pages/');
+    const violations: string[] = [];
+
+    for (const [path, content] of pageFiles) {
+      // Check if page imports Layout
+      if (content.includes("import Layout") || content.includes("from '../Layout") || content.includes("from './Layout")) {
+        const line = findLineNumber(content, 'Layout');
+        violations.push(`${path}:${line || '?'}: Page imports Layout while App.jsx already wraps in Layout`);
+      }
+    }
+
+    return {
+      id: 'INV-009',
+      name: 'No double Layout wrapping',
+      passed: violations.length === 0,
+      severity: 'p1',
+      details: violations.length === 0
+        ? 'No pages have redundant Layout imports.'
+        : `${violations.length} page(s) with double Layout wrapping:\n${violations.join('\n')}`,
+      file_path: violations.length > 0 ? violations[0].split(':')[0] : null,
+      line_hint: null,
+    };
+  },
+};
+
+/**
+ * INV-010: Sidebar padding consistency
+ *
+ * In sidebar/aside elements, heading elements and button siblings should
+ * share the same horizontal padding class for visual alignment.
+ */
+const sidebarPaddingConsistency: InvariantDef = {
+  id: 'INV-010',
+  name: 'Sidebar padding consistency',
+  severity: 'p2',
+  check: (files) => {
+    // Check shop page or any page with sidebar
+    const shopPage = getFile(files, 'ShopPage.jsx');
+    const layoutFile = getFile(files, 'Layout.jsx');
+    const candidates = [shopPage, layoutFile].filter(Boolean) as [string, string][];
+    const violations: string[] = [];
+
+    for (const [path, content] of candidates) {
+      // Look for aside sections with both h3/h2 and button elements
+      if (!content.includes('<aside') && !content.includes('sidebar')) continue;
+
+      // Extract padding classes from headings and buttons in sidebar context
+      const headingPaddings = new Set<string>();
+      const buttonPaddings = new Set<string>();
+
+      const lines = content.split('\n');
+      let inSidebar = false;
+      for (const line of lines) {
+        if (line.includes('<aside') || line.includes('sidebar')) inSidebar = true;
+        if (inSidebar && (line.includes('</aside') || line.includes('</div>'))) {
+          // Simple heuristic — we stay in sidebar context for a while
+        }
+        if (!inSidebar) continue;
+
+        // Extract px-N values from heading elements
+        const headingMatch = line.match(/<h[2-4][^>]*className="[^"]*\bpx-(\d+)/);
+        if (headingMatch) headingPaddings.add(headingMatch[1]);
+
+        // Extract px-N values from button elements
+        const buttonMatch = line.match(/<button[^>]*className[^>]*\bpx-(\d+)/);
+        if (buttonMatch) buttonPaddings.add(buttonMatch[1]);
+      }
+
+      // Check consistency
+      if (headingPaddings.size > 0 && buttonPaddings.size > 0) {
+        const headArr = [...headingPaddings];
+        const btnArr = [...buttonPaddings];
+        for (const hp of headArr) {
+          if (!btnArr.includes(hp)) {
+            violations.push(`${path}: Heading uses px-${hp}, button uses px-${btnArr.join('/')}`);
+          }
+        }
+      }
+    }
+
+    return {
+      id: 'INV-010',
+      name: 'Sidebar padding consistency',
+      passed: violations.length === 0,
+      severity: 'p2',
+      details: violations.length === 0
+        ? 'Sidebar heading and button padding is consistent.'
+        : `Padding inconsistencies:\n${violations.join('\n')}`,
+      file_path: violations.length > 0 ? violations[0].split(':')[0] : null,
+      line_hint: null,
+    };
+  },
+};
+
 // ---- Registry ----
 
 export const INVARIANTS: InvariantDef[] = [
@@ -399,6 +622,10 @@ export const INVARIANTS: InvariantDef[] = [
   publicRouteAuthExemption,
   publicApiAuthHeader,
   slugRouteSupport,
+  cssElementSelectorSpecificity,
+  pageImportCompleteness,
+  noDoubleLayoutWrapping,
+  sidebarPaddingConsistency,
 ];
 
 // ---- Runner ----

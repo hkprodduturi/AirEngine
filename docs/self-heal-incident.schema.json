@@ -148,7 +148,9 @@
             "css_fragment",
             "raw_output",
             "test_output",
-            "config_snippet"
+            "config_snippet",
+            "computed_style",
+            "visual_diff"
           ]
         },
         "content": { "type": "string" },
@@ -181,6 +183,9 @@
           "items": { "type": "string" }
         },
         "suggested_invariant": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "codegen_trace_id": {
           "oneOf": [{ "type": "string" }, { "type": "null" }]
         }
       },

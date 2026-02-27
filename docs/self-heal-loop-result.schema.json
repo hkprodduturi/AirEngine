@@ -27,7 +27,7 @@
     },
     "mode": {
       "type": "string",
-      "enum": ["shadow", "propose", "patch-verify"]
+      "enum": ["shadow", "propose", "patch-verify", "transpiler-patch"]
     },
     "timestamp": {
       "type": "string",
@@ -54,6 +54,14 @@
     "knowledge_entries": {
       "type": "array",
       "items": { "$ref": "#/$defs/knowledgeRef" }
+    },
+    "transpiler_patches": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/transpilerPatchRef" }
+    },
+    "style_verifications": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/styleVerificationRef" }
     },
     "summary": { "$ref": "#/$defs/loopSummary" },
     "verdict": {
@@ -127,7 +135,36 @@
         "incidents_created": { "type": "integer", "minimum": 0 },
         "patches_proposed": { "type": "integer", "minimum": 0 },
         "patches_verified": { "type": "integer", "minimum": 0 },
-        "patches_passed": { "type": "integer", "minimum": 0 }
+        "patches_passed": { "type": "integer", "minimum": 0 },
+        "transpiler_patches_proposed": { "type": "integer", "minimum": 0 },
+        "transpiler_patches_passed": { "type": "integer", "minimum": 0 },
+        "transpiler_patch_attempts": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "transpilerPatchRef": {
+      "type": "object",
+      "required": ["trace_id", "transpiler_file", "strategy", "verdict"],
+      "properties": {
+        "trace_id": { "type": "string" },
+        "transpiler_file": { "type": "string" },
+        "strategy": { "type": "string" },
+        "verdict": { "type": "string", "enum": ["pass", "fail", "skipped"] },
+        "diff_summary": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "styleVerificationRef": {
+      "type": "object",
+      "required": ["step_label", "selector", "result"],
+      "properties": {
+        "step_label": { "type": "string" },
+        "selector": { "type": "string" },
+        "result": { "type": "string", "enum": ["pass", "fail", "skipped"] },
+        "mismatches": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       },
       "additionalProperties": false
     }

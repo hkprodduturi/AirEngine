@@ -29,16 +29,32 @@ export interface StepExpected {
   no_errors?: boolean;
 }
 
+export interface AssertStyleFields {
+  selector: string;
+  expected_styles: Record<string, string>;
+  viewport?: { width: number; height: number };
+}
+
+export interface VisualSnapshotFields {
+  baseline_name: string;
+  selector?: string;
+  threshold?: number;
+}
+
 export interface FlowStep {
   step_id: string;
   label: string;
-  action: 'navigate' | 'click' | 'type' | 'check_console' | 'assert_visible' | 'screenshot';
+  action: 'navigate' | 'click' | 'type' | 'check_console' | 'assert_visible' | 'screenshot' | 'assert_style' | 'visual_snapshot';
   target?: string;
   selector?: string;
   value?: string;
   expected?: StepExpected;
   dead_cta_check?: boolean;
   severity?: string;
+  /** SH9: Style assertion fields */
+  assert_style?: AssertStyleFields;
+  /** SH9: Visual snapshot fields */
+  visual_snapshot?: VisualSnapshotFields;
 }
 
 export interface FlowSpec {
@@ -61,6 +77,12 @@ export interface StepEvidence {
   network_requests: string[];
   dom_snippet: string | null;
   dom_changed: boolean;
+  /** SH9: Computed styles from assert_style step */
+  computed_styles?: Record<string, string>;
+  /** SH9: Visual snapshot screenshot path */
+  visual_screenshot_path?: string;
+  /** SH9: Visual diff score (0.0 = identical, 1.0 = completely different) */
+  visual_diff_score?: number;
 }
 
 export interface StepResult {
@@ -502,6 +524,127 @@ export async function executeStep(
           if (buffer) {
             evidence.screenshot_path = ssPath;
           }
+        }
+        break;
+      }
+
+      case 'assert_style': {
+        // SH9: Style assertion — compare computed styles against expected
+        const styleFields = step.assert_style;
+        if (!styleFields) {
+          status = 'error';
+          failureReason = 'assert_style action requires assert_style fields';
+          break;
+        }
+        try {
+          // Set viewport if specified
+          if (styleFields.viewport && (page as any).setViewportSize) {
+            await (page as any).setViewportSize(styleFields.viewport);
+          }
+
+          const computed = await page.evaluate(`
+            (() => {
+              const el = document.querySelector(${JSON.stringify(styleFields.selector)});
+              if (!el) return null;
+              const cs = window.getComputedStyle(el);
+              const props = ${JSON.stringify(Object.keys(styleFields.expected_styles))};
+              const result = {};
+              for (const p of props) { result[p] = cs.getPropertyValue(p); }
+              return result;
+            })()
+          `) as Record<string, string> | null;
+
+          if (!computed) {
+            status = 'fail';
+            failureReason = `Element not found: ${styleFields.selector}`;
+            break;
+          }
+
+          evidence.computed_styles = computed;
+          const mismatches: string[] = [];
+          for (const [prop, expected] of Object.entries(styleFields.expected_styles)) {
+            const actual = computed[prop] ?? '';
+            if (actual !== expected) {
+              mismatches.push(`${prop}: expected "${expected}", got "${actual}"`);
+            }
+          }
+
+          if (mismatches.length > 0) {
+            status = 'fail';
+            failureReason = `Style mismatches: ${mismatches.join('; ')}`;
+          }
+        } catch (err: any) {
+          status = 'error';
+          failureReason = `Style assertion error: ${err.message}`;
+        }
+        break;
+      }
+
+      case 'visual_snapshot': {
+        // SH9: Visual snapshot — capture + compare with baseline
+        const snapFields = step.visual_snapshot;
+        if (!snapFields) {
+          status = 'error';
+          failureReason = 'visual_snapshot action requires visual_snapshot fields';
+          break;
+        }
+        try {
+          if (page.screenshot) {
+            const screenshotDir = join('artifacts', 'runtime-qa', 'snapshots');
+            mkdirSync(screenshotDir, { recursive: true });
+            const ssPath = join(screenshotDir, `${snapFields.baseline_name}-${Date.now()}.png`);
+
+            const ssOptions: Record<string, unknown> = { path: ssPath };
+            if (snapFields.selector) {
+              // Element screenshot: get bounding box via evaluate, then use clip rect
+              try {
+                const bbox = await page.evaluate(`
+                  (() => {
+                    const el = document.querySelector(${JSON.stringify(snapFields.selector)});
+                    if (!el) return null;
+                    const r = el.getBoundingClientRect();
+                    return { x: r.x, y: r.y, width: r.width, height: r.height };
+                  })()
+                `) as { x: number; y: number; width: number; height: number } | null;
+                if (bbox && bbox.width > 0 && bbox.height > 0) {
+                  ssOptions.clip = bbox;
+                } else {
+                  ssOptions.fullPage = false;
+                }
+              } catch {
+                ssOptions.fullPage = false;
+              }
+            } else {
+              ssOptions.fullPage = true;
+            }
+
+            const buffer = await page.screenshot(ssOptions);
+            if (buffer) {
+              evidence.visual_screenshot_path = ssPath;
+
+              // Compare with baseline
+              const baselinePath = join('qa-baselines', `${snapFields.baseline_name}.png`);
+              const { existsSync: fExists } = await import('fs');
+              if (fExists(baselinePath)) {
+                const { compareScreenshots } = await import('./visual-diff.js');
+                const threshold = snapFields.threshold ?? 0.01;
+                const diffResult = compareScreenshots(baselinePath, ssPath, threshold);
+                evidence.visual_diff_score = diffResult.diffScore;
+
+                if (!diffResult.match) {
+                  status = 'fail';
+                  failureReason = `Visual diff: ${(diffResult.diffScore * 100).toFixed(2)}% exceeds ${(threshold * 100).toFixed(2)}% threshold`;
+                }
+              } else {
+                // Missing baseline — record as skip with reason
+                status = 'skip';
+                failureReason = `Baseline not found: qa-baselines/${snapFields.baseline_name}.png — save a baseline image to enable comparison`;
+              }
+            }
+          }
+        } catch (err: any) {
+          status = 'error';
+          failureReason = `Visual snapshot error: ${err.message}`;
         }
         break;
       }

@@ -79,7 +79,7 @@
         "label": { "type": "string" },
         "action": {
           "type": "string",
-          "enum": ["navigate", "click", "type", "check_console", "assert_visible", "screenshot"]
+          "enum": ["navigate", "click", "type", "check_console", "assert_visible", "screenshot", "assert_style", "visual_snapshot"]
         },
         "status": {
           "type": "string",
@@ -110,7 +110,13 @@
           "items": { "type": "string" }
         },
         "dom_snippet": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
-        "dom_changed": { "type": "boolean" }
+        "dom_changed": { "type": "boolean" },
+        "computed_styles": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "visual_screenshot_path": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "visual_diff_score": { "oneOf": [{ "type": "number" }, { "type": "null" }] }
       },
       "additionalProperties": false
     },

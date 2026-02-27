@@ -102,6 +102,28 @@ export function buildRichEvidence(step: StepResult): EvidenceItem[] {
     });
   }
 
+  // SH9: Computed styles from assert_style
+  if (step.evidence.computed_styles) {
+    evidence.push({
+      kind: 'computed_style',
+      content: JSON.stringify(step.evidence.computed_styles, null, 2),
+      file_path: null,
+      line_number: null,
+      label: 'Computed styles for style assertion',
+    });
+  }
+
+  // SH9: Visual diff evidence
+  if (step.evidence.visual_screenshot_path) {
+    evidence.push({
+      kind: 'visual_diff',
+      content: `screenshot: ${step.evidence.visual_screenshot_path}\ndiff_score: ${step.evidence.visual_diff_score ?? 'N/A'}`,
+      file_path: step.evidence.visual_screenshot_path,
+      line_number: null,
+      label: 'Visual snapshot comparison',
+    });
+  }
+
   return evidence;
 }
 

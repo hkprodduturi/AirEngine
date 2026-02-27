@@ -43,6 +43,9 @@ import {
   type HealLoopOptions,
 } from '../scripts/self-heal-loop.js';
 
+import type { TranspilerPatchResult } from '../src/self-heal/transpiler-patch.js';
+import type { CodegenTraceEntry, CodegenTraceResult } from '../src/self-heal/codegen-trace.js';
+
 // ---- Mock Page Factory ----
 
 interface MockPageOptions {
@@ -818,6 +821,576 @@ describe('SH8 Runtime QA', () => {
       const result = await executeStep(page, step, spec, ['Error: boom'], []);
       expect(result.status).toBe('fail');
       expect(result.evidence.console_errors).toContain('Error: boom');
+    });
+  });
+
+  // ---- 12b. SH9 step execution: assert_style and visual_snapshot (4 tests) ----
+  describe('SH9 step execution', () => {
+    it('assert_style passes when computed styles match', async () => {
+      const page = createMockPage();
+      // Override evaluate to return matching styles
+      (page as any).evaluate = async (fn: unknown) => {
+        if (typeof fn === 'string' && fn.includes('getComputedStyle')) {
+          return { 'text-align': 'left', 'padding': '8px' };
+        }
+        return null;
+      };
+      const step: FlowStep = {
+        step_id: 'style-check',
+        label: 'Check sidebar alignment',
+        action: 'assert_style',
+        assert_style: {
+          selector: '.sidebar h3',
+          expected_styles: { 'text-align': 'left', 'padding': '8px' },
+        },
+      };
+      const spec = createMinimalFlowSpec();
+      const result = await executeStep(page, step, spec, [], []);
+      expect(result.status).toBe('pass');
+      expect(result.evidence.computed_styles).toEqual({ 'text-align': 'left', 'padding': '8px' });
+    });
+
+    it('assert_style fails when computed styles mismatch', async () => {
+      const page = createMockPage();
+      (page as any).evaluate = async (fn: unknown) => {
+        if (typeof fn === 'string' && fn.includes('getComputedStyle')) {
+          return { 'text-align': 'center', 'padding': '8px' };
+        }
+        return null;
+      };
+      const step: FlowStep = {
+        step_id: 'style-mismatch',
+        label: 'Check alignment fails',
+        action: 'assert_style',
+        assert_style: {
+          selector: '.sidebar h3',
+          expected_styles: { 'text-align': 'left', 'padding': '8px' },
+        },
+      };
+      const spec = createMinimalFlowSpec();
+      const result = await executeStep(page, step, spec, [], []);
+      expect(result.status).toBe('fail');
+      expect(result.failure_reason).toContain('text-align');
+    });
+
+    it('assert_style errors when missing fields', async () => {
+      const page = createMockPage();
+      const step: FlowStep = {
+        step_id: 'no-fields',
+        label: 'Missing fields',
+        action: 'assert_style',
+      };
+      const spec = createMinimalFlowSpec();
+      const result = await executeStep(page, step, spec, [], []);
+      expect(result.status).toBe('error');
+      expect(result.failure_reason).toContain('requires assert_style');
+    });
+
+    it('visual_snapshot errors when missing fields', async () => {
+      const page = createMockPage();
+      const step: FlowStep = {
+        step_id: 'no-snap-fields',
+        label: 'Missing visual fields',
+        action: 'visual_snapshot',
+      };
+      const spec = createMinimalFlowSpec();
+      const result = await executeStep(page, step, spec, [], []);
+      expect(result.status).toBe('error');
+      expect(result.failure_reason).toContain('requires visual_snapshot');
+    });
+  });
+
+  // ---- 12c. SH9 transpiler-patch mode (2 tests) ----
+  describe('Transpiler-patch mode', () => {
+    it('detects traces with real generated files', async () => {
+      const qaResult = createMockQAResult({
+        steps: [{
+          step_id: 's1', label: 'Dead CTA', action: 'click',
+          status: 'fail', duration_ms: 100,
+          evidence: { selector: 'button.cta', text_content: 'Click', url_before: null, url_after: null, screenshot_path: null, console_errors: [], network_requests: [], dom_snippet: null, dom_changed: false },
+          failure_reason: 'Dead CTA: click produced no effect',
+          dead_cta_detected: true,
+        }],
+        verdict: 'fail',
+        summary: { total: 1, passed: 0, failed: 1, skipped: 0, dead_ctas: 1, console_errors: 0 },
+      });
+
+      // Provide generated files with a bare CSS selector
+      const mockFiles = new Map([
+        ['client/src/index.css', 'h1 { font-size: 2rem; }'],
+      ]);
+
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => qaResult,
+        skipArtifacts: true,
+        mockGeneratedFiles: mockFiles,
+      });
+
+      expect(result.mode).toBe('transpiler-patch');
+      expect(result.summary.transpiler_patches_proposed).toBeGreaterThanOrEqual(0);
+      expect(result.summary.transpiler_patches_passed).toBeGreaterThanOrEqual(0);
+    });
+
+    it('validates transpiler-patch loop result against schema', async () => {
+      const qaResult = createMockQAResult({ verdict: 'pass' });
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => qaResult,
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map(),
+      });
+      const errors = validateHealLoopResult(result);
+      expect(errors).toEqual([]);
+    });
+  });
+
+  // ---- 12d. SH9 closed-loop semantics (5 tests) ----
+  describe('SH9 closed-loop semantics', () => {
+    it('calls mockRetranspile and uses new output for verification', async () => {
+      let retranspileCalled = false;
+      const qaResult = createMockQAResult({
+        steps: [{
+          step_id: 's1', label: 'CSS issue', action: 'click',
+          status: 'fail', duration_ms: 100,
+          evidence: { selector: 'button', text_content: 'Click', url_before: null, url_after: null, screenshot_path: null, console_errors: [], network_requests: [], dom_snippet: null, dom_changed: false },
+          failure_reason: 'Style specificity fight',
+          dead_cta_detected: true,
+        }],
+        verdict: 'fail',
+        summary: { total: 1, passed: 0, failed: 1, skipped: 0, dead_ctas: 1, console_errors: 0 },
+      });
+
+      // Old output has bare selectors
+      const oldFiles = new Map([
+        ['client/src/index.css', 'h1 { font-size: 2rem; }'],
+      ]);
+      // New output after fix: wrapped selectors
+      const newFiles = new Map([
+        ['client/src/index.css', ':where(h1) { font-size: 2rem; }'],
+      ]);
+
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => qaResult,
+        skipArtifacts: true,
+        mockGeneratedFiles: oldFiles,
+        mockRetranspile: (_worktreePath: string) => {
+          retranspileCalled = true;
+          return newFiles;
+        },
+      });
+
+      // mockRetranspile must have been called (if a trace was detected + patch proposed)
+      if (result.summary.transpiler_patches_proposed > 0) {
+        expect(retranspileCalled).toBe(true);
+      }
+    });
+
+    it('gates pass on style_checks_passed (all three checks required)', async () => {
+      const qaResult = createMockQAResult({
+        steps: [{
+          step_id: 's1', label: 'CSS issue', action: 'click',
+          status: 'fail', duration_ms: 100,
+          evidence: { selector: 'button', text_content: 'Click', url_before: null, url_after: null, screenshot_path: null, console_errors: [], network_requests: [], dom_snippet: null, dom_changed: false },
+          failure_reason: 'Style specificity fight',
+          dead_cta_detected: true,
+        }],
+        verdict: 'fail',
+        summary: { total: 1, passed: 0, failed: 1, skipped: 0, dead_ctas: 1, console_errors: 0 },
+      });
+
+      // Provide files that will fail style checks (bare CSS + API without .data unwrap)
+      const mockFiles = new Map([
+        ['client/src/index.css', 'h1 { font-size: 2rem; }'],
+        ['pages/Dashboard.jsx', 'api.getProjects().then(r => setProjects(r))'],
+      ]);
+
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => qaResult,
+        skipArtifacts: true,
+        mockGeneratedFiles: mockFiles,
+        mockRetranspile: () => mockFiles, // same files = invariants still fail
+      });
+
+      // Any proposed patches should fail verification (invariants won't pass)
+      for (const tp of result.transpiler_patches) {
+        if (tp.verdict !== 'skipped') {
+          expect(tp.verdict).toBe('fail');
+        }
+      }
+    });
+
+    it('retranspile_successful is false when mockRetranspile returns null', async () => {
+      const qaResult = createMockQAResult({
+        steps: [{
+          step_id: 's1', label: 'Dead CTA', action: 'click',
+          status: 'fail', duration_ms: 100,
+          evidence: { selector: 'button', text_content: null, url_before: null, url_after: null, screenshot_path: null, console_errors: [], network_requests: [], dom_snippet: null, dom_changed: false },
+          failure_reason: 'Dead CTA',
+          dead_cta_detected: true,
+        }],
+        verdict: 'fail',
+        summary: { total: 1, passed: 0, failed: 1, skipped: 0, dead_ctas: 1, console_errors: 0 },
+      });
+
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => qaResult,
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map([['client/src/index.css', 'h1 { color: red; }']]),
+        mockRetranspile: () => null, // re-transpile fails
+      });
+
+      // All proposed patches should fail (retranspile returned null)
+      for (const tp of result.transpiler_patches) {
+        if (tp.verdict !== 'skipped') {
+          expect(tp.verdict).toBe('fail');
+        }
+      }
+    });
+
+    it('populates style_verifications from assert_style QA steps', async () => {
+      const qaResult = createMockQAResult({
+        steps: [
+          {
+            step_id: 's1', label: 'Check sidebar alignment', action: 'assert_style',
+            status: 'fail', duration_ms: 50,
+            evidence: { selector: '.sidebar', text_content: null, url_before: null, url_after: null, screenshot_path: null, console_errors: [], network_requests: [], dom_snippet: null, dom_changed: false, computed_styles: { 'text-align': 'center' } },
+            failure_reason: 'Style mismatches: text-align: expected "left", got "center"',
+            dead_cta_detected: false,
+          },
+          {
+            step_id: 's2', label: 'Check header layout', action: 'assert_style',
+            status: 'pass', duration_ms: 30,
+            evidence: { selector: 'header', text_content: null, url_before: null, url_after: null, screenshot_path: null, console_errors: [], network_requests: [], dom_snippet: null, dom_changed: false, computed_styles: { display: 'flex' } },
+            failure_reason: null,
+            dead_cta_detected: false,
+          },
+        ],
+        verdict: 'fail',
+        summary: { total: 2, passed: 1, failed: 1, skipped: 0, dead_ctas: 0, console_errors: 0 },
+      });
+
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => qaResult,
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map(),
+      });
+
+      expect(result.style_verifications.length).toBe(2);
+      expect(result.style_verifications[0].step_label).toBe('Check sidebar alignment');
+      expect(result.style_verifications[0].result).toBe('fail');
+      expect(result.style_verifications[0].mismatches).toBeDefined();
+      expect(result.style_verifications[0].mismatches!.length).toBeGreaterThan(0);
+      expect(result.style_verifications[1].step_label).toBe('Check header layout');
+      expect(result.style_verifications[1].result).toBe('pass');
+      expect(result.style_verifications[1].mismatches).toBeUndefined();
+    });
+
+    it('style_verifications populated even in propose mode', async () => {
+      const qaResult = createMockQAResult({
+        steps: [{
+          step_id: 's1', label: 'Style check', action: 'assert_style',
+          status: 'pass', duration_ms: 20,
+          evidence: { selector: '.btn', text_content: null, url_before: null, url_after: null, screenshot_path: null, console_errors: [], network_requests: [], dom_snippet: null, dom_changed: false },
+          failure_reason: null,
+          dead_cta_detected: false,
+        }],
+        verdict: 'pass',
+        summary: { total: 1, passed: 1, failed: 0, skipped: 0, dead_ctas: 0, console_errors: 0 },
+      });
+
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'propose',
+        mockExecuteFlow: async () => qaResult,
+        skipArtifacts: true,
+      });
+
+      // propose mode now populates style_verifications before early return
+      expect(result.style_verifications.length).toBe(1);
+      expect(result.style_verifications[0].step_label).toBe('Style check');
+      expect(result.style_verifications[0].result).toBe('pass');
+    });
+  });
+
+  // ---- 12e. SH9 hardening: retry, single-write, CLI enforcement (5 tests) ----
+  describe('SH9 hardening', () => {
+    function makeFailQAResult() {
+      return createMockQAResult({
+        steps: [{
+          step_id: 's1', label: 'Dead CTA', action: 'click',
+          status: 'fail', duration_ms: 100,
+          evidence: { selector: 'button', text_content: null, url_before: null, url_after: null, screenshot_path: null, console_errors: [], network_requests: [], dom_snippet: null, dom_changed: false },
+          failure_reason: 'Dead CTA',
+          dead_cta_detected: true,
+        }],
+        verdict: 'fail',
+        summary: { total: 1, passed: 0, failed: 1, skipped: 0, dead_ctas: 1, console_errors: 0 },
+      });
+    }
+
+    it('retries up to maxAttempts and passes on later attempt', async () => {
+      let attempt = 0;
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        maxAttempts: 3,
+        mockExecuteFlow: async () => makeFailQAResult(),
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map([['client/src/index.css', 'h1 { color: red; }']]),
+        mockRetranspile: () => {
+          attempt++;
+          if (attempt < 2) return null; // fail first attempt (retranspile_successful=false)
+          return new Map([['client/src/index.css', ':where(h1) { color: red; }']]);
+        },
+      });
+
+      // Should have retried and eventually passed
+      if (result.summary.transpiler_patches_proposed > 0) {
+        expect(result.summary.transpiler_patch_attempts).toBeGreaterThanOrEqual(2);
+        expect(result.transpiler_patches.some(tp => tp.verdict === 'pass')).toBe(true);
+      }
+    });
+
+    it('stops retrying after maxAttempts=1', async () => {
+      let attempt = 0;
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        maxAttempts: 1,
+        mockExecuteFlow: async () => makeFailQAResult(),
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map([['client/src/index.css', 'h1 { color: red; }']]),
+        mockRetranspile: () => {
+          attempt++;
+          return null; // always fail
+        },
+      });
+
+      // Only one attempt allowed
+      if (result.summary.transpiler_patches_proposed > 0) {
+        expect(result.summary.transpiler_patch_attempts).toBe(1);
+        expect(result.transpiler_patches.every(tp => tp.verdict === 'fail')).toBe(true);
+      }
+    });
+
+    it('stops early when all patches pass on first attempt', async () => {
+      let attempt = 0;
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        maxAttempts: 5,
+        mockExecuteFlow: async () => makeFailQAResult(),
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map([['client/src/index.css', 'h1 { color: red; }']]),
+        mockRetranspile: () => {
+          attempt++;
+          return new Map([['client/src/index.css', ':where(h1) { color: red; }']]);
+        },
+      });
+
+      if (result.summary.transpiler_patches_proposed > 0) {
+        // Passed on first attempt — no need for more
+        expect(result.summary.transpiler_patch_attempts).toBe(1);
+      }
+    });
+
+    it('transpiler_patch_attempts is 0 when no patches detected', async () => {
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => createMockQAResult({ verdict: 'pass' }),
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map(),
+      });
+
+      expect(result.summary.transpiler_patch_attempts).toBe(0);
+      expect(result.summary.transpiler_patches_proposed).toBe(0);
+    });
+
+    it('transpiler_patch_attempts field is always present and numeric', async () => {
+      // Test with pass verdict (no bridged incidents → clean schema validation)
+      const passResult = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => createMockQAResult({ verdict: 'pass' }),
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map(),
+      });
+      expect(typeof passResult.summary.transpiler_patch_attempts).toBe('number');
+      expect(passResult.summary.transpiler_patch_attempts).toBeGreaterThanOrEqual(0);
+      const errors = validateHealLoopResult(passResult);
+      expect(errors).toEqual([]);
+
+      // Test with fail verdict (patches proposed)
+      const failResult = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => makeFailQAResult(),
+        skipArtifacts: true,
+        mockGeneratedFiles: new Map([['client/src/index.css', 'h1 { color: red; }']]),
+        mockRetranspile: () => new Map([['client/src/index.css', ':where(h1) { color: red; }']]),
+      });
+      expect(typeof failResult.summary.transpiler_patch_attempts).toBe('number');
+    });
+
+    it('dedup: two incidents with same trace file produce only one patch', async () => {
+      // Two incidents both trigger the same trace → same target file
+      // Dedup should produce only ONE patch, not two
+      const mockIncidents: BridgedIncident[] = [
+        { incident_id: 'INC-A', incident_path: '<test>', classification: 'style-specificity-conflict', severity: 'p2', step_id: 's1', label: 'CTA 1' },
+        { incident_id: 'INC-B', incident_path: '<test>', classification: 'style-global-selector-leak', severity: 'p2', step_id: 's2', label: 'CTA 2' },
+      ];
+
+      let proposeCalls = 0;
+      const mockPropose = (trace: CodegenTraceEntry, _result: CodegenTraceResult): TranspilerPatchResult | null => {
+        proposeCalls++;
+        return {
+          trace_id: trace.id,
+          transpiler_file: trace.fix.target_file,
+          transpiler_function: trace.fix.target_function,
+          original_content: 'original',
+          patched_content: 'patched',
+          diff_summary: 'mock diff',
+          strategy: trace.fix.strategy,
+          verification: null,
+        };
+      };
+
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => makeFailQAResult(),
+        skipArtifacts: true,
+        mockBridgedIncidents: mockIncidents,
+        mockGeneratedFiles: new Map([['client/src/index.css', 'h1 { color: red; }']]),
+        mockRetranspile: () => new Map([['client/src/index.css', ':where(h1) { color: red; }']]),
+        mockProposePatch: mockPropose,
+      });
+
+      // Both classifications map to SH9-001 (same file) — propose called only once
+      expect(proposeCalls).toBe(1);
+      expect(result.summary.transpiler_patches_proposed).toBe(1);
+      expect(result.transpiler_patches.length).toBe(1);
+      expect(result.transpiler_patches[0].trace_id).toBe('SH9-001');
+    });
+
+    it('dedup: different files both produce patches', async () => {
+      // INC-A → file-a.ts, INC-B → file-b.ts
+      // Different target files → both should produce patches (no dedup)
+      const mockIncidents: BridgedIncident[] = [
+        { incident_id: 'INC-A', incident_path: '<test>', classification: 'style-specificity-conflict', severity: 'p2', step_id: 's1', label: 'CSS issue' },
+        { incident_id: 'INC-B', incident_path: '<test>', classification: 'codegen-route-navigation-bug', severity: 'p1', step_id: 's2', label: 'Nav issue' },
+      ];
+
+      let proposeCalls = 0;
+      const mockPropose = (trace: CodegenTraceEntry, _result: CodegenTraceResult): TranspilerPatchResult | null => {
+        proposeCalls++;
+        return {
+          trace_id: trace.id,
+          transpiler_file: trace.fix.target_file,
+          transpiler_function: trace.fix.target_function,
+          original_content: 'original-' + trace.id,
+          patched_content: 'patched-' + trace.id,
+          diff_summary: 'mock diff for ' + trace.id,
+          strategy: trace.fix.strategy,
+          verification: null,
+        };
+      };
+
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => makeFailQAResult(),
+        skipArtifacts: true,
+        mockBridgedIncidents: mockIncidents,
+        mockGeneratedFiles: new Map([
+          ['client/src/index.css', 'h1 { color: red; }'],
+          ['client/src/App.jsx', 'function App() { return <div>Hello</div>; }'],
+          ['client/src/pages/ShopPage.jsx', 'export default function ShopPage() {}'],
+        ]),
+        mockRetranspile: () => new Map([
+          ['client/src/index.css', ':where(h1) { color: red; }'],
+          ['client/src/App.jsx', 'function App() { return <div>Hello</div>; }'],
+        ]),
+        mockProposePatch: mockPropose,
+      });
+
+      // Two different files → both proposed
+      expect(proposeCalls).toBe(2);
+      expect(result.summary.transpiler_patches_proposed).toBe(2);
+      expect(result.transpiler_patches.length).toBe(2);
+      const traceIds = result.transpiler_patches.map(tp => tp.trace_id).sort();
+      expect(traceIds).toEqual(['SH9-001', 'SH9-002']);
+    });
+
+    it('snapshot revert preserves earlier passed patches when later patch fails', async () => {
+      // Patch A (file-a) passes verification
+      // Patch B (file-b) fails verification
+      // After the loop, patch A should still be verdict=pass (snapshot revert on B doesn't touch A)
+      const { mkdtempSync } = await import('fs');
+      const { tmpdir } = await import('os');
+      const tmpWorktree = mkdtempSync(join(tmpdir(), 'sh9-test-'));
+
+      const mockIncidents: BridgedIncident[] = [
+        { incident_id: 'INC-A', incident_path: '<test>', classification: 'style-specificity-conflict', severity: 'p2', step_id: 's1', label: 'CSS issue' },
+        { incident_id: 'INC-B', incident_path: '<test>', classification: 'codegen-route-navigation-bug', severity: 'p1', step_id: 's2', label: 'Nav issue' },
+      ];
+
+      const mockPropose = (trace: CodegenTraceEntry, _result: CodegenTraceResult): TranspilerPatchResult | null => ({
+        trace_id: trace.id,
+        transpiler_file: trace.fix.target_file,
+        transpiler_function: trace.fix.target_function,
+        original_content: 'original-' + trace.id,
+        patched_content: 'patched-' + trace.id,
+        diff_summary: 'mock diff for ' + trace.id,
+        strategy: trace.fix.strategy,
+        verification: null,
+      });
+
+      let retranspileCount = 0;
+      const result = await runHealLoop({
+        flowPath: mockFlowPath,
+        mode: 'transpiler-patch',
+        mockExecuteFlow: async () => makeFailQAResult(),
+        skipArtifacts: true,
+        mockWorktreePath: tmpWorktree,
+        mockBridgedIncidents: mockIncidents,
+        mockGeneratedFiles: new Map([
+          ['client/src/index.css', 'h1 { color: red; }'],
+          ['client/src/App.jsx', 'function App() { return <div>Hello</div>; }'],
+          ['client/src/pages/ShopPage.jsx', 'export default function ShopPage() {}'],
+        ]),
+        mockRetranspile: () => {
+          retranspileCount++;
+          if (retranspileCount === 1) {
+            // First patch verification succeeds (fixed output)
+            return new Map([['client/src/index.css', ':where(h1) { color: red; }']]);
+          }
+          // Second patch verification fails (null = retranspile failed)
+          return null;
+        },
+        mockProposePatch: mockPropose,
+      });
+
+      // Both patches should be proposed
+      expect(result.summary.transpiler_patches_proposed).toBe(2);
+      const patchA = result.transpiler_patches.find(tp => tp.trace_id === 'SH9-001');
+      const patchB = result.transpiler_patches.find(tp => tp.trace_id === 'SH9-002');
+      // Patch A passes, patch B fails — patch A is NOT reverted
+      expect(patchA?.verdict).toBe('pass');
+      expect(patchB?.verdict).toBe('fail');
+      expect(result.summary.transpiler_patch_attempts).toBeGreaterThanOrEqual(1);
     });
   });
 

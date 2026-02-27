@@ -228,7 +228,7 @@ describe('SH1: Classifier', () => {
     expect(PATTERN_REGISTRY.length).toBeGreaterThanOrEqual(20);
   });
 
-  it('all patterns have required fields', () => {
+  it('all patterns have required fields including codegen_trace_id', () => {
     for (const p of PATTERN_REGISTRY) {
       expect(p.id).toBeTruthy();
       expect(p.subsystem).toBeTruthy();
@@ -236,6 +236,8 @@ describe('SH1: Classifier', () => {
       expect(typeof p.match).toBe('function');
       expect(p.notes).toBeTruthy();
       expect(p.next_step).toBeTruthy();
+      // SH9: codegen_trace_id must be present (can be null or string)
+      expect('codegen_trace_id' in p).toBe(true);
     }
   });
 
@@ -343,6 +345,42 @@ describe('SH1: Classifier', () => {
     expect(result.classification).toBe('transpiler-snapshot-drift');
   });
 
+  // ---- SH9 pattern matches ----
+
+  it('classifies CSS specificity conflict → style-specificity-conflict with trace SH9-001', () => {
+    const result = classifyIncident(makeIncidentRecord({
+      summary: 'CSS specificity fight between Tailwind and bare selectors — h1 conflict',
+    }));
+    expect(result.classification).toBe('style-specificity-conflict');
+    expect(result.codegen_trace_id).toBe('SH9-001');
+  });
+
+  it('classifies alignment regression → layout-alignment-regression with trace SH9-004', () => {
+    const result = classifyIncident(makeIncidentRecord({
+      stage: 'qa-visual',
+      summary: 'Sidebar alignment padding mismatch between heading and button elements',
+    }));
+    expect(result.classification).toBe('layout-alignment-regression');
+    expect(result.codegen_trace_id).toBe('SH9-004');
+  });
+
+  it('classifies layout-auth-wrapper with trace SH9-003', () => {
+    const result = classifyIncident(makeIncidentRecord({
+      stage: 'qa-visual',
+      summary: 'Login page auth wrapper width broken, nested composition conflict',
+    }));
+    expect(result.classification).toBe('layout-auth-wrapper-composition');
+    expect(result.codegen_trace_id).toBe('SH9-003');
+  });
+
+  it('classifies navigation bug with trace SH9-002', () => {
+    const result = classifyIncident(makeIncidentRecord({
+      summary: 'Navigation to wrong page — setcurrentpage targets wrong route, redirect failure',
+    }));
+    expect(result.classification).toBe('codegen-route-navigation-bug');
+    expect(result.codegen_trace_id).toBe('SH9-002');
+  });
+
   it('returns unknown for unrecognized patterns', () => {
     const result = classifyIncident(makeIncidentRecord({
       summary: 'Something completely novel happened',
@@ -362,6 +400,8 @@ describe('SH1: Classifier', () => {
     expect(result.triage_notes).toBeTruthy();
     expect(result.recommended_next_step).toBeTruthy();
     expect(result.suggested_tests).toBeInstanceOf(Array);
+    // SH9: codegen_trace_id field exists (may be null)
+    expect('codegen_trace_id' in result).toBe(true);
   });
 
   it('deterministic: same input → same output', () => {
@@ -377,8 +417,8 @@ describe('SH1: Classifier', () => {
 // ---- SH2: Invariants ----
 
 describe('SH2: Invariants', () => {
-  it('registry has 6 invariants', () => {
-    expect(INVARIANTS).toHaveLength(6);
+  it('registry has 10 invariants', () => {
+    expect(INVARIANTS).toHaveLength(10);
   });
 
   it('all invariants have required fields', () => {
@@ -613,9 +653,9 @@ export async function getPublicProjects(params = {}) {
         `],
       ]);
       const summary = runInvariants(files);
-      expect(summary.total).toBe(6);
-      expect(summary.passed + summary.failed).toBe(6);
-      expect(summary.results).toHaveLength(6);
+      expect(summary.total).toBe(10);
+      expect(summary.passed + summary.failed).toBe(10);
+      expect(summary.results).toHaveLength(10);
     });
 
     it('all pass on well-formed output', () => {
