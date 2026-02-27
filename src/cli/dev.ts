@@ -18,7 +18,7 @@
 import { watch, readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { execSync, spawn, type ChildProcess } from 'child_process';
 import { parse } from '../parser/index.js';
 import { validate } from '../validator/index.js';
@@ -26,7 +26,7 @@ import { transpile } from '../transpiler/index.js';
 import { computeIncremental, saveManifest, hashContent } from '../transpiler/cache.js';
 import type { CacheManifest } from '../transpiler/cache.js';
 import { generateFlowSpec } from '../self-heal/flow-generator.js';
-import { runDevHealLoop, isPromotionAllowed, type HealMode, type DevHealResult } from '../self-heal/heal-loop.js';
+import { runDevHealLoop, isPromotionAllowed, type HealMode, type DevHealResult, type HealLaneResult } from '../self-heal/heal-loop.js';
 import type { FlowSpec, QAExecutor, VisualBaselineMode } from '../self-heal/runtime-qa.js';
 
 export interface DevOptions {
@@ -265,7 +265,7 @@ export class DevServer {
         return;
       }
 
-      // Run the heal loop
+      // Run the heal loop (H11: includes runtime + UI lanes)
       const result = await runDevHealLoop({
         flowSpec,
         mode: this.selfHeal,
@@ -275,6 +275,8 @@ export class DevServer {
         healApply: this.healApply,
         baselineMode,
         headless: true,
+        clientPort: this.clientPort,
+        serverPort: this.serverPort,
       });
 
       // Structured logging (H10 Batch 5)
@@ -346,9 +348,12 @@ export class DevServer {
   }
 
   private async getQAExecutor(): Promise<QAExecutor | null> {
-    // Use createRequire to get a CJS require() that works in both ESM and CJS.
-    // This avoids the "require is not defined" error when tsx loads dev.ts as ESM.
-    const esmRequire = createRequire(import.meta.url);
+    // createRequire gives a CJS require() that works in both ESM and CJS builds.
+    // In CJS (tsc build), __filename is available. In ESM (tsx dev), fallback to cwd.
+    const baseUrl = typeof __filename !== 'undefined'
+      ? pathToFileURL(__filename).href
+      : 'file:///dev-null';
+    const esmRequire = createRequire(baseUrl);
 
     // When running under plain Node (e.g. installed CLI via dist/cli/index.js),
     // require('.ts') fails. Register the tsx CJS hook first so Node's require()
@@ -358,7 +363,7 @@ export class DevServer {
     } catch { /* tsx not available — .ts require will only work under tsx runtime */ }
 
     // Search directories: CWD first (development), then package root (installed CLI).
-    const thisDir = dirname(fileURLToPath(import.meta.url));
+    const thisDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
     const dirs = [
       join(process.cwd(), 'scripts'),
       join(thisDir, '..', '..', 'scripts'),
@@ -403,6 +408,21 @@ export class DevServer {
       }
     }
 
+    // H11: Lane-by-lane results
+    for (const lane of result.lanes) {
+      const status = lane.ran ? 'ran' : 'skipped';
+      console.log(`  [heal] Lane ${lane.lane}: ${status} — ${lane.details}`);
+    }
+
+    // Runtime remediation details
+    if (result.runtimeRemediation) {
+      const rem = result.runtimeRemediation;
+      for (const action of rem.actions) {
+        console.log(`  [heal] Runtime ${action.action_id}: ${action.status} — ${action.description}`);
+      }
+    }
+
+    // Transpiler patch details
     for (const patch of result.transpilerPatches) {
       console.log(`  [heal] Traced: ${patch.trace_id} (${patch.strategy}) → ${patch.transpiler_file} [${patch.verdict}]`);
     }
@@ -410,6 +430,13 @@ export class DevServer {
     if (result.promotedFiles.length > 0) {
       for (const f of result.promotedFiles) {
         console.log(`  [heal] Patch verified, applied to framework source: ${f}`);
+      }
+    }
+
+    // UI remediation details
+    if (result.uiRemediation) {
+      for (const r of result.uiRemediation.results) {
+        console.log(`  [heal] UI ${r.action_id}: ${r.status} — ${r.description}`);
       }
     }
 

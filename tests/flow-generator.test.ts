@@ -206,14 +206,17 @@ describe('generateFlowSpec', () => {
     expect(spec.preflight_health_path).toBe('/health');
   });
 
-  it('does not include style/visual steps by default', () => {
-    const source = loadSource('todo');
+  it('includes H11 default layout assertions but not visual steps', () => {
+    // ecommerce.air has pages + nav routes → triggers H11 default assertions
+    const source = loadSource('ecommerce');
     const spec = generateFlowSpec(source);
 
+    // H11: default layout assertions are always included (header/nav, CTA styling)
     const styleSteps = findSteps(spec, 'assert_style');
-    const visualSteps = findSteps(spec, 'visual_snapshot');
+    expect(styleSteps.length).toBeGreaterThan(0);
 
-    expect(styleSteps.length).toBe(0);
+    // Visual steps still require explicit opt-in
+    const visualSteps = findSteps(spec, 'visual_snapshot');
     expect(visualSteps.length).toBe(0);
   });
 
@@ -239,5 +242,41 @@ describe('generateFlowSpec', () => {
     const ctaSteps = spec.steps.filter(s => s.label.startsWith('Click CTA'));
     // auth.air has !login and !logout mutations on pages
     expect(ctaSteps.length).toBeGreaterThan(0);
+  });
+
+  // ---- H11: Default layout assertion tests ----
+
+  it('H11: generates header/nav assertion for apps with nav routes', () => {
+    const source = loadSource('ecommerce');
+    const spec = generateFlowSpec(source);
+
+    const headerAssert = spec.steps.find(s =>
+      s.action === 'assert_style' && s.label.includes('header/nav')
+    );
+    expect(headerAssert).toBeDefined();
+    expect(headerAssert?.assert_style?.selector).toContain('[data-air-nav]');
+  });
+
+  it('H11: generates primary CTA assertion for apps with pages', () => {
+    const source = loadSource('dashboard');
+    const spec = generateFlowSpec(source);
+
+    const ctaAssert = spec.steps.find(s =>
+      s.action === 'assert_style' && s.label.includes('primary CTA')
+    );
+    expect(ctaAssert).toBeDefined();
+    expect(ctaAssert?.assert_style?.selector).toContain('[data-air-cta]');
+  });
+
+  it('H11: generates sidebar assertion for multi-page apps', () => {
+    // ecommerce.air has 4 pages (login, shop, cart, orders) → triggers sidebar assertion (>= 3)
+    const source = loadSource('ecommerce');
+    const spec = generateFlowSpec(source);
+
+    const sidebarAssert = spec.steps.find(s =>
+      s.action === 'assert_style' && s.label.includes('sidebar layout')
+    );
+    expect(sidebarAssert).toBeDefined();
+    expect(sidebarAssert?.assert_style?.expected_styles?.position).toContain('fixed');
   });
 });

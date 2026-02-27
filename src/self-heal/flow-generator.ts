@@ -165,6 +165,70 @@ export function generateFlowSpec(source: string, options?: FlowGenOptions): Flow
     }
   }
 
+  // ---- H11: Default layout/style assertions (always on for key views) ----
+
+  // Header/nav visibility — every app should have a visible header or nav
+  if (analysis.hasPages || ctx.navRoutes.length > 0) {
+    steps.push({
+      step_id: nextStepId(),
+      label: 'Assert header/nav visible',
+      action: 'assert_style',
+      assert_style: {
+        selector: '[data-air-nav], header, nav',
+        expected_styles: { 'display': 'block|flex|grid' },
+      },
+    });
+  }
+
+  // Primary CTA group — buttons should be clickable (cursor: pointer)
+  if (analysis.pages.length > 0 || analysis.sections.length > 0) {
+    steps.push({
+      step_id: nextStepId(),
+      label: 'Assert primary CTA styling',
+      action: 'assert_style',
+      assert_style: {
+        selector: '[data-air-cta], button[type="submit"], .btn-primary',
+        expected_styles: { 'cursor': 'pointer' },
+      },
+    });
+  }
+
+  // Sidebar/main alignment — sidebar apps should have proper layout
+  if (analysis.hasPages && analysis.pages.length >= 3) {
+    steps.push({
+      step_id: nextStepId(),
+      label: 'Assert sidebar layout',
+      action: 'assert_style',
+      assert_style: {
+        selector: 'aside, [role="navigation"]',
+        expected_styles: { 'position': 'fixed|sticky' },
+      },
+    });
+
+    steps.push({
+      step_id: nextStepId(),
+      label: 'Assert main content not clipped',
+      action: 'assert_style',
+      assert_style: {
+        selector: 'main, [role="main"]',
+        expected_styles: { 'overflow': 'visible|auto|scroll' },
+      },
+    });
+  }
+
+  // Card grid responsive check — grids should have gap
+  if (analysis.pages.some(p => p.children.some(c => c.kind === 'element' && c.element === 'grid'))) {
+    steps.push({
+      step_id: nextStepId(),
+      label: 'Assert card grid spacing',
+      action: 'assert_style',
+      assert_style: {
+        selector: '.grid, [class*="grid-cols"]',
+        expected_styles: { 'display': 'grid' },
+      },
+    });
+  }
+
   // Final: console error check
   steps.push({
     step_id: nextStepId(),

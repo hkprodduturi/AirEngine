@@ -81,6 +81,12 @@ export interface StepResult {
   evidence: StepEvidence;
   failure_reason: string | null;
   dead_cta_detected: boolean;
+  /** Optional: selector from corresponding FlowStep (for classifier use) */
+  selector?: string;
+  /** Optional: assert_style metadata from corresponding FlowStep */
+  assert_style?: { selector: string; expected_styles: Record<string, string> };
+  /** Optional: visual_snapshot metadata from corresponding FlowStep */
+  visual_snapshot?: { baseline_name: string; threshold?: number };
 }
 
 export interface PreflightResult {
