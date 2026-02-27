@@ -685,6 +685,19 @@ export function generateMutations(ctx: TranspileContext, analysis: UIAnalysis): 
         lines.push(`  console.log('${name}', ...args);`);
         lines.push('};');
       }
+    } else if (ctx.handlerContracts.some(c => c.name === name)) {
+      // Handler contract match — wire to api.<name>() directly
+      const contract = ctx.handlerContracts.find(c => c.name === name)!;
+      const safeName = name === 'confirm' ? 'handleConfirm' : name.replace(/\./g, '_');
+      const paramNames = contract.params.map(p => p.name);
+      lines.push(`const ${safeName} = async (${paramNames.length > 0 ? 'data' : ''}) => {`);
+      lines.push(`  try {`);
+      lines.push(`    const result = await api.${name}(${paramNames.length > 0 ? 'data' : ''});`);
+      lines.push(`    return result;`);
+      lines.push(`  } catch (err) {`);
+      lines.push(`    console.error('${name} failed:', err);`);
+      lines.push(`  }`);
+      lines.push('};');
     } else {
       // Generic mutation — try to match by name to any API route
       const genericMatch = canWireApi ? findGenericRouteMatch(name, expandedRoutes) : null;

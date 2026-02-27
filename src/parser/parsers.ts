@@ -38,6 +38,8 @@ import type {
   AirEnvBlock,
   AirEnvVar,
   AirDeployBlock,
+  AirHandlerBlock,
+  AirHandlerContract,
 } from './types.js';
 
 const MAX_DEPTH = 500;
@@ -1154,6 +1156,41 @@ export function parseEnv(s: TokenStream): AirEnvBlock {
   }
   s.expect('close_paren');
   return { kind: 'env', vars };
+}
+
+// ---- @handler parser ----
+
+export function parseHandler(s: TokenStream): AirHandlerBlock {
+  s.expect('open_paren');
+  s.skipNewlines();
+  const contracts: AirHandlerContract[] = [];
+  const seen = new Set<string>();
+
+  while (!s.is('close_paren') && !s.isEof()) {
+    const name = s.expect('identifier').value;
+    if (seen.has(name)) {
+      throw s.error(`Duplicate handler contract: '${name}'`);
+    }
+    seen.add(name);
+    let params: AirField[] = [];
+    if (s.is('open_paren')) {
+      s.advance();
+      params = parseFieldList(s, 'close_paren');
+      s.expect('close_paren');
+    }
+    // Optional executable target: > ~db.Model.operation or > someAction
+    let target: string | undefined;
+    if (s.is('operator', '>')) {
+      s.advance();
+      target = readSingleAction(s);
+    }
+    const contract: AirHandlerContract = { name, params };
+    if (target) contract.target = target;
+    contracts.push(contract);
+    s.skipNewlines();
+  }
+  s.expect('close_paren');
+  return { kind: 'handler', contracts };
 }
 
 // ---- @deploy parser ----

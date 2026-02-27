@@ -63,7 +63,14 @@ export function generateApiClient(ctx: TranspileContext): string {
 
   for (const route of routes) {
     const method = route.method;
-    let fnName = routeToFunctionName(method, route.path);
+    // Special-case /handlers/ prefix → clean camelCase (approveClaim, not postHandlersApproveClaim)
+    let fnName: string;
+    const handlerMatch = route.path.match(/^\/handlers\/(.+)$/);
+    if (handlerMatch) {
+      fnName = handlerMatch[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    } else {
+      fnName = routeToFunctionName(method, route.path);
+    }
     // Deduplicate function names (e.g., two routes mapping to same name)
     if (usedFnNames.has(fnName)) {
       let suffix = 2;

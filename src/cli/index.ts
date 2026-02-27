@@ -47,6 +47,7 @@ program
   .option('-o, --output <dir>', 'Output directory', './output')
   .option('-f, --framework <fw>', 'Target framework (only "react" supported)', 'react')
   .option('--target <mode>', 'Generation target: all, client, server, docs', 'all')
+  .option('--strict-handlers', 'Fail if any !handler mutations remain unresolved')
   .option('--no-incremental', 'Skip incremental cache')
   .action((file, options) => {
     console.log(`\n  ⚡ AirEngine Transpile\n`);
@@ -74,7 +75,7 @@ program
 
       const sourceLines = source.split('\n').length;
       const target = options.target as 'all' | 'client' | 'server' | 'docs';
-      const result = transpile(ast, { outDir: options.output, sourceLines, target });
+      const result = transpile(ast, { outDir: options.output, sourceLines, target, strictHandlers: options.strictHandlers });
 
       if (options.incremental !== false) {
         // Incremental: only write changed files
@@ -108,7 +109,11 @@ program
       }
 
       console.log(`     → ${result.stats.outputLines} lines from ${result.stats.inputLines} source lines (${result.stats.compressionRatio}x)`);
-      console.log(`     → ${result.stats.timing.totalMs}ms total (extract: ${result.stats.timing.extractMs}ms, analyze: ${result.stats.timing.analyzeMs}ms, client: ${result.stats.timing.clientGenMs}ms, server: ${result.stats.timing.serverGenMs}ms)\n`);
+      console.log(`     → ${result.stats.timing.totalMs}ms total (extract: ${result.stats.timing.extractMs}ms, analyze: ${result.stats.timing.analyzeMs}ms, client: ${result.stats.timing.clientGenMs}ms, server: ${result.stats.timing.serverGenMs}ms)`);
+      if (result.warnings && result.warnings.length > 0) {
+        result.warnings.forEach(w => console.log(`  ⚠  ${w}`));
+      }
+      console.log('');
     } catch (err) {
       console.error(`  ERROR: ${err instanceof Error ? err.message : err}\n`);
       process.exit(1);

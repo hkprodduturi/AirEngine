@@ -435,6 +435,29 @@ export async function runDevHealLoop(options: DevHealOptions): Promise<DevHealRe
     });
   }
 
+  // ---- Phase 4b: Static Audit — run all trace rules to catch issues not covered by QA classification ----
+  // Some trace rules (e.g. SH9-006 handler-scaffold-only) detect patterns in generated output
+  // that don't map to any QA step failure classification. runAllTraces covers them.
+  const staticDetections = runAllTraces(generatedFiles);
+  for (const { trace, result: detection } of staticDetections) {
+    const targetFile = normalizePatchPath(trace.fix.target_file);
+    if (patchedFiles.has(targetFile)) continue; // Already patched by classification pass
+
+    const patchResult = proposeTranspilerPatch(trace, detection);
+    if (!patchResult) continue;
+
+    patchedFiles.add(targetFile);
+    allPendingPatches.push(patchResult);
+    allPatchLanes.push('transpiler');
+    allPatchRefs.push({
+      trace_id: trace.id,
+      transpiler_file: patchResult.transpiler_file,
+      strategy: patchResult.strategy,
+      verdict: 'skipped',
+      diff_summary: patchResult.diff_summary,
+    });
+  }
+
   // Propose mode: report patches but don't verify/apply
   if (mode === 'propose') {
     const transpilerRefs = allPatchRefs.filter((_, i) => allPatchLanes[i] === 'transpiler' || allPatchLanes[i] === 'parser');

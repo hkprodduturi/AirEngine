@@ -57,6 +57,11 @@
 
 @auth(required,role:enum(customer,admin),redirect:/login)
 
+@handler(
+  checkout(cartId:str)>~db.Order.create
+  processPayment(orderId:str,amount:float,method:str)>~db.Order.update
+)
+
 @webhook(
   POST:/stripe/webhook>!processPayment
 )

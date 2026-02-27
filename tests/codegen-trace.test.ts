@@ -13,8 +13,8 @@ import {
 } from '../src/self-heal/codegen-trace.js';
 
 describe('Codegen Trace Registry', () => {
-  it('has 4 initial trace rules', () => {
-    expect(CODEGEN_TRACE_REGISTRY.length).toBe(4);
+  it('has 6 initial trace rules', () => {
+    expect(CODEGEN_TRACE_REGISTRY.length).toBe(6);
   });
 
   it('all entries have required fields', () => {

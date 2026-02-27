@@ -94,7 +94,7 @@ export function wrapParseError(err: AirParseError | AirLexError): Diagnostic {
       }
     } else if (coreMsg.includes('Unknown block type')) {
       code = 'AIR-P004';
-      fix.description = 'Use a valid block type: @state, @ui, @api, @db, @auth, @nav, @persist, @hook, @style, @cron, @webhook, @queue, @email, @env, @deploy';
+      fix.description = 'Use a valid block type: @state, @ui, @api, @db, @auth, @nav, @persist, @hook, @style, @cron, @webhook, @queue, @email, @env, @deploy, @handler';
     } else if (coreMsg.includes('Invalid type')) {
       code = 'AIR-P005';
       fix.description = 'Use a valid type: str, int, float, bool, date, datetime, enum, [type], {fields}, map, any, or prefix with ? for optional';

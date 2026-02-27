@@ -24,12 +24,13 @@ import {
   parseEmail,
   parseEnv,
   parseDeploy,
+  parseHandler,
 } from './parsers.js';
 import type { AirAST, AirBlock } from './types.js';
 
 const BLOCK_KEYWORDS = new Set([
   '@state', '@style', '@ui', '@api', '@auth', '@nav', '@persist', '@hook',
-  '@db', '@cron', '@webhook', '@queue', '@email', '@env', '@deploy',
+  '@db', '@cron', '@webhook', '@queue', '@email', '@env', '@deploy', '@handler',
 ]);
 
 export function parse(source: string): AirAST {
@@ -116,6 +117,8 @@ function parseBlock(keyword: string, s: TokenStream): AirBlock {
       return parseEnv(s);
     case '@deploy':
       return parseDeploy(s);
+    case '@handler':
+      return parseHandler(s);
     default:
       throw s.error(`Unhandled block type: ${keyword}`);
   }

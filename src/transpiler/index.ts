@@ -30,6 +30,7 @@ export interface TranspileOptions {
   prettyPrint?: boolean;
   sourceLines?: number;
   target?: 'all' | 'client' | 'server' | 'docs';
+  strictHandlers?: boolean;
 }
 
 export interface TranspileResult {
@@ -51,6 +52,8 @@ export interface TranspileResult {
       totalMs: number;
     };
   };
+  unresolvedMutations?: string[];
+  warnings?: string[];
 }
 
 export interface OutputFile {
@@ -307,6 +310,53 @@ export function transpile(
   const inputLines = options.sourceLines ?? 0;
   const totalMs = performance.now() - totalStart;
 
+  // AIR-W009: Detect handler contracts declared but never referenced in @ui
+  const warnings: string[] = [];
+  if (ctx.handlerContracts.length > 0) {
+    const mutationNames = new Set(analysis.mutations.map(m => m.name));
+    for (const contract of ctx.handlerContracts) {
+      if (!mutationNames.has(contract.name)) {
+        warnings.push(`[AIR-W009] Handler contract '${contract.name}' declared but never referenced in @ui`);
+      }
+    }
+  }
+
+  // Detect unresolved handler stubs: console.log('name', ...args) patterns in App.jsx
+  const unresolvedMutations: string[] = [];
+  const stubPattern = /console\.log\('(\w+)',\s*\.\.\.args\)/g;
+  for (const f of files) {
+    if (f.path.endsWith('App.jsx')) {
+      let m: RegExpExecArray | null;
+      while ((m = stubPattern.exec(f.content)) !== null) {
+        unresolvedMutations.push(m[1]);
+      }
+    }
+  }
+
+  // Strict mode: fail if unresolved handlers exist
+  if (options.strictHandlers && unresolvedMutations.length > 0) {
+    throw new Error(
+      `[AIR-E009] Strict handler mode: ${unresolvedMutations.length} unresolved handler(s): ${unresolvedMutations.join(', ')}. Add @handler contracts or @api routes.`
+    );
+  }
+
+  // Strict mode: fail if handler contracts lack executable targets
+  // A target is only "executable" if it matches ~db.Model.operation (real Prisma codegen).
+  // Non-db targets (e.g. >custom.dispatch) still generate echo-style responses.
+  if (options.strictHandlers && ctx.handlerContracts.length > 0) {
+    const DB_TARGET_PATTERN = /^~db\.\w+\.\w+$/;
+    const nonExecutable = ctx.handlerContracts.filter(c => !c.target || !DB_TARGET_PATTERN.test(c.target));
+    if (nonExecutable.length > 0) {
+      const details = nonExecutable.map(c => {
+        if (!c.target) return `${c.name} (no target)`;
+        return `${c.name} (non-db target: ${c.target})`;
+      }).join(', ');
+      throw new Error(
+        `[AIR-E010] Strict handler mode: ${nonExecutable.length} non-executable handler contract(s): ${details}. Only ~db.Model.operation targets generate real server logic.`
+      );
+    }
+  }
+
   return {
     files,
     stats: {
@@ -326,6 +376,8 @@ export function transpile(
         totalMs: Math.round(totalMs * 100) / 100,
       },
     },
+    unresolvedMutations: unresolvedMutations.length > 0 ? unresolvedMutations : undefined,
+    warnings: warnings.length > 0 ? warnings : undefined,
   };
 }
 

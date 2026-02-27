@@ -108,7 +108,8 @@ export type AirBlock =
   | AirQueueBlock
   | AirEmailBlock
   | AirEnvBlock
-  | AirDeployBlock;
+  | AirDeployBlock
+  | AirHandlerBlock;
 
 export interface AirStateBlock {
   kind: 'state';
@@ -264,6 +265,18 @@ export interface AirEnvBlock {
 export interface AirDeployBlock {
   kind: 'deploy';
   properties: Record<string, AirLiteral>;
+}
+
+export interface AirHandlerContract {
+  name: string;
+  params: AirField[];
+  /** Executable target — e.g. ~db.Order.create, ~db.Claim.update. Omitted for scaffold-only contracts. */
+  target?: string;
+}
+
+export interface AirHandlerBlock {
+  kind: 'handler';
+  contracts: AirHandlerContract[];
 }
 
 // ---- Top-level AST ----

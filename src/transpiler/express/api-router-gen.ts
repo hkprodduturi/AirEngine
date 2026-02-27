@@ -6,7 +6,7 @@
  */
 
 import type { TranspileContext } from '../context.js';
-import type { AirRoute, AirDbBlock, AirType } from '../../parser/types.js';
+import type { AirRoute, AirDbBlock, AirType, AirHandlerContract } from '../../parser/types.js';
 import { getGeneratedTypeNames } from '../types-gen.js';
 
 /** Pluralize a model name: Property → Properties, Batch → Batches */
@@ -247,11 +247,17 @@ export function generateApiRouter(ctx: TranspileContext): string {
         pushPrismaResponse(lines, prismaInfo, method, handler);
       }
     } else {
-      // Check for auth handler before falling through to 501
+      // Check for auth handler before falling through to handler contracts or 501
       const authType = ctx.auth ? isAuthHandler(handler, path) : null;
       if (authType) {
         const authLines = generateAuthHandlerLines(authType, route, ctx);
         for (const l of authLines) lines.push(l);
+      } else if (handler.startsWith('~handler.')) {
+        // Handler contract — generate executable endpoint or validated scaffold
+        const contractName = handler.replace('~handler.', '');
+        const contract = ctx.handlerContracts.find(c => c.name === contractName);
+        const handlerLines = generateHandlerContractEndpoint(contractName, contract ?? null, ctx);
+        for (const l of handlerLines) lines.push(l);
       } else {
         lines.push(`    // TODO: implement handler: ${handler}`);
         lines.push("    res.status(501).json({ error: 'Not implemented' });");
@@ -535,6 +541,18 @@ export function mapHandlerToPrismaInfo(
  * Generate aggregate handler lines for ~db.Model.aggregate routes.
  * Produces per-status counts if the model has a status enum field.
  */
+const JS_RESERVED = new Set([
+  'break','case','catch','continue','debugger','default','delete','do','else',
+  'finally','for','function','if','in','instanceof','new','return','switch',
+  'this','throw','try','typeof','var','void','while','with','class','const',
+  'enum','export','extends','import','super','implements','interface','let',
+  'package','private','protected','public','static','yield','await','async',
+]);
+
+function safeVarName(name: string): string {
+  return JS_RESERVED.has(name) ? `status_${name}` : name;
+}
+
 export function generateAggregateHandler(handler: string, db: AirDbBlock): string[] | null {
   const match = handler.match(/^~db\.(\w+)\.aggregate$/);
   if (!match || !db) return null;
@@ -558,7 +576,7 @@ export function generateAggregateHandler(handler: string, db: AirDbBlock): strin
 
     lines.push(`    const total = await prisma.${modelVar}.count();`);
     for (const val of values) {
-      const camelVal = val.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase());
+      const camelVal = safeVarName(val.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase()));
       lines.push(`    const ${camelVal} = await prisma.${modelVar}.count({ where: { status: '${val}' } });`);
     }
     // C1/G2: Compute avgResponseTime from resolved/closed tickets
@@ -579,7 +597,7 @@ export function generateAggregateHandler(handler: string, db: AirDbBlock): strin
     const resultEntries = [
       `${totalKey}: total`,
       ...values.map(v => {
-        const camel = v.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase());
+        const camel = safeVarName(v.replace(/_([a-z])/g, (_: string, l: string) => l.toUpperCase()));
         return `${camel}: ${camel}`;
       }),
       'avgResponseTime',
@@ -661,6 +679,172 @@ export function mapHandlerToPrismaInfoWithId(
     default:
       return null;
   }
+}
+
+// ---- Handler Contract Endpoint Generator ----
+
+/**
+ * Generate executable endpoint code for a @handler contract.
+ * When the contract has an executable target (e.g. ~db.Order.create),
+ * generates real Prisma logic with validation and typed responses.
+ * Without a target, generates a validated scaffold endpoint.
+ */
+export function generateHandlerContractEndpoint(
+  contractName: string,
+  contract: AirHandlerContract | null,
+  ctx: TranspileContext,
+): string[] {
+  const lines: string[] = [];
+  const params = contract?.params ?? [];
+  const paramNames = params.map(p => p.name);
+  const target = contract?.target;
+
+  // Destructure and validate params from req.body
+  if (paramNames.length > 0) {
+    lines.push(`    const { ${paramNames.join(', ')} } = req.body;`);
+
+    // Validate required params (non-optional types)
+    const required = params.filter(p => p.type.kind !== 'optional');
+    if (required.length > 0) {
+      const checks = required.map(p => `${p.name} === undefined || ${p.name} === null`).join(' || ');
+      const names = required.map(p => p.name).join(', ');
+      lines.push(`    if (${checks}) {`);
+      lines.push(`      return res.status(400).json({ error: 'Missing required fields', details: 'Required: ${names}' });`);
+      lines.push('    }');
+    }
+
+    // Type validation
+    const valEntries = params
+      .filter(p => p.type.kind !== 'optional')
+      .map(p => `${p.name}: "${airTypeToValidation(p.type)}"`);
+    if (valEntries.length > 0) {
+      lines.push(`    const _valSchema = { ${valEntries.join(', ')} };`);
+      lines.push(`    for (const [_k, _expectedType] of Object.entries(_valSchema)) {`);
+      lines.push(`      const _v = req.body[_k];`);
+      lines.push(`      if (_v !== undefined && _v !== null && typeof _v !== _expectedType) {`);
+      lines.push(`        return res.status(400).json({ error: 'Validation error', details: \`\${_k} must be \${_expectedType}\` });`);
+      lines.push(`      }`);
+      lines.push(`    }`);
+    }
+  }
+
+  // If contract has executable target → generate real logic
+  if (target) {
+    const dbMatch = target.match(/^~db\.(\w+)\.(\w+)$/);
+    if (dbMatch && ctx.db) {
+      const [, modelName, operation] = dbMatch;
+      const modelVar = modelName.charAt(0).toLowerCase() + modelName.slice(1);
+      const isIntId = hasIntPrimaryKey(modelName, ctx.db);
+
+      switch (operation) {
+        case 'create': {
+          const dataFields = paramNames.length > 0
+            ? `{ ${paramNames.join(', ')} }`
+            : 'req.body';
+          lines.push(`    const result = await prisma.${modelVar}.create({ data: ${dataFields} });`);
+          lines.push(`    res.status(201).json({ success: true, handler: '${contractName}', data: result });`);
+          break;
+        }
+        case 'update': {
+          // First param is the identifier, rest are data fields
+          if (paramNames.length > 0) {
+            const idParam = paramNames[0];
+            const dataParams = paramNames.slice(1);
+            const idExpr = isIntId ? `parseInt(String(${idParam}))` : `String(${idParam})`;
+            const dataExpr = dataParams.length > 0
+              ? `{ ${dataParams.join(', ')} }`
+              : 'req.body';
+            lines.push(`    const result = await prisma.${modelVar}.update({`);
+            lines.push(`      where: { id: ${idExpr} },`);
+            lines.push(`      data: ${dataExpr},`);
+            lines.push(`    });`);
+            lines.push(`    res.json({ success: true, handler: '${contractName}', data: result });`);
+          } else {
+            lines.push(`    const result = await prisma.${modelVar}.update({ where: req.body.where, data: req.body.data });`);
+            lines.push(`    res.json({ success: true, handler: '${contractName}', data: result });`);
+          }
+          break;
+        }
+        case 'delete': {
+          if (paramNames.length > 0) {
+            const idParam = paramNames[0];
+            const idExpr = isIntId ? `parseInt(String(${idParam}))` : `String(${idParam})`;
+            lines.push(`    await prisma.${modelVar}.delete({ where: { id: ${idExpr} } });`);
+            lines.push(`    res.json({ success: true, handler: '${contractName}' });`);
+          } else {
+            lines.push(`    await prisma.${modelVar}.delete({ where: req.body });`);
+            lines.push(`    res.json({ success: true, handler: '${contractName}' });`);
+          }
+          break;
+        }
+        case 'findFirst': {
+          if (paramNames.length > 0) {
+            const whereFields = `{ ${paramNames.map(p => `${p}: ${p}`).join(', ')} }`;
+            lines.push(`    const result = await prisma.${modelVar}.findFirst({ where: ${whereFields} });`);
+          } else {
+            lines.push(`    const result = await prisma.${modelVar}.findFirst({ where: req.body });`);
+          }
+          lines.push(`    if (!result) return res.status(404).json({ error: 'Not found' });`);
+          lines.push(`    res.json({ success: true, handler: '${contractName}', data: result });`);
+          break;
+        }
+        case 'findMany': {
+          if (paramNames.length > 0) {
+            const whereFields = `{ ${paramNames.map(p => `${p}: ${p}`).join(', ')} }`;
+            lines.push(`    const result = await prisma.${modelVar}.findMany({ where: ${whereFields} });`);
+          } else {
+            lines.push(`    const result = await prisma.${modelVar}.findMany();`);
+          }
+          lines.push(`    res.json({ success: true, handler: '${contractName}', data: result });`);
+          break;
+        }
+        case 'upsert': {
+          if (paramNames.length > 0) {
+            const idParam = paramNames[0];
+            const dataParams = paramNames.slice(1);
+            const idExpr = isIntId ? `parseInt(String(${idParam}))` : `String(${idParam})`;
+            const dataExpr = dataParams.length > 0
+              ? `{ ${dataParams.join(', ')} }`
+              : 'req.body';
+            lines.push(`    const result = await prisma.${modelVar}.upsert({`);
+            lines.push(`      where: { id: ${idExpr} },`);
+            lines.push(`      update: ${dataExpr},`);
+            lines.push(`      create: { ${paramNames.join(', ')} },`);
+            lines.push(`    });`);
+            lines.push(`    res.json({ success: true, handler: '${contractName}', data: result });`);
+          } else {
+            lines.push(`    const result = await prisma.${modelVar}.upsert({ where: req.body.where, update: req.body.data, create: req.body.data });`);
+            lines.push(`    res.json({ success: true, handler: '${contractName}', data: result });`);
+          }
+          break;
+        }
+        default: {
+          // Unknown db operation — generate a pass-through
+          lines.push(`    const result = await prisma.${modelVar}.${operation}({ ${paramNames.length > 0 ? `data: { ${paramNames.join(', ')} }` : ''} });`);
+          lines.push(`    res.json({ success: true, handler: '${contractName}', data: result });`);
+          break;
+        }
+      }
+    } else {
+      // Non-db target (e.g. custom handler string) — echo-style scaffold
+      // NOT truly executable: returns params as JSON but performs no real logic
+      if (paramNames.length > 0) {
+        lines.push(`    const result = { ${paramNames.join(', ')} };`);
+        lines.push(`    res.json({ success: true, handler: '${contractName}', data: result });`);
+      } else {
+        lines.push(`    res.json({ success: true, handler: '${contractName}' });`);
+      }
+    }
+  } else {
+    // No target — scaffold-only contract (H13 backward compat)
+    if (paramNames.length > 0) {
+      lines.push(`    res.json({ success: true, handler: '${contractName}', received: { ${paramNames.join(', ')} } });`);
+    } else {
+      lines.push(`    res.json({ success: true, handler: '${contractName}' });`);
+    }
+  }
+
+  return lines;
 }
 
 /** Check if a model has an integer primary key */

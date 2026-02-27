@@ -30,7 +30,7 @@ export interface CodegenTraceResult {
 }
 
 export interface CodegenFix {
-  strategy: 'wrap-selector' | 'add-import-route' | 'remove-wrapper' | 'add-class' | 'normalize-token';
+  strategy: 'wrap-selector' | 'add-import-route' | 'remove-wrapper' | 'add-class' | 'normalize-token' | 'add-target';
   target_file: string;
   target_function: string;
   description: string;
@@ -364,6 +364,124 @@ const sidebarAlignment: CodegenTraceEntry = {
   },
 };
 
+/**
+ * SH9-005: Unresolved Handler Stub
+ *
+ * A mutation action in @ui generates a `console.log('name', ...args)` stub
+ * instead of a real API call. This means the button is dead on arrival —
+ * it logs to console but never calls the server.
+ * Fix: Add @handler contract for the mutation name to .air source.
+ */
+const unresolvedHandlerStub: CodegenTraceEntry = {
+  id: 'SH9-005',
+  name: 'Unresolved handler stub (dead CTA)',
+  classification_ids: ['dead-cta', 'unresolved-handler-stub'],
+  output_file_patterns: [/App\.jsx$/, /pages\/.*Page\.jsx$/],
+  transpiler_file: 'src/transpiler/react/mutation-gen.ts',
+  transpiler_function: 'generateMutations',
+  detect: (files) => {
+    const stubPattern = /console\.log\('(\w+)',\s*\.\.\.args\)/g;
+    const affectedFiles: string[] = [];
+    const affectedLines: Array<{ file: string; line: number; snippet: string }> = [];
+
+    for (const [path, content] of files) {
+      if (!path.endsWith('.jsx')) continue;
+      const lines = content.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const match = stubPattern.exec(lines[i]);
+        if (match) {
+          if (!affectedFiles.includes(path)) affectedFiles.push(path);
+          affectedLines.push({ file: path, line: i + 1, snippet: lines[i].trim() });
+        }
+      }
+      stubPattern.lastIndex = 0;
+    }
+
+    return {
+      detected: affectedLines.length > 0,
+      severity: 'p1',
+      details: affectedLines.length > 0
+        ? `Found ${affectedLines.length} unresolved handler stub(s): ${affectedLines.map(l => {
+            const m = l.snippet.match(/console\.log\('(\w+)'/);
+            return m ? m[1] : 'unknown';
+          }).join(', ')}`
+        : 'No unresolved handler stubs detected',
+      affected_files: affectedFiles,
+      affected_lines: affectedLines,
+    };
+  },
+  fix: {
+    strategy: 'normalize-token',
+    target_file: 'src/transpiler/react/mutation-gen.ts',
+    target_function: 'generateMutations',
+    description: "Add @handler contract for the unresolved mutation name to .air source, eliminating the console.log stub.",
+    apply: (source) => {
+      // This fix operates at the .air source level, not the transpiler source.
+      // The fix suggestion is to add @handler contracts — the transpiler code itself is correct.
+      return source;
+    },
+  },
+};
+
+/**
+ * SH9-006: Handler Scaffold (Non-Executable)
+ *
+ * A @handler contract exists in the .air source but has no executable target,
+ * so the server endpoint returns a scaffold JSON response instead of
+ * performing real business logic. The route exists and responds 200,
+ * but does nothing meaningful at runtime.
+ * Fix: Add executable target to the handler contract (e.g. > ~db.Order.create).
+ */
+const handlerScaffoldOnly: CodegenTraceEntry = {
+  id: 'SH9-006',
+  name: 'Handler contract scaffold (no executable target)',
+  classification_ids: ['handler-scaffold-only', 'handler-runtime-execution-failure'],
+  output_file_patterns: [/api\.ts$/],
+  transpiler_file: 'src/transpiler/express/api-router-gen.ts',
+  transpiler_function: 'generateHandlerContractEndpoint',
+  detect: (files) => {
+    // Detect scaffold endpoints: res.json({ success: true, handler: '...', received: { ... } })
+    const scaffoldPattern = /res\.json\(\{\s*success:\s*true,\s*handler:\s*'(\w+)',\s*received:/g;
+    const affectedFiles: string[] = [];
+    const affectedLines: Array<{ file: string; line: number; snippet: string }> = [];
+
+    for (const [path, content] of files) {
+      if (!path.endsWith('api.ts') && !path.endsWith('.ts')) continue;
+      const contentLines = content.split('\n');
+      for (let i = 0; i < contentLines.length; i++) {
+        const match = scaffoldPattern.exec(contentLines[i]);
+        if (match) {
+          if (!affectedFiles.includes(path)) affectedFiles.push(path);
+          affectedLines.push({ file: path, line: i + 1, snippet: contentLines[i].trim() });
+        }
+      }
+      scaffoldPattern.lastIndex = 0;
+    }
+
+    return {
+      detected: affectedLines.length > 0,
+      severity: 'p2',
+      details: affectedLines.length > 0
+        ? `Found ${affectedLines.length} scaffold-only handler endpoint(s): ${affectedLines.map(l => {
+            const m = l.snippet.match(/handler:\s*'(\w+)'/);
+            return m ? m[1] : 'unknown';
+          }).join(', ')}`
+        : 'All handler contracts have executable targets',
+      affected_files: affectedFiles,
+      affected_lines: affectedLines,
+    };
+  },
+  fix: {
+    strategy: 'add-target',
+    target_file: 'src/transpiler/express/api-router-gen.ts',
+    target_function: 'generateHandlerContractEndpoint',
+    description: "Add executable target to @handler contract (e.g. checkout(cartId:str) > ~db.Order.create) to generate real server logic.",
+    apply: (source) => {
+      return source;
+    },
+  },
+};
+
 // ---- Registry ----
 
 export const CODEGEN_TRACE_REGISTRY: CodegenTraceEntry[] = [
@@ -371,6 +489,8 @@ export const CODEGEN_TRACE_REGISTRY: CodegenTraceEntry[] = [
   pageUnreachable,
   doubleLayoutWrapping,
   sidebarAlignment,
+  unresolvedHandlerStub,
+  handlerScaffoldOnly,
 ];
 
 // ---- Lookup Functions ----

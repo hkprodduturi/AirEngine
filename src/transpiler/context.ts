@@ -8,6 +8,7 @@ import type {
   AirAuthBlock, AirHook, AirUINode,
   AirDbBlock, AirWebhookBlock, AirCronBlock, AirQueueBlock,
   AirEmailBlock, AirEnvBlock, AirDeployBlock,
+  AirHandlerContract,
 } from '../parser/types.js';
 import { expandCrud } from './route-utils.js';
 import { isAuthPageName } from './react/helpers.js';
@@ -39,6 +40,8 @@ export interface TranspileContext {
   publicPageNames: string[];
   /** True when app has Product+Category models and shop/cart pages — triggers Amazon-style layout */
   isEcommerce: boolean;
+  /** Handler contracts from @handler blocks */
+  handlerContracts: AirHandlerContract[];
 }
 
 export function extractContext(ast: AirAST): TranspileContext {
@@ -65,6 +68,7 @@ export function extractContext(ast: AirAST): TranspileContext {
     expandedRoutes: [],
     publicPageNames: [],
     isEcommerce: false,
+    handlerContracts: [],
   };
 
   for (const block of ast.app.blocks) {
@@ -116,17 +120,43 @@ export function extractContext(ast: AirAST): TranspileContext {
       case 'deploy':
         ctx.deploy = block;
         break;
+      case 'handler':
+        ctx.handlerContracts.push(...block.contracts);
+        break;
     }
   }
 
   // hasBackend if ANY backend block exists
   ctx.hasBackend = Boolean(
     ctx.db || ctx.apiRoutes.length > 0 || ctx.webhooks ||
-    ctx.cron || ctx.queue || ctx.email || ctx.env || ctx.deploy
+    ctx.cron || ctx.queue || ctx.email || ctx.env || ctx.deploy ||
+    ctx.handlerContracts.length > 0
   );
+
+  // Validate handler contracts: reject reserved mutation names
+  const RESERVED_MUTATIONS = new Set([
+    'add', 'del', 'delete', 'remove', 'toggle', 'login', 'logout',
+    'register', 'signup', 'save', 'update', 'submit', 'create',
+  ]);
+  for (const contract of ctx.handlerContracts) {
+    if (RESERVED_MUTATIONS.has(contract.name)) {
+      throw new Error(`Handler contract '${contract.name}' uses a reserved mutation name`);
+    }
+  }
 
   // Pre-expand CRUD routes once
   ctx.expandedRoutes = expandCrud(ctx.apiRoutes);
+
+  // Inject synthetic routes for handler contracts
+  for (const contract of ctx.handlerContracts) {
+    const kebab = contract.name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+    ctx.expandedRoutes.push({
+      method: 'POST',
+      path: `/handlers/${kebab}`,
+      handler: `~handler.${contract.name}`,
+      params: contract.params.length > 0 ? contract.params : undefined,
+    });
+  }
 
   // Derive public page names: unconditional @nav routes that aren't auth pages
   // Also filter out routes with empty paths (parser artifacts from complex nav syntax)
