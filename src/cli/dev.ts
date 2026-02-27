@@ -17,6 +17,8 @@
 
 import { watch, readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
 import { join, dirname, resolve } from 'path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { execSync, spawn, type ChildProcess } from 'child_process';
 import { parse } from '../parser/index.js';
 import { validate } from '../validator/index.js';
@@ -344,29 +346,28 @@ export class DevServer {
   }
 
   private async getQAExecutor(): Promise<QAExecutor | null> {
-    // Use a dynamic require() hidden from TypeScript's static analysis so it
-    // doesn't follow into scripts/ (outside rootDir).
-    const dynamicRequire = Function('m', 'return require(m)') as (m: string) => Record<string, unknown>;
+    // Use createRequire to get a CJS require() that works in both ESM and CJS.
+    // This avoids the "require is not defined" error when tsx loads dev.ts as ESM.
+    const esmRequire = createRequire(import.meta.url);
 
     // When running under plain Node (e.g. installed CLI via dist/cli/index.js),
     // require('.ts') fails. Register the tsx CJS hook first so Node's require()
     // can load TypeScript files. No-op if tsx is already active or not installed.
     try {
-      dynamicRequire('tsx/cjs');
+      esmRequire('tsx/cjs');
     } catch { /* tsx not available — .ts require will only work under tsx runtime */ }
 
     // Search directories: CWD first (development), then package root (installed CLI).
-    // This file lives at src/cli/dev.ts (or dist/cli/dev.js when compiled),
-    // so ../../scripts/ resolves to the package root's scripts/ directory.
+    const thisDir = dirname(fileURLToPath(import.meta.url));
     const dirs = [
       join(process.cwd(), 'scripts'),
-      join(__dirname, '..', '..', 'scripts'),
+      join(thisDir, '..', '..', 'scripts'),
     ];
 
     for (const dir of dirs) {
       const scriptPath = join(dir, 'runtime-qa-run.ts');
       try {
-        const mod = dynamicRequire(scriptPath);
+        const mod = esmRequire(scriptPath) as Record<string, unknown>;
         if (mod.executeFlow) return mod.executeFlow as QAExecutor;
       } catch { continue; }
     }
