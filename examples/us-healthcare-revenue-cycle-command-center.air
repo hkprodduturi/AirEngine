@@ -1,0 +1,542 @@
+@app:healthcare-rcm
+
+@style(theme:dark,accent:#0ea5e9,radius:8,font:sans,density:comfortable,maxWidth:1440,variant:enterprise-clean)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str,avatar:?str},
+  claims:[{id:int,claim_number:str,patient_name:str,payer:str,cpt_code:str,icd10:str,billed_amount:float,allowed_amount:float,status:str,filed_date:str,adjudication_date:?str,denial_reason:?str,facility:str,provider:str,aging_bucket:str}],
+  denials:[{id:int,claim_id:int,claim_number:str,patient_name:str,payer:str,denial_code:str,denial_reason:str,billed_amount:float,appeal_deadline:str,status:str,assigned_to:?str,created_at:str}],
+  patients:[{id:int,mrn:str,first_name:str,last_name:str,dob:str,insurance_id:str,payer:str,balance:float,last_visit:str,status:str}],
+  payments:[{id:int,era_number:str,payer:str,check_number:str,amount:float,posted_date:str,claim_count:int,status:str}],
+  appeals:[{id:int,denial_id:int,claim_number:str,appeal_type:str,letter_sent_date:?str,deadline:str,status:str,assigned_to:str,notes:?str}],
+  activities:[{id:int,type:str,description:str,user_name:str,timestamp:str,claim_number:?str}],
+  stats:{totalAR:float,avgDaysInAR:int,cleanClaimRate:float,denialRate:float,collectionsThisMonth:float,netCollectionRate:float,claimsSubmittedToday:int,appealsWon:int},
+  arAgingBuckets:[{bucket:str,amount:float,count:int,percentage:float}],
+  payerMix:[{payer:str,amount:float,percentage:float,denialRate:float}],
+  claimStatusFilter:enum(all,submitted,pending,adjudicated,denied,paid,appealed),
+  denialFilter:enum(all,new,in_review,appealed,overturned,upheld),
+  payerFilter:enum(all,medicare,medicaid,bcbs,aetna,cigna,uhc,self_pay),
+  agingFilter:enum(all,current,30_day,60_day,90_day,120_plus),
+  search:str,
+  selectedClaim:?int,
+  showNewClaimModal:bool,
+  showAppealModal:bool,
+  dateRange:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,phone:?str,title:?str,department:?str,avatar:?str,role:enum(rcm_director,billing_specialist,ar_analyst,denial_manager,front_desk):required,password:str:required,created_at:datetime:auto}
+  Patient{id:int:primary:auto,mrn:str:required,first_name:str:required,last_name:str:required,dob:date:required,ssn_last4:?str,address:?str,city:?str,state:?str,zip:?str,phone:?str,email:?str,insurance_id:str:required,payer:str:required,group_number:?str,copay_amount:float:default(0),balance:float:default(0),status:enum(active,inactive,collections):default(active),created_at:datetime:auto}
+  Encounter{id:int:primary:auto,patient_id:int:required,provider_name:str:required,facility:str:required,service_date:date:required,encounter_type:enum(office_visit,inpatient,outpatient,er,telehealth):required,primary_icd10:str:required,secondary_icd10:?str,notes:?str,status:enum(open,coded,billed,closed):default(open),created_at:datetime:auto}
+  Claim{id:int:primary:auto,claim_number:str:required,encounter_id:int:required,patient_id:int:required,payer:str:required,claim_type:enum(professional,institutional):required,filing_indicator:enum(commercial,medicare,medicaid,tricare,champva):required,primary_cpt:str:required,modifier:?str,units:int:default(1),primary_icd10:str:required,billed_amount:float:required,allowed_amount:float:default(0),paid_amount:float:default(0),patient_responsibility:float:default(0),status:enum(draft,submitted,pending,adjudicated,denied,paid,appealed,voided):default(draft),filed_date:?date,adjudication_date:?date,denial_reason:?str,denial_code:?str,timely_filing_deadline:?date,facility:str:required,rendering_provider:str:required,billing_provider:str:required,place_of_service:str:default("11"),assigned_to:?int,notes:?str,created_at:datetime:auto}
+  Denial{id:int:primary:auto,claim_id:int:required,denial_code:str:required,denial_reason:str:required,category:enum(eligibility,authorization,coding,timely_filing,duplicate,medical_necessity,bundling,other):required,billed_amount:float:required,appeal_deadline:?date,resolution_date:?date,status:enum(new,in_review,appealed,overturned,upheld,written_off):default(new),assigned_to:?int,root_cause:?str,corrective_action:?str,created_at:datetime:auto}
+  Appeal{id:int:primary:auto,denial_id:int:required,appeal_type:enum(first_level,second_level,external_review,peer_to_peer):required,letter_content:?str,supporting_docs:?str,sent_date:?date,deadline:date:required,response_date:?date,outcome:enum(pending,overturned,partially_overturned,upheld):default(pending),recovered_amount:float:default(0),assigned_to:int:required,notes:?str,created_at:datetime:auto}
+  Payment{id:int:primary:auto,era_number:str:required,payer:str:required,check_number:?str,eft_number:?str,total_amount:float:required,posted_date:date:required,payment_method:enum(check,eft,virtual_card):required,claim_count:int:default(0),status:enum(received,posted,reconciled):default(received),posted_by:?int,notes:?str,created_at:datetime:auto}
+  PaymentLine{id:int:primary:auto,payment_id:int:required,claim_id:int:required,paid_amount:float:required,adjustment_amount:float:default(0),adjustment_reason:?str,patient_responsibility:float:default(0),created_at:datetime:auto}
+  Activity{id:int:primary:auto,type:enum(claim_submitted,claim_denied,appeal_filed,payment_posted,status_change,note_added,assignment):required,description:str:required,user_id:int:required,claim_id:?int,patient_id:?int,created_at:datetime:auto}
+  @relation(Encounter.patient<>Patient.encounters)
+  @relation(Claim.encounter<>Encounter.claims)
+  @relation(Claim.patient<>Patient.claims)
+  @relation(Claim.assigned<>User.assignedClaims)
+  @relation(Denial.claim<>Claim.denials:cascade)
+  @relation(Denial.assigned<>User.assignedDenials)
+  @relation(Appeal.denial<>Denial.appeals:cascade)
+  @relation(Appeal.assigned<>User.assignedAppeals)
+  @relation(Payment.postedBy<>User.postedPayments)
+  @relation(PaymentLine.payment<>Payment.lines:cascade)
+  @relation(PaymentLine.claim<>Claim.paymentLines)
+  @relation(Activity.user<>User.activities)
+  @relation(Activity.claim<>Claim.activities)
+  @relation(Activity.patient<>Patient.activities)
+  @index(User.email:unique)
+  @index(Patient.mrn:unique)
+  @index(Claim.claim_number:unique)
+  @index(Claim.status+Claim.payer)
+  @index(Claim.filed_date+Claim.status)
+  @index(Denial.status+Denial.appeal_deadline)
+  @index(Payment.era_number:unique)
+  @index(Activity.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  CLEARINGHOUSE_API_KEY:str:required
+  SMTP_HOST:str:"smtp.sendgrid.net"
+  SMTP_PORT:int:587
+  PORT:int:3001
+)
+
+@auth(required,role:enum(rcm_director,billing_specialist,ar_analyst,denial_manager,front_desk),redirect:/login)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str,role:str)>auth.register
+  GET:/users>~db.User.findMany
+  PUT:/users/:id(name:?str,phone:?str,title:?str,department:?str)>~db.User.update
+  GET:/patients>~db.Patient.findMany
+  POST:/patients(mrn:str,first_name:str,last_name:str,dob:str,insurance_id:str,payer:str,phone:?str,email:?str)>~db.Patient.create
+  PUT:/patients/:id(insurance_id:?str,payer:?str,balance:?float,status:?str)>~db.Patient.update
+  GET:/patients/:id>~db.Patient.findFirst
+  GET:/encounters>~db.Encounter.findMany
+  POST:/encounters(patient_id:int,provider_name:str,facility:str,service_date:str,encounter_type:str,primary_icd10:str)>~db.Encounter.create
+  PUT:/encounters/:id(status:?str,primary_icd10:?str,notes:?str)>~db.Encounter.update
+  GET:/claims>~db.Claim.findMany
+  POST:/claims(claim_number:str,encounter_id:int,patient_id:int,payer:str,claim_type:str,filing_indicator:str,primary_cpt:str,primary_icd10:str,billed_amount:float,facility:str,rendering_provider:str,billing_provider:str)>~db.Claim.create
+  PUT:/claims/:id(status:?str,allowed_amount:?float,paid_amount:?float,assigned_to:?int,notes:?str)>~db.Claim.update
+  DELETE:/claims/:id>~db.Claim.delete
+  GET:/claims/:id>~db.Claim.findFirst
+  GET:/denials>~db.Denial.findMany
+  POST:/denials(claim_id:int,denial_code:str,denial_reason:str,category:str,billed_amount:float,appeal_deadline:?str)>~db.Denial.create
+  PUT:/denials/:id(status:?str,assigned_to:?int,root_cause:?str,corrective_action:?str)>~db.Denial.update
+  GET:/appeals>~db.Appeal.findMany
+  POST:/appeals(denial_id:int,appeal_type:str,deadline:str,assigned_to:int,letter_content:?str)>~db.Appeal.create
+  PUT:/appeals/:id(outcome:?str,recovered_amount:?float,sent_date:?str,response_date:?str,notes:?str)>~db.Appeal.update
+  GET:/payments>~db.Payment.findMany
+  POST:/payments(era_number:str,payer:str,total_amount:float,posted_date:str,payment_method:str,claim_count:int)>~db.Payment.create
+  PUT:/payments/:id(status:?str,posted_by:?int,notes:?str)>~db.Payment.update
+  GET:/payments/:id/lines>~db.PaymentLine.findMany
+  POST:/payments/:id/lines(claim_id:int,paid_amount:float,adjustment_amount:?float,patient_responsibility:?float)>~db.PaymentLine.create
+  GET:/activities>~db.Activity.findMany
+  POST:/activities(type:str,description:str,claim_id:?int,patient_id:?int)>~db.Activity.create
+  GET:/stats>~db.Claim.aggregate
+)
+
+@webhook(
+  POST:/clearinghouse/era>!processERA
+  POST:/clearinghouse/claim-status>!updateClaimStatus
+)
+
+@cron(
+  ageAR>"0 1 * * *">!db.claims.computeAging
+  timelyFilingAlerts>"0 8 * * *">!email.sendTimelyFilingAlerts
+  denialFollowup>"0 9 * * *">!email.sendDenialFollowups
+)
+
+@queue(
+  submitClaim(claim_id:int)>!clearinghouse.submit
+  sendAppealLetter(appeal_id:int)>!appeals.sendLetter
+  generateStatement(patient_id:int)>!billing.generateStatement
+)
+
+@email(
+  timelyFiling(claim_number:str,deadline:str)>"Timely Filing Alert"
+  denialNotice(claim_number:str,reason:str)>"Claim Denial Notice"
+  appealOutcome(claim_number:str,outcome:str)>"Appeal Decision"
+  paymentPosted(era_number:str,amount:float)>"Payment Posted"
+)
+
+@nav(
+  />?user>dashboard:login
+  /claims>?user>claims:login
+  /denials>?user>denials:login
+  /appeals>?user>appeals:login
+  /payments>?user>payments:login
+  /patients>?user>patients:login
+  /ar-aging>?user>arAging:login
+  /reports>?user>reports:login
+  /settings>?user>settings:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.activities+~api.claims
+  onChange:claimStatusFilter>~api.claims
+  onChange:denialFilter>~api.denials
+  onChange:payerFilter>~api.claims
+  onChange:agingFilter>~api.claims
+  onChange:search>~api.claims
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Healthcare RCM"
+        p:"muted">"Revenue Cycle Command Center"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"Need access? "+btn:ghost>"Request Account">!register
+        )
+      )
+    )
+  )
+
+  @page:dashboard(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Revenue Cycle Dashboard"+text:"muted">#dateRange+btn:ghost>"Export">!exportDashboard
+      grid:4(
+        stat:"Total AR">#stats.totalAR
+        stat:"Avg Days in AR">#stats.avgDaysInAR
+        stat:"Clean Claim Rate">#stats.cleanClaimRate
+        stat:"Denial Rate">#stats.denialRate
+      )
+      grid:4(
+        stat:"Collections MTD">#stats.collectionsThisMonth
+        stat:"Net Collection Rate">#stats.netCollectionRate
+        stat:"Submitted Today">#stats.claimsSubmittedToday
+        stat:"Appeals Won">#stats.appealsWon
+      )
+      grid:2(
+        @section:arSnapshot(
+          card(
+            h2>"AR Aging Snapshot"
+            table>arAgingBuckets>*bucket(
+              text>#bucket.bucket
+              text:amount:$>#bucket.amount
+              text>#bucket.count
+              badge:#bucket.percentage
+            )
+          )
+        )
+        @section:payerPerformance(
+          card(
+            h2>"Payer Performance"
+            table>payerMix>*payer(
+              text>#payer.payer
+              text:amount:$>#payer.amount
+              text>#payer.percentage
+              badge:#payer.denialRate
+            )
+          )
+        )
+      )
+      @section:recentActivity(
+        card(
+          h2>"Activity Feed"
+          list>activities>*activity(
+            row(
+              badge:#activity.type
+              text>#activity.description
+              text:"muted">#activity.user_name
+              text:"muted">#activity.timestamp
+            )
+          )
+        )
+      )
+    )
+  )
+
+  @page:claims(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Claims Management"+search:input>#search+tabs>claimStatusFilter.set(all,submitted,pending,adjudicated,denied,paid,appealed)+btn:primary>"New Claim">!showNewClaimForm
+      tabs>payerFilter.set(all,medicare,medicaid,bcbs,aetna,cigna,uhc,self_pay)
+      table>claims|claimStatusFilter|payerFilter|search>*claim(
+        text>#claim.claim_number
+        text>#claim.patient_name
+        text>#claim.payer
+        text>#claim.cpt_code
+        text>#claim.icd10
+        text:amount:$>#claim.billed_amount
+        text:amount:$>#claim.allowed_amount
+        badge:#claim.status
+        text:"muted">#claim.filed_date
+        text>"muted">#claim.facility
+        text:"muted">#claim.aging_bucket
+        row(btn:ghost>"View">!viewClaim(#claim.id),btn:ghost>"Edit">!editClaim(#claim.id),btn:ghost>"Submit">!submitClaim(#claim.id))
+      )
+    )
+  )
+
+  @page:denials(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Denial Management"+search:input>#search+tabs>denialFilter.set(all,new,in_review,appealed,overturned,upheld)+btn:primary>"File Appeal">!showAppealForm
+      grid:3(
+        stat:"Open Denials">#stats.denialRate
+        stat:"Appeal Rate">#stats.cleanClaimRate
+        stat:"Overturn Rate">#stats.netCollectionRate
+      )
+      table>denials|denialFilter|search>*denial(
+        text>#denial.claim_number
+        text>#denial.patient_name
+        text>#denial.payer
+        text>#denial.denial_code
+        text>#denial.denial_reason
+        text:amount:$>#denial.billed_amount
+        badge:#denial.status
+        text:"muted">#denial.appeal_deadline
+        text:"muted">#denial.assigned_to
+        row(btn:primary>"Appeal">!fileAppeal(#denial.id),btn:ghost>"Review">!reviewDenial(#denial.id),btn:ghost>"Write Off">!writeOff(#denial.id))
+      )
+    )
+  )
+
+  @page:appeals(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Appeals Tracking"+search:input>#search+btn:primary>"New Appeal">!showAppealForm
+      table>appeals>*appeal(
+        text>#appeal.claim_number
+        text>#appeal.appeal_type
+        badge:#appeal.status
+        text:"muted">#appeal.assigned_to
+        text:"muted">#appeal.letter_sent_date
+        text:"muted">#appeal.deadline
+        text>#appeal.notes
+        row(btn:ghost>"Send Letter">!sendAppealLetter(#appeal.id),btn:ghost>"Update">!updateAppeal(#appeal.id),btn:ghost>"Escalate">!escalateAppeal(#appeal.id))
+      )
+    )
+  )
+
+  @page:payments(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Payment Posting"+btn:primary>"Post ERA">!postERA+btn:ghost>"Reconcile">!reconcilePayments
+      table>payments>*payment(
+        text>#payment.era_number
+        text>#payment.payer
+        text>#payment.check_number
+        text:amount:$>#payment.amount
+        text:"muted">#payment.posted_date
+        text>#payment.claim_count
+        badge:#payment.status
+        row(btn:ghost>"View Lines">!viewPaymentLines(#payment.id),btn:ghost>"Post">!postPayment(#payment.id),btn:ghost>"Reconcile">!reconcilePayment(#payment.id))
+      )
+    )
+  )
+
+  @page:patients(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Patient Accounts"+search:input>#search+btn:primary>"Register Patient">!registerPatient
+      table>patients|search>*patient(
+        text>#patient.mrn
+        text>#patient.first_name+" "+#patient.last_name
+        text:"muted">#patient.dob
+        text>#patient.payer
+        text>#patient.insurance_id
+        text:amount:$>#patient.balance
+        badge:#patient.status
+        text:"muted">#patient.last_visit
+        row(btn:ghost>"View">!viewPatient(#patient.id),btn:ghost>"Statement">!generateStatement(#patient.id),btn:ghost>"Collections">!sendToCollections(#patient.id))
+      )
+    )
+  )
+
+  @page:arAging(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"AR Aging Analysis"+tabs>agingFilter.set(all,current,30_day,60_day,90_day,120_plus)+btn:ghost>"Export">!exportAging
+      grid:4(
+        stat:"Current">#arAgingBuckets.current
+        stat:"31-60 Days">#arAgingBuckets.thirtyDay
+        stat:"61-90 Days">#arAgingBuckets.sixtyDay
+        stat:"90+ Days">#arAgingBuckets.ninetyPlus
+      )
+      table>claims|agingFilter|payerFilter>*claim(
+        text>#claim.claim_number
+        text>#claim.patient_name
+        text>#claim.payer
+        text:amount:$>#claim.billed_amount
+        badge:#claim.aging_bucket
+        badge:#claim.status
+        text:"muted">#claim.filed_date
+        text:"muted">#claim.provider
+        row(btn:ghost>"Follow Up">!followUp(#claim.id),btn:ghost>"Refile">!refile(#claim.id),btn:ghost>"Write Off">!writeOff(#claim.id))
+      )
+    )
+  )
+
+  @page:reports(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Reports & Analytics"
+      grid:2(
+        card(
+          h2>"Financial Summary"
+          p:"muted">"Monthly revenue, collections, and write-offs"
+          btn:primary>"Generate">!generateFinancialReport
+        )
+        card(
+          h2>"Denial Analysis"
+          p:"muted">"Top denial codes, root causes, and trends"
+          btn:primary>"Generate">!generateDenialReport
+        )
+        card(
+          h2>"Payer Performance"
+          p:"muted">"Reimbursement rates by payer and contract"
+          btn:primary>"Generate">!generatePayerReport
+        )
+        card(
+          h2>"Productivity Report"
+          p:"muted">"Staff productivity, claim volume, and turnaround"
+          btn:primary>"Generate">!generateProductivityReport
+        )
+      )
+    )
+  )
+
+  @page:settings(
+    sidebar(
+      h2>"RCM Command"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/claims">"Claims"
+      link>"/denials">"Denials"
+      link>"/appeals">"Appeals"
+      link>"/payments">"Payments"
+      link>"/patients">"Patients"
+      link>"/ar-aging">"AR Aging"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Settings"
+      grid:2(
+        card(
+          h2>"Profile"
+          form(
+            input:text>#user.name
+            input:email>#user.email
+            input:text>#user.phone
+            input:text>#user.title
+            btn:primary>"Update Profile">!updateProfile
+          )
+        )
+        card(
+          h2>"Organization"
+          form(
+            input:text>#orgName
+            input:text>#npi
+            input:text>#taxId
+            input:text>#clearinghouseId
+            btn:primary>"Save Settings">!saveOrgSettings
+          )
+        )
+        card(
+          h2>"Team Management"
+          table>users>*u(
+            text>#u.name
+            text:"muted">#u.email
+            badge:#u.role
+            row(btn:ghost>"Edit Role">!editRole(#u.id),btn:danger>"Deactivate">!deactivateUser(#u.id))
+          )
+          btn:primary>"Invite User">!inviteUser
+        )
+        card(
+          h2>"Payer Contracts"
+          p:"muted">"Manage fee schedules and payer contracts"
+          btn:primary>"Manage Contracts">!manageContracts
+          btn:ghost>"Import Fee Schedule">!importFeeSchedule
+        )
+      )
+    )
+  )
+)
+
+@deploy(
+  provider:docker
+  port:3001
+  healthCheck:/api/health
+)

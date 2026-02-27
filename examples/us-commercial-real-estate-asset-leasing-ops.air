@@ -1,0 +1,565 @@
+@app:cre-leasing-ops
+
+@style(theme:dark,accent:#8b5cf6,radius:8,font:sans,density:comfortable,maxWidth:1440,variant:enterprise-clean)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str,avatar:?str},
+  properties:[{id:int,name:str,address:str,city:str,state:str,zip:str,property_type:str,class_rating:str,total_sqft:int,available_sqft:int,occupancy_rate:float,asking_rent_psf:float,noi:float,cap_rate:float,year_built:int,parking_ratio:str,status:str,market:str,image_url:?str}],
+  leases:[{id:int,lease_number:str,tenant_name:str,property_name:str,suite:str,sqft:int,base_rent:float,escalation_rate:float,start_date:str,expiration_date:str,lease_type:str,status:str,security_deposit:float,tenant_improvement:float,commission:float}],
+  tenants:[{id:int,company_name:str,contact_name:str,email:str,phone:str,industry:str,credit_rating:str,lease_count:int,total_sqft:int,annual_rent:float,status:str}],
+  prospects:[{id:int,company_name:str,contact_name:str,email:str,phone:str,requirement_sqft:int,budget_psf:float,target_move_date:str,industry:str,source:str,status:str,assigned_to:str,property_interest:?str,notes:?str}],
+  maintenance:[{id:int,property_name:str,suite:str,tenant_name:str,category:str,priority:str,description:str,status:str,assigned_to:str,created_at:str,completed_at:?str,cost:float}],
+  transactions:[{id:int,type:str,amount:float,property_name:str,tenant_name:str,description:str,due_date:str,paid_date:?str,status:str}],
+  activities:[{id:int,type:str,description:str,user_name:str,timestamp:str,property_name:?str}],
+  stats:{totalPortfolioValue:float,totalNOI:float,avgOccupancy:float,avgCapRate:float,leasesExpiringThisYear:int,totalSqftManaged:int,collectionsThisMonth:float,maintenanceOpen:int},
+  occupancyByProperty:[{property:str,occupancy:float,sqft:int}],
+  leaseExpirations:[{quarter:str,count:int,sqft:int,rent:float}],
+  propertyTypeFilter:enum(all,office,retail,industrial,mixed_use,medical,flex),
+  leaseStatusFilter:enum(all,active,expiring_soon,expired,pending,terminated),
+  tenantFilter:enum(all,current,prospect,former),
+  maintenanceFilter:enum(all,open,in_progress,completed,urgent),
+  marketFilter:enum(all,manhattan,brooklyn,jersey_city,stamford,white_plains),
+  search:str,
+  selectedProperty:?int,
+  showNewLeaseModal:bool,
+  showNewProspectModal:bool,
+  dateRange:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,phone:?str,title:?str,license_number:?str,avatar:?str,role:enum(asset_manager,leasing_agent,property_manager,accounting,executive):required,password:str:required,created_at:datetime:auto}
+  Property{id:int:primary:auto,name:str:required,address:str:required,city:str:required,state:str:required,zip:str:required,property_type:enum(office,retail,industrial,mixed_use,medical,flex):required,class_rating:enum(A,B,C):required,total_sqft:int:required,available_sqft:int:default(0),floors:int:default(1),year_built:int:required,last_renovated:?int,parking_spaces:int:default(0),parking_ratio:?str,amenities:?str,zoning:?str,tax_parcel:?str,assessed_value:float:default(0),market_value:float:default(0),asking_rent_psf:float:default(0),noi:float:default(0),cap_rate:float:default(0),occupancy_rate:float:default(0),market:str:required,status:enum(active,under_renovation,for_sale,sold):default(active),image_url:?str,owner_id:?int,notes:?str,created_at:datetime:auto}
+  Suite{id:int:primary:auto,property_id:int:required,suite_number:str:required,floor:int:required,sqft:int:required,suite_type:enum(office,retail,storage,common,mechanical):default(office),condition:enum(shell,warm_shell,move_in_ready,tenant_occupied):required,asking_rent_psf:float:default(0),available_date:?date,features:?str,status:enum(available,leased,under_construction,unavailable):default(available),created_at:datetime:auto}
+  Tenant{id:int:primary:auto,company_name:str:required,contact_name:str:required,contact_title:?str,email:str:required,phone:str:required,industry:str:required,naics_code:?str,annual_revenue:?float,employee_count:?int,credit_rating:enum(AAA,AA,A,BBB,BB,B,below_B):default(BBB),duns_number:?str,status:enum(active,inactive,prospect,former):default(prospect),notes:?str,created_at:datetime:auto}
+  Lease{id:int:primary:auto,lease_number:str:required,property_id:int:required,suite_id:int:required,tenant_id:int:required,lease_type:enum(gross,modified_gross,nnn,percentage):required,base_rent_monthly:float:required,rent_psf:float:required,escalation_type:enum(fixed,cpi,fair_market):default(fixed),escalation_rate:float:default(3),cam_charges:float:default(0),tax_share:float:default(0),insurance_share:float:default(0),security_deposit:float:default(0),tenant_improvement_allowance:float:default(0),free_rent_months:int:default(0),commission_amount:float:default(0),start_date:date:required,expiration_date:date:required,renewal_option:?str,termination_clause:?str,status:enum(draft,pending_approval,active,expiring_soon,expired,terminated,renewed):default(draft),signed_date:?date,executed_by:?int,notes:?str,created_at:datetime:auto}
+  Prospect{id:int:primary:auto,company_name:str:required,contact_name:str:required,email:str:required,phone:?str,requirement_sqft:int:required,budget_psf:float:required,target_move_date:date:required,industry:str:required,preferred_property_type:?str,preferred_location:?str,source:enum(broker,website,referral,cold_call,conference,existing_tenant):default(website),status:enum(new,qualified,touring,proposal_sent,negotiating,won,lost):default(new),assigned_to:?int,property_interest:?int,tour_date:?date,proposal_sent_date:?date,notes:?str,created_at:datetime:auto}
+  MaintenanceRequest{id:int:primary:auto,property_id:int:required,suite_id:?int,tenant_id:?int,category:enum(hvac,plumbing,electrical,elevator,janitorial,security,structural,parking,other):required,priority:enum(emergency,high,medium,low):default(medium),description:str:required,reported_by:str:required,assigned_to:?int,vendor:?str,estimated_cost:float:default(0),actual_cost:float:default(0),status:enum(submitted,assigned,in_progress,completed,cancelled):default(submitted),completed_date:?date,resolution:?str,created_at:datetime:auto}
+  Transaction{id:int:primary:auto,lease_id:?int,property_id:int:required,tenant_id:?int,type:enum(rent,cam,tax,insurance,security_deposit,tenant_improvement,commission,maintenance,utility,other):required,amount:float:required,description:str:required,due_date:date:required,paid_date:?date,payment_method:?str,reference_number:?str,status:enum(pending,paid,overdue,partial,credited,void):default(pending),posted_by:?int,notes:?str,created_at:datetime:auto}
+  Activity{id:int:primary:auto,type:enum(lease_signed,lease_expired,rent_collected,maintenance_completed,prospect_tour,proposal_sent,tenant_move_in,tenant_move_out,property_inspection,note_added):required,description:str:required,user_id:int:required,property_id:?int,tenant_id:?int,lease_id:?int,created_at:datetime:auto}
+  @relation(Property.owner<>User.properties)
+  @relation(Suite.property<>Property.suites:cascade)
+  @relation(Lease.property<>Property.leases)
+  @relation(Lease.suite<>Suite.lease)
+  @relation(Lease.tenant<>Tenant.leases)
+  @relation(Lease.executedBy<>User.executedLeases)
+  @relation(Prospect.assigned<>User.prospects)
+  @relation(Prospect.propertyInterest<>Property.prospects)
+  @relation(MaintenanceRequest.property<>Property.maintenanceRequests)
+  @relation(MaintenanceRequest.suite<>Suite.maintenanceRequests)
+  @relation(MaintenanceRequest.tenant<>Tenant.maintenanceRequests)
+  @relation(MaintenanceRequest.assignedTo<>User.assignedMaintenance)
+  @relation(Transaction.lease<>Lease.transactions)
+  @relation(Transaction.property<>Property.transactions)
+  @relation(Transaction.tenant<>Tenant.transactions)
+  @relation(Transaction.postedBy<>User.postedTransactions)
+  @relation(Activity.user<>User.activities)
+  @relation(Activity.property<>Property.activities)
+  @relation(Activity.tenant<>Tenant.activities)
+  @relation(Activity.lease<>Lease.activities)
+  @index(User.email:unique)
+  @index(Lease.lease_number:unique)
+  @index(Property.market+Property.property_type)
+  @index(Lease.status+Lease.expiration_date)
+  @index(Prospect.status+Prospect.assigned_to)
+  @index(MaintenanceRequest.status+MaintenanceRequest.priority)
+  @index(Transaction.due_date+Transaction.status)
+  @index(Activity.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  SMTP_HOST:str:"smtp.sendgrid.net"
+  SMTP_PORT:int:587
+  PORT:int:3001
+)
+
+@auth(required,role:enum(asset_manager,leasing_agent,property_manager,accounting,executive),redirect:/login)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str,role:str)>auth.register
+  GET:/users>~db.User.findMany
+  PUT:/users/:id(name:?str,phone:?str,title:?str)>~db.User.update
+  GET:/properties>~db.Property.findMany
+  POST:/properties(name:str,address:str,city:str,state:str,zip:str,property_type:str,class_rating:str,total_sqft:int,year_built:int,market:str,asking_rent_psf:float)>~db.Property.create
+  PUT:/properties/:id(available_sqft:?int,asking_rent_psf:?float,occupancy_rate:?float,noi:?float,cap_rate:?float,status:?str,notes:?str)>~db.Property.update
+  GET:/properties/:id>~db.Property.findFirst
+  DELETE:/properties/:id>~db.Property.delete
+  GET:/properties/:id/suites>~db.Suite.findMany
+  POST:/properties/:id/suites(suite_number:str,floor:int,sqft:int,suite_type:str,condition:str,asking_rent_psf:float)>~db.Suite.create
+  PUT:/suites/:id(status:?str,asking_rent_psf:?float,condition:?str)>~db.Suite.update
+  GET:/tenants>~db.Tenant.findMany
+  POST:/tenants(company_name:str,contact_name:str,email:str,phone:str,industry:str,credit_rating:str)>~db.Tenant.create
+  PUT:/tenants/:id(contact_name:?str,email:?str,phone:?str,credit_rating:?str,status:?str)>~db.Tenant.update
+  GET:/tenants/:id>~db.Tenant.findFirst
+  DELETE:/tenants/:id>~db.Tenant.delete
+  GET:/leases>~db.Lease.findMany
+  POST:/leases(lease_number:str,property_id:int,suite_id:int,tenant_id:int,lease_type:str,base_rent_monthly:float,rent_psf:float,start_date:str,expiration_date:str,security_deposit:float)>~db.Lease.create
+  PUT:/leases/:id(status:?str,base_rent_monthly:?float,escalation_rate:?float,notes:?str)>~db.Lease.update
+  DELETE:/leases/:id>~db.Lease.delete
+  GET:/prospects>~db.Prospect.findMany
+  POST:/prospects(company_name:str,contact_name:str,email:str,requirement_sqft:int,budget_psf:float,target_move_date:str,industry:str,source:str)>~db.Prospect.create
+  PUT:/prospects/:id(status:?str,assigned_to:?int,property_interest:?int,tour_date:?str,notes:?str)>~db.Prospect.update
+  DELETE:/prospects/:id>~db.Prospect.delete
+  GET:/maintenance>~db.MaintenanceRequest.findMany
+  POST:/maintenance(property_id:int,suite_id:?int,tenant_id:?int,category:str,priority:str,description:str,reported_by:str)>~db.MaintenanceRequest.create
+  PUT:/maintenance/:id(status:?str,assigned_to:?int,vendor:?str,actual_cost:?float,resolution:?str)>~db.MaintenanceRequest.update
+  GET:/transactions>~db.Transaction.findMany
+  POST:/transactions(property_id:int,lease_id:?int,tenant_id:?int,type:str,amount:float,description:str,due_date:str)>~db.Transaction.create
+  PUT:/transactions/:id(status:?str,paid_date:?str,payment_method:?str,reference_number:?str)>~db.Transaction.update
+  GET:/activities>~db.Activity.findMany
+  POST:/activities(type:str,description:str,property_id:?int,tenant_id:?int,lease_id:?int)>~db.Activity.create
+  GET:/stats>~db.Property.aggregate
+)
+
+@webhook(
+  POST:/yardi/sync>!syncYardiData
+  POST:/payments/webhook>!processPaymentNotification
+)
+
+@cron(
+  leaseExpirationAlerts>"0 8 * * 1">!email.sendLeaseExpirationAlerts
+  rentReminders>"0 8 25 * *">!email.sendRentReminders
+  monthlyStatements>"0 1 1 * *">!billing.generateMonthlyStatements
+)
+
+@queue(
+  generateLease(lease_id:int)>!leases.generateDocument
+  sendProposal(prospect_id:int)>!prospects.sendProposal
+  processRentRoll(property_id:int)>!accounting.processRentRoll
+)
+
+@email(
+  leaseExpiring(tenant:str,property:str,date:str)>"Lease Expiration Notice"
+  rentReminder(tenant:str,amount:float)>"Rent Payment Reminder"
+  maintenanceUpdate(tenant:str,status:str)>"Maintenance Request Update"
+  proposalSent(company:str,property:str)>"Lease Proposal"
+)
+
+@nav(
+  />?user>dashboard:login
+  /properties>?user>properties:login
+  /leases>?user>leases:login
+  /tenants>?user>tenants:login
+  /prospects>?user>prospects:login
+  /maintenance>?user>maintenance:login
+  /financials>?user>financials:login
+  /reports>?user>reports:login
+  /settings>?user>settings:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.activities+~api.properties
+  onChange:propertyTypeFilter>~api.properties
+  onChange:leaseStatusFilter>~api.leases
+  onChange:tenantFilter>~api.tenants
+  onChange:maintenanceFilter>~api.maintenance
+  onChange:marketFilter>~api.properties
+  onChange:search>~api.properties
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"CRE Leasing Ops"
+        p:"muted">"Commercial Real Estate Asset & Leasing Platform"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"Need access? "+btn:ghost>"Request Account">!register
+        )
+      )
+    )
+  )
+
+  @page:dashboard(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Portfolio Dashboard"+text:"muted">#dateRange+btn:ghost>"Export">!exportDashboard
+      grid:4(
+        stat:"Portfolio Value">#stats.totalPortfolioValue
+        stat:"Total NOI">#stats.totalNOI
+        stat:"Avg Occupancy">#stats.avgOccupancy
+        stat:"Avg Cap Rate">#stats.avgCapRate
+      )
+      grid:4(
+        stat:"Leases Expiring">#stats.leasesExpiringThisYear
+        stat:"Total Sq Ft">#stats.totalSqftManaged
+        stat:"Collections MTD">#stats.collectionsThisMonth
+        stat:"Open Work Orders">#stats.maintenanceOpen
+      )
+      grid:2(
+        @section:occupancy(
+          card(
+            h2>"Occupancy by Property"
+            table>occupancyByProperty>*prop(
+              text>#prop.property
+              badge>#prop.occupancy
+              text>#prop.sqft
+            )
+          )
+        )
+        @section:expirations(
+          card(
+            h2>"Lease Expirations"
+            table>leaseExpirations>*exp(
+              text>#exp.quarter
+              text>#exp.count
+              text>#exp.sqft
+              text:amount:$>#exp.rent
+            )
+          )
+        )
+      )
+      @section:recentActivity(
+        card(
+          h2>"Recent Activity"
+          list>activities>*activity(
+            row(
+              badge:#activity.type
+              text>#activity.description
+              text:"muted">#activity.user_name
+              text:"muted">#activity.timestamp
+            )
+          )
+        )
+      )
+    )
+  )
+
+  @page:properties(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Property Portfolio"+search:input>#search+tabs>propertyTypeFilter.set(all,office,retail,industrial,mixed_use,medical,flex)+btn:primary>"Add Property">!addProperty
+      tabs>marketFilter.set(all,manhattan,brooklyn,jersey_city,stamford,white_plains)
+      grid:3>properties|propertyTypeFilter|marketFilter|search>*property(
+        card(
+          h3>#property.name
+          text:"muted">#property.address+", "+#property.city+", "+#property.state
+          row(badge:#property.property_type,badge:#property.class_rating,badge:#property.status)
+          row(text>"Occupancy: "+#property.occupancy_rate,text>"Cap Rate: "+#property.cap_rate)
+          row(text>"Total: "+#property.total_sqft+" SF",text>"Available: "+#property.available_sqft+" SF")
+          text:amount:$>#property.asking_rent_psf
+          text:"muted">"Built: "+#property.year_built
+          row(btn:primary>"View Details">!viewProperty(#property.id),btn:ghost>"Suites">!viewSuites(#property.id),btn:ghost>"Edit">!editProperty(#property.id))
+        )
+      )
+    )
+  )
+
+  @page:leases(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Lease Management"+search:input>#search+tabs>leaseStatusFilter.set(all,active,expiring_soon,expired,pending,terminated)+btn:primary>"New Lease">!showNewLeaseForm
+      table>leases|leaseStatusFilter|search>*lease(
+        text>#lease.lease_number
+        text>#lease.tenant_name
+        text>#lease.property_name
+        text>#lease.suite
+        text>#lease.sqft
+        text:amount:$>#lease.base_rent
+        text>#lease.escalation_rate
+        text>#lease.lease_type
+        badge:#lease.status
+        text:"muted">#lease.start_date
+        text:"muted">#lease.expiration_date
+        row(btn:ghost>"View">!viewLease(#lease.id),btn:ghost>"Renew">!renewLease(#lease.id),btn:ghost>"Amend">!amendLease(#lease.id),btn:ghost>"Terminate">!terminateLease(#lease.id))
+      )
+    )
+  )
+
+  @page:tenants(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Tenant Directory"+search:input>#search+tabs>tenantFilter.set(all,current,prospect,former)+btn:primary>"Add Tenant">!addTenant
+      table>tenants|tenantFilter|search>*tenant(
+        text>#tenant.company_name
+        text>#tenant.contact_name
+        text:"muted">#tenant.email
+        text:"muted">#tenant.phone
+        text>#tenant.industry
+        badge:#tenant.credit_rating
+        text>#tenant.lease_count
+        text>#tenant.total_sqft
+        text:amount:$>#tenant.annual_rent
+        badge:#tenant.status
+        row(btn:ghost>"View">!viewTenant(#tenant.id),btn:ghost>"Leases">!viewTenantLeases(#tenant.id),btn:ghost>"Statement">!generateTenantStatement(#tenant.id))
+      )
+    )
+  )
+
+  @page:prospects(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Leasing Pipeline"+search:input>#search+btn:primary>"Add Prospect">!showNewProspectForm
+      table>prospects|search>*prospect(
+        text>#prospect.company_name
+        text>#prospect.contact_name
+        text:"muted">#prospect.email
+        text>#prospect.requirement_sqft
+        text:amount:$>#prospect.budget_psf
+        text:"muted">#prospect.target_move_date
+        text>#prospect.industry
+        badge:#prospect.source
+        badge:#prospect.status
+        text:"muted">#prospect.assigned_to
+        row(btn:ghost>"Qualify">!qualifyProspect(#prospect.id),btn:ghost>"Schedule Tour">!scheduleTour(#prospect.id),btn:ghost>"Send Proposal">!sendProposal(#prospect.id),btn:ghost>"Convert">!convertToTenant(#prospect.id))
+      )
+    )
+  )
+
+  @page:maintenance(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Work Orders"+search:input>#search+tabs>maintenanceFilter.set(all,open,in_progress,completed,urgent)+btn:primary>"New Work Order">!createWorkOrder
+      table>maintenance|maintenanceFilter|search>*req(
+        text>#req.property_name
+        text>#req.suite
+        text>#req.tenant_name
+        badge:#req.category
+        badge:#req.priority
+        text>#req.description
+        badge:#req.status
+        text:"muted">#req.assigned_to
+        text:"muted">#req.created_at
+        text:amount:$>#req.cost
+        row(btn:ghost>"Assign">!assignWorkOrder(#req.id),btn:ghost>"Update">!updateWorkOrder(#req.id),btn:ghost>"Complete">!completeWorkOrder(#req.id))
+      )
+    )
+  )
+
+  @page:financials(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Financial Overview"+btn:primary>"Post Payment">!postPayment+btn:ghost>"Generate Invoices">!generateInvoices+btn:ghost>"Export">!exportFinancials
+      grid:3(
+        stat:"Collections MTD">#stats.collectionsThisMonth
+        stat:"Outstanding AR">#stats.totalNOI
+        stat:"Delinquent">#stats.maintenanceOpen
+      )
+      table>transactions>*txn(
+        badge:#txn.type
+        text:amount:$>#txn.amount
+        text>#txn.property_name
+        text>#txn.tenant_name
+        text>#txn.description
+        text:"muted">#txn.due_date
+        text:"muted">#txn.paid_date
+        badge:#txn.status
+        row(btn:ghost>"Record Payment">!recordPayment(#txn.id),btn:ghost>"Send Reminder">!sendReminder(#txn.id),btn:ghost>"Credit">!creditTransaction(#txn.id))
+      )
+    )
+  )
+
+  @page:reports(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Reports & Analytics"
+      grid:2(
+        card(
+          h2>"Rent Roll"
+          p:"muted">"Current rent roll by property with tenant details"
+          btn:primary>"Generate">!generateRentRoll
+        )
+        card(
+          h2>"Lease Expiration Schedule"
+          p:"muted">"Upcoming expirations by quarter and exposure analysis"
+          btn:primary>"Generate">!generateExpirationReport
+        )
+        card(
+          h2>"NOI Analysis"
+          p:"muted">"Net operating income by property and portfolio"
+          btn:primary>"Generate">!generateNOIReport
+        )
+        card(
+          h2>"Vacancy Report"
+          p:"muted">"Available space, days on market, and absorption"
+          btn:primary>"Generate">!generateVacancyReport
+        )
+        card(
+          h2>"Collections Report"
+          p:"muted">"Payment history, delinquencies, and aging"
+          btn:primary>"Generate">!generateCollectionsReport
+        )
+        card(
+          h2>"Tenant Credit Summary"
+          p:"muted">"Credit ratings, risk exposure, and concentration"
+          btn:primary>"Generate">!generateCreditReport
+        )
+      )
+    )
+  )
+
+  @page:settings(
+    sidebar(
+      h2>"CRE Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/properties">"Properties"
+      link>"/leases">"Leases"
+      link>"/tenants">"Tenants"
+      link>"/prospects">"Prospects"
+      link>"/maintenance">"Maintenance"
+      link>"/financials">"Financials"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Settings"
+      grid:2(
+        card(
+          h2>"Profile"
+          form(
+            input:text>#user.name
+            input:email>#user.email
+            input:text>#user.phone
+            input:text>#user.title
+            btn:primary>"Update Profile">!updateProfile
+          )
+        )
+        card(
+          h2>"Company"
+          form(
+            input:text>#companyName
+            input:text>#brokerageLicense
+            input:text>#mainOffice
+            btn:primary>"Save Company Settings">!saveCompanySettings
+          )
+        )
+        card(
+          h2>"Team"
+          table>users>*u(
+            text>#u.name
+            text:"muted">#u.email
+            badge:#u.role
+            row(btn:ghost>"Edit">!editUser(#u.id),btn:danger>"Remove">!removeUser(#u.id))
+          )
+          btn:primary>"Invite Team Member">!inviteUser
+        )
+        card(
+          h2>"Integrations"
+          p:"muted">"Connect with Yardi, MRI, or CoStar"
+          btn:ghost>"Configure Yardi">!configureYardi
+          btn:ghost>"Configure MRI">!configureMRI
+          btn:ghost>"Configure CoStar">!configureCoStar
+        )
+      )
+    )
+  )
+)
+
+@deploy(
+  provider:docker
+  port:3001
+  healthCheck:/api/health
+)

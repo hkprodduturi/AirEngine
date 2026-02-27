@@ -1,0 +1,579 @@
+@app:insurance-cat-ops
+
+@style(theme:dark,accent:#ef4444,radius:8,font:sans,density:comfortable,maxWidth:1440,variant:enterprise-clean)
+
+@state{
+  user:?{id:int,name:str,email:str,role:str,avatar:?str},
+  catastrophes:[{id:int,event_name:str,event_type:str,fema_declaration:?str,affected_states:str,event_date:str,estimated_insured_loss:float,total_claims:int,open_claims:int,closed_claims:int,status:str,severity:str}],
+  claims:[{id:int,claim_number:str,policy_number:str,insured_name:str,loss_date:str,reported_date:str,loss_type:str,loss_description:str,property_address:str,city:str,state:str,zip:str,reserve_amount:float,paid_amount:float,deductible:float,status:str,adjuster:?str,priority:str,catastrophe_id:?int,sla_days_remaining:int}],
+  policies:[{id:int,policy_number:str,insured_name:str,effective_date:str,expiration_date:str,premium:float,coverage_a:float,coverage_b:float,coverage_c:float,deductible:float,policy_type:str,status:str,agent:str,underwriter:str}],
+  adjusters:[{id:int,name:str,license_number:str,territory:str,active_claims:int,avg_cycle_time:float,satisfaction_score:float,status:str,specialization:str}],
+  inspections:[{id:int,claim_id:int,claim_number:str,inspector_name:str,scheduled_date:str,completed_date:?str,property_address:str,damage_type:str,estimated_damage:float,photos_count:int,status:str,report_url:?str}],
+  payments:[{id:int,claim_id:int,claim_number:str,payee:str,amount:float,payment_type:str,check_number:?str,issued_date:str,status:str,description:str}],
+  activities:[{id:int,type:str,description:str,user_name:str,timestamp:str,claim_number:?str}],
+  stats:{totalOpenClaims:int,totalReserves:float,totalPaidThisMonth:float,avgCycleTimeDays:float,activeCatastrophes:int,slaComplianceRate:float,adjusterUtilization:float,customerSatisfaction:float},
+  claimsByState:[{state:str,count:int,reserves:float,paid:float}],
+  lossTrend:[{month:str,reported:int,closed:int,incurred:float}],
+  claimStatusFilter:enum(all,fnol,under_investigation,reserved,approved,denied,closed,reopened,litigation),
+  lossTypeFilter:enum(all,wind,hail,flood,fire,water,theft,liability,auto,other),
+  priorityFilter:enum(all,emergency,high,medium,low),
+  catFilter:enum(all,active,monitoring,closed),
+  territoryFilter:enum(all,northeast,southeast,midwest,southwest,west,pacific),
+  search:str,
+  selectedClaim:?int,
+  showNewClaimModal:bool,
+  showAssignModal:bool,
+  dateRange:str
+}
+
+@db{
+  User{id:int:primary:auto,email:str:required,name:str:required,phone:?str,title:?str,department:?str,avatar:?str,role:enum(claims_director,claims_examiner,field_adjuster,cat_manager,underwriter):required,territory:?str,license_number:?str,password:str:required,created_at:datetime:auto}
+  Catastrophe{id:int:primary:auto,event_name:str:required,event_type:enum(hurricane,tornado,wildfire,flood,hailstorm,winter_storm,earthquake,other):required,fema_declaration:?str,affected_states:str:required,affected_counties:?str,event_date:date:required,end_date:?date,estimated_insured_loss:float:default(0),status:enum(active,monitoring,closed):default(active),severity:enum(pcs_1,pcs_2,pcs_3,pcs_4,pcs_5):default(pcs_3),response_team:?str,command_center_location:?str,notes:?str,created_at:datetime:auto}
+  Policy{id:int:primary:auto,policy_number:str:required,insured_name:str:required,insured_email:?str,insured_phone:?str,property_address:str:required,city:str:required,state:str:required,zip:str:required,policy_type:enum(homeowners,commercial_property,auto,umbrella,flood,wind):required,effective_date:date:required,expiration_date:date:required,premium:float:required,coverage_a_dwelling:float:default(0),coverage_b_other_structures:float:default(0),coverage_c_personal_property:float:default(0),coverage_d_loss_of_use:float:default(0),deductible:float:required,wind_deductible:?float,flood_deductible:?float,status:enum(active,cancelled,expired,non_renewed):default(active),agent_name:str:required,underwriter:?str,territory:str:required,notes:?str,created_at:datetime:auto}
+  Claim{id:int:primary:auto,claim_number:str:required,policy_id:int:required,catastrophe_id:?int,insured_name:str:required,loss_date:date:required,reported_date:date:required,loss_type:enum(wind,hail,flood,fire,water,theft,liability,auto,other):required,loss_description:str:required,property_address:str:required,city:str:required,state:str:required,zip:str:required,damage_description:?str,reserve_amount:float:default(0),paid_amount:float:default(0),deductible_applied:float:default(0),subrogation_amount:float:default(0),status:enum(fnol,under_investigation,reserved,approved,partial_payment,denied,closed,reopened,litigation):default(fnol),priority:enum(emergency,high,medium,low):default(medium),assigned_adjuster:?int,assigned_examiner:?int,sla_target_date:?date,coverage_decision:?str,denial_reason:?str,litigation_status:?str,settlement_date:?date,notes:?str,created_at:datetime:auto}
+  ClaimDocument{id:int:primary:auto,claim_id:int:required,document_type:enum(photo,estimate,police_report,proof_of_loss,medical_record,invoice,correspondence,adjuster_report,other):required,file_name:str:required,file_url:?str,description:?str,uploaded_by:int:required,created_at:datetime:auto}
+  Inspection{id:int:primary:auto,claim_id:int:required,inspector_id:?int,inspection_type:enum(initial,reinspection,desk_review,drone,scope_review):required,scheduled_date:date:required,completed_date:?date,property_address:str:required,damage_areas:?str,damage_severity:enum(minor,moderate,severe,total_loss):default(moderate),estimated_damage:float:default(0),photos_taken:int:default(0),report_notes:?str,report_url:?str,status:enum(scheduled,in_progress,completed,cancelled):default(scheduled),created_at:datetime:auto}
+  Payment{id:int:primary:auto,claim_id:int:required,payee_name:str:required,payee_type:enum(insured,contractor,medical_provider,attorney,mortgage_company,other):required,amount:float:required,payment_type:enum(partial,final,supplemental,subrogation_recovery):required,check_number:?str,eft_reference:?str,issued_date:date:required,cleared_date:?date,description:str:required,status:enum(pending,issued,cleared,void,stop_payment):default(pending),approved_by:?int,created_at:datetime:auto}
+  Reserve{id:int:primary:auto,claim_id:int:required,reserve_type:enum(loss,expense,subrogation):required,amount:float:required,previous_amount:float:default(0),reason:str:required,set_by:int:required,created_at:datetime:auto}
+  Activity{id:int:primary:auto,type:enum(claim_reported,claim_assigned,inspection_scheduled,inspection_completed,reserve_set,payment_issued,status_change,document_uploaded,note_added,sla_warning):required,description:str:required,user_id:int:required,claim_id:?int,catastrophe_id:?int,created_at:datetime:auto}
+  @relation(Claim.policy<>Policy.claims)
+  @relation(Claim.catastrophe<>Catastrophe.claims)
+  @relation(Claim.adjuster<>User.adjustedClaims)
+  @relation(Claim.examiner<>User.examinedClaims)
+  @relation(ClaimDocument.claim<>Claim.documents:cascade)
+  @relation(ClaimDocument.uploadedBy<>User.uploadedDocuments)
+  @relation(Inspection.claim<>Claim.inspections:cascade)
+  @relation(Inspection.inspector<>User.inspections)
+  @relation(Payment.claim<>Claim.payments:cascade)
+  @relation(Payment.approvedBy<>User.approvedPayments)
+  @relation(Reserve.claim<>Claim.reserves:cascade)
+  @relation(Reserve.setBy<>User.setReserves)
+  @relation(Activity.user<>User.activities)
+  @relation(Activity.claim<>Claim.activities)
+  @relation(Activity.catastrophe<>Catastrophe.activities)
+  @index(User.email:unique)
+  @index(Policy.policy_number:unique)
+  @index(Claim.claim_number:unique)
+  @index(Claim.status+Claim.priority)
+  @index(Claim.catastrophe_id+Claim.status)
+  @index(Claim.loss_date+Claim.state)
+  @index(Inspection.status+Inspection.scheduled_date)
+  @index(Payment.status+Payment.issued_date)
+  @index(Activity.created_at)
+}
+
+@env(
+  DATABASE_URL:str:required
+  JWT_SECRET:str:required
+  GEOCODING_API_KEY:str:required
+  WEATHER_API_KEY:str:required
+  SMTP_HOST:str:"smtp.sendgrid.net"
+  SMTP_PORT:int:587
+  PORT:int:3001
+)
+
+@auth(required,role:enum(claims_director,claims_examiner,field_adjuster,cat_manager,underwriter),redirect:/login)
+
+@api(
+  POST:/auth/login(email:str,password:str)>auth.login
+  POST:/auth/register(email:str,name:str,password:str,role:str)>auth.register
+  GET:/users>~db.User.findMany
+  PUT:/users/:id(name:?str,phone:?str,title:?str,territory:?str)>~db.User.update
+  GET:/catastrophes>~db.Catastrophe.findMany
+  POST:/catastrophes(event_name:str,event_type:str,affected_states:str,event_date:str,severity:str)>~db.Catastrophe.create
+  PUT:/catastrophes/:id(status:?str,estimated_insured_loss:?float,notes:?str)>~db.Catastrophe.update
+  GET:/catastrophes/:id>~db.Catastrophe.findFirst
+  GET:/policies>~db.Policy.findMany
+  POST:/policies(policy_number:str,insured_name:str,property_address:str,city:str,state:str,zip:str,policy_type:str,effective_date:str,expiration_date:str,premium:float,deductible:float,agent_name:str,territory:str)>~db.Policy.create
+  PUT:/policies/:id(status:?str,premium:?float,coverage_a_dwelling:?float)>~db.Policy.update
+  GET:/policies/:id>~db.Policy.findFirst
+  GET:/claims>~db.Claim.findMany
+  POST:/claims(claim_number:str,policy_id:int,catastrophe_id:?int,insured_name:str,loss_date:str,reported_date:str,loss_type:str,loss_description:str,property_address:str,city:str,state:str,zip:str)>~db.Claim.create
+  PUT:/claims/:id(status:?str,reserve_amount:?float,paid_amount:?float,assigned_adjuster:?int,assigned_examiner:?int,priority:?str,coverage_decision:?str,denial_reason:?str,notes:?str)>~db.Claim.update
+  DELETE:/claims/:id>~db.Claim.delete
+  GET:/claims/:id>~db.Claim.findFirst
+  GET:/claims/:id/documents>~db.ClaimDocument.findMany
+  POST:/claims/:id/documents(document_type:str,file_name:str,description:?str)>~db.ClaimDocument.create
+  GET:/inspections>~db.Inspection.findMany
+  POST:/inspections(claim_id:int,inspection_type:str,scheduled_date:str,property_address:str)>~db.Inspection.create
+  PUT:/inspections/:id(status:?str,completed_date:?str,estimated_damage:?float,photos_taken:?int,report_notes:?str,damage_severity:?str)>~db.Inspection.update
+  GET:/payments>~db.Payment.findMany
+  POST:/payments(claim_id:int,payee_name:str,payee_type:str,amount:float,payment_type:str,description:str,issued_date:str)>~db.Payment.create
+  PUT:/payments/:id(status:?str,check_number:?str,cleared_date:?str)>~db.Payment.update
+  GET:/reserves>~db.Reserve.findMany
+  POST:/reserves(claim_id:int,reserve_type:str,amount:float,reason:str)>~db.Reserve.create
+  GET:/activities>~db.Activity.findMany
+  POST:/activities(type:str,description:str,claim_id:?int,catastrophe_id:?int)>~db.Activity.create
+  GET:/stats>~db.Claim.aggregate
+)
+
+@webhook(
+  POST:/weather/alert>!processWeatherAlert
+  POST:/fema/declaration>!processFemaDeclaration
+)
+
+@cron(
+  slaCheck>"0 */4 * * *">!claims.checkSLACompliance
+  weatherMonitor>"0 */6 * * *">!weather.checkAlerts
+  reserveReview>"0 9 * * 1">!claims.weeklyReserveReview
+)
+
+@queue(
+  assignAdjuster(claim_id:int)>!claims.autoAssign
+  generateEstimate(inspection_id:int)>!inspections.generateEstimate
+  processPayment(payment_id:int)>!payments.processCheck
+  sendClaimUpdate(claim_id:int)>!notifications.sendClaimStatus
+)
+
+@email(
+  claimAcknowledge(insured:str,claim_number:str)>"Claim Received"
+  inspectionScheduled(insured:str,date:str)>"Inspection Scheduled"
+  paymentIssued(insured:str,amount:float)>"Payment Issued"
+  slaWarning(adjuster:str,claim_number:str,days:int)>"SLA Compliance Warning"
+  catActivation(team:str,event:str)>"Catastrophe Response Activation"
+)
+
+@nav(
+  />?user>dashboard:login
+  /catastrophes>?user>catastrophes:login
+  /claims>?user>claims:login
+  /inspections>?user>inspections:login
+  /payments>?user>payments:login
+  /policies>?user>policies:login
+  /adjusters>?user>adjusters:login
+  /reports>?user>reports:login
+  /settings>?user>settings:login
+  /login>login
+)
+
+@persist:cookie(user,httpOnly,7d)
+
+@hook(
+  onMount>~api.stats+~api.activities+~api.catastrophes
+  onChange:claimStatusFilter>~api.claims
+  onChange:lossTypeFilter>~api.claims
+  onChange:priorityFilter>~api.claims
+  onChange:catFilter>~api.catastrophes
+  onChange:territoryFilter>~api.claims
+  onChange:search>~api.claims
+)
+
+@ui(
+  @page:login(
+    main>grid:1(
+      card(
+        h1>"Insurance Claims Ops"
+        p:"muted">"Catastrophe Operations Command Center"
+        form(
+          input:email>#user.email
+          input:password>#user.password
+          btn:primary>"Sign In">!login
+          p:"muted">"Emergency access? "+btn:ghost>"Request Credentials">!register
+        )
+      )
+    )
+  )
+
+  @page:dashboard(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Operations Dashboard"+text:"muted">#dateRange+btn:ghost>"Export">!exportDashboard
+      grid:4(
+        stat:"Open Claims">#stats.totalOpenClaims
+        stat:"Total Reserves">#stats.totalReserves
+        stat:"Paid MTD">#stats.totalPaidThisMonth
+        stat:"Avg Cycle Time">#stats.avgCycleTimeDays
+      )
+      grid:4(
+        stat:"Active CATs">#stats.activeCatastrophes
+        stat:"SLA Compliance">#stats.slaComplianceRate
+        stat:"Adjuster Util.">#stats.adjusterUtilization
+        stat:"CSAT Score">#stats.customerSatisfaction
+      )
+      grid:2(
+        @section:claimsByState(
+          card(
+            h2>"Claims by State"
+            table>claimsByState>*s(
+              text>#s.state
+              text>#s.count
+              text:amount:$>#s.reserves
+              text:amount:$>#s.paid
+            )
+          )
+        )
+        @section:lossTrend(
+          card(
+            h2>"Loss Trend"
+            table>lossTrend>*month(
+              text>#month.month
+              text>#month.reported
+              text>#month.closed
+              text:amount:$>#month.incurred
+            )
+          )
+        )
+      )
+      @section:activeCatastrophes(
+        card(
+          h2>"Active Catastrophe Events"
+          list>catastrophes>*cat(
+            row(
+              badge:#cat.severity
+              h3>#cat.event_name
+              badge:#cat.event_type
+              text:"muted">#cat.affected_states
+              text:"muted">#cat.event_date
+              text:amount:$>#cat.estimated_insured_loss
+              text>#cat.total_claims+" claims ("+#cat.open_claims+" open)"
+              badge:#cat.status
+            )
+          )
+        )
+      )
+      @section:recentActivity(
+        card(
+          h2>"Activity Feed"
+          list>activities>*activity(
+            row(
+              badge:#activity.type
+              text>#activity.description
+              text:"muted">#activity.user_name
+              text:"muted">#activity.timestamp
+            )
+          )
+        )
+      )
+    )
+  )
+
+  @page:catastrophes(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Catastrophe Events"+tabs>catFilter.set(all,active,monitoring,closed)+btn:primary>"Declare CAT">!declareCatastrophe
+      grid:2>catastrophes|catFilter>*cat(
+        card(
+          row(badge:#cat.severity,h2>#cat.event_name,badge:#cat.status)
+          badge:#cat.event_type
+          text:"muted">"FEMA: "+#cat.fema_declaration
+          text>"Affected: "+#cat.affected_states
+          text:"muted">"Date: "+#cat.event_date
+          row(text:amount:$>#cat.estimated_insured_loss,text>"Claims: "+#cat.total_claims)
+          row(text>"Open: "+#cat.open_claims,text>"Closed: "+#cat.closed_claims)
+          row(btn:primary>"Command Center">!openCommandCenter(#cat.id),btn:ghost>"Claims">!viewCatClaims(#cat.id),btn:ghost>"Deploy Team">!deployTeam(#cat.id),btn:ghost>"Update">!updateCatastrophe(#cat.id))
+        )
+      )
+    )
+  )
+
+  @page:claims(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Claims Management"+search:input>#search+tabs>claimStatusFilter.set(all,fnol,under_investigation,reserved,approved,denied,closed,reopened,litigation)+btn:primary>"New FNOL">!createFNOL
+      row(tabs>lossTypeFilter.set(all,wind,hail,flood,fire,water,theft,liability,auto,other),tabs>priorityFilter.set(all,emergency,high,medium,low))
+      table>claims|claimStatusFilter|lossTypeFilter|priorityFilter|search>*claim(
+        text>#claim.claim_number
+        text>#claim.policy_number
+        text>#claim.insured_name
+        text:"muted">#claim.loss_date
+        badge:#claim.loss_type
+        text>#claim.property_address
+        text>"muted">#claim.city+", "+#claim.state
+        text:amount:$>#claim.reserve_amount
+        text:amount:$>#claim.paid_amount
+        badge:#claim.status
+        badge:#claim.priority
+        text:"muted">#claim.adjuster
+        text>#claim.sla_days_remaining
+        row(btn:ghost>"View">!viewClaim(#claim.id),btn:ghost>"Assign">!assignClaim(#claim.id),btn:ghost>"Inspect">!scheduleInspection(#claim.id),btn:ghost>"Pay">!issuPayment(#claim.id))
+      )
+    )
+  )
+
+  @page:inspections(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Inspections & Field Work"+search:input>#search+btn:primary>"Schedule Inspection">!scheduleNewInspection
+      table>inspections|search>*insp(
+        text>#insp.claim_number
+        text>#insp.inspector_name
+        text>"muted">#insp.property_address
+        badge:#insp.damage_type
+        text:amount:$>#insp.estimated_damage
+        text>"muted">#insp.scheduled_date
+        text:"muted">#insp.completed_date
+        text>#insp.photos_count
+        badge:#insp.status
+        row(btn:ghost>"View Report">!viewReport(#insp.id),btn:ghost>"Reassign">!reassignInspection(#insp.id),btn:ghost>"Complete">!completeInspection(#insp.id))
+      )
+    )
+  )
+
+  @page:payments(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Payment Processing"+btn:primary>"Issue Payment">!issueNewPayment+btn:ghost>"Batch Process">!batchProcess+btn:ghost>"Export">!exportPayments
+      table>payments>*pmt(
+        text>#pmt.claim_number
+        text>#pmt.payee
+        text:amount:$>#pmt.amount
+        badge:#pmt.payment_type
+        text>#pmt.check_number
+        text:"muted">#pmt.issued_date
+        badge:#pmt.status
+        text>#pmt.description
+        row(btn:ghost>"View">!viewPayment(#pmt.id),btn:ghost>"Void">!voidPayment(#pmt.id),btn:ghost>"Reissue">!reissuePayment(#pmt.id))
+      )
+    )
+  )
+
+  @page:policies(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Policy Lookup"+search:input>#search+btn:ghost>"Import Policies">!importPolicies
+      table>policies|search>*policy(
+        text>#policy.policy_number
+        text>#policy.insured_name
+        text>#policy.policy_type
+        text:"muted">#policy.effective_date+" to "+#policy.expiration_date
+        text:amount:$>#policy.premium
+        text:amount:$>#policy.coverage_a
+        text:amount:$>#policy.deductible
+        badge:#policy.status
+        text:"muted">#policy.agent
+        text:"muted">#policy.underwriter
+        row(btn:ghost>"View">!viewPolicy(#policy.id),btn:ghost>"Claims">!viewPolicyClaims(#policy.id),btn:ghost>"Renew">!renewPolicy(#policy.id))
+      )
+    )
+  )
+
+  @page:adjusters(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Adjuster Management"+tabs>territoryFilter.set(all,northeast,southeast,midwest,southwest,west,pacific)+btn:primary>"Onboard Adjuster">!onboardAdjuster
+      table>adjusters|territoryFilter>*adj(
+        text>#adj.name
+        text:"muted">#adj.license_number
+        text>#adj.territory
+        badge:#adj.specialization
+        text>#adj.active_claims
+        text>#adj.avg_cycle_time
+        badge>#adj.satisfaction_score
+        badge:#adj.status
+        row(btn:ghost>"Assign Claims">!assignToAdjuster(#adj.id),btn:ghost>"Performance">!viewPerformance(#adj.id),btn:ghost>"Deactivate">!deactivateAdjuster(#adj.id))
+      )
+    )
+  )
+
+  @page:reports(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Reports & Analytics"
+      grid:2(
+        card(
+          h2>"Loss Run Report"
+          p:"muted">"Incurred losses by line, territory, and time period"
+          btn:primary>"Generate">!generateLossRun
+        )
+        card(
+          h2>"Catastrophe Impact Analysis"
+          p:"muted">"Per-event exposure, claims volume, and reserve adequacy"
+          btn:primary>"Generate">!generateCatReport
+        )
+        card(
+          h2>"Adjuster Productivity"
+          p:"muted">"Cycle times, caseload, and quality metrics per adjuster"
+          btn:primary>"Generate">!generateAdjusterReport
+        )
+        card(
+          h2>"SLA Compliance"
+          p:"muted">"Contact, inspection, and payment SLA adherence"
+          btn:primary>"Generate">!generateSLAReport
+        )
+        card(
+          h2>"Reserve Development"
+          p:"muted">"Reserve adequacy triangle and development factors"
+          btn:primary>"Generate">!generateReserveReport
+        )
+        card(
+          h2>"Subrogation Recovery"
+          p:"muted">"Recovery potential, referrals, and collection rates"
+          btn:primary>"Generate">!generateSubrogationReport
+        )
+      )
+    )
+  )
+
+  @page:settings(
+    sidebar(
+      h2>"CAT Ops"
+      logo
+      link>"/dashboard">"Dashboard"
+      link>"/catastrophes">"Catastrophes"
+      link>"/claims">"Claims"
+      link>"/inspections">"Inspections"
+      link>"/payments">"Payments"
+      link>"/policies">"Policies"
+      link>"/adjusters">"Adjusters"
+      link>"/reports">"Reports"
+      link>"/settings">"Settings"
+      text:"muted">#user.name
+      btn:ghost>"Sign Out">!logout
+    )+main(
+      header>h1>"Settings"
+      grid:2(
+        card(
+          h2>"Profile"
+          form(
+            input:text>#user.name
+            input:email>#user.email
+            input:text>#user.phone
+            input:text>#user.title
+            input:text>#user.territory
+            btn:primary>"Update Profile">!updateProfile
+          )
+        )
+        card(
+          h2>"Organization"
+          form(
+            input:text>#companyName
+            input:text>#naic
+            input:text>#amBestRating
+            input:text>#claimsEmail
+            btn:primary>"Save Settings">!saveOrgSettings
+          )
+        )
+        card(
+          h2>"Team Management"
+          table>users>*u(
+            text>#u.name
+            text:"muted">#u.email
+            badge:#u.role
+            text:"muted">#u.territory
+            row(btn:ghost>"Edit">!editUser(#u.id),btn:danger>"Deactivate">!deactivateUser(#u.id))
+          )
+          btn:primary>"Add Team Member">!addTeamMember
+        )
+        card(
+          h2>"SLA Configuration"
+          form(
+            input:number>#slaContactHours
+            input:number>#slaInspectionDays
+            input:number>#slaPaymentDays
+            input:number>#slaClosureDays
+            btn:primary>"Save SLA Targets">!saveSLAConfig
+          )
+        )
+      )
+    )
+  )
+)
+
+@deploy(
+  provider:docker
+  port:3001
+  healthCheck:/api/health
+)
