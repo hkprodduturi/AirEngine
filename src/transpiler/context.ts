@@ -37,6 +37,8 @@ export interface TranspileContext {
   expandedRoutes: AirRoute[];
   /** Page names that are public (no auth guard) — derived from unconditional @nav routes */
   publicPageNames: string[];
+  /** True when app has Product+Category models and shop/cart pages — triggers Amazon-style layout */
+  isEcommerce: boolean;
 }
 
 export function extractContext(ast: AirAST): TranspileContext {
@@ -62,6 +64,7 @@ export function extractContext(ast: AirAST): TranspileContext {
     hasBackend: false,
     expandedRoutes: [],
     publicPageNames: [],
+    isEcommerce: false,
   };
 
   for (const block of ast.app.blocks) {
@@ -130,6 +133,19 @@ export function extractContext(ast: AirAST): TranspileContext {
   ctx.publicPageNames = ctx.navRoutes
     .filter(r => r.path && !r.condition && !isAuthPageName(r.target))
     .map(r => r.target);
+
+  // Detect ecommerce pattern: Product+Category models AND shop/cart pages
+  if (ctx.db) {
+    const modelNames = new Set(ctx.db.models.map(m => m.name.toLowerCase()));
+    const hasProductModel = modelNames.has('product');
+    const hasCategoryModel = modelNames.has('category');
+    const pageNames = ctx.uiNodes
+      .filter(n => n.kind === 'scoped' && n.scope === 'page')
+      .map(n => (n as { name?: string }).name?.toLowerCase() ?? '');
+    const hasShopPage = pageNames.includes('shop');
+    const hasCartPage = pageNames.includes('cart');
+    ctx.isEcommerce = hasProductModel && hasCategoryModel && hasShopPage && hasCartPage;
+  }
 
   return ctx;
 }

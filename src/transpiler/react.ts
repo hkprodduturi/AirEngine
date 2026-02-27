@@ -1,1 +1,1 @@
-export { generateApp, generateLayout, generatePublicLayout, generatePageComponents } from './react/index.js';
+export { generateApp, generateLayout, generatePublicLayout, generateEcommerceLayout, generatePageComponents } from './react/index.js';

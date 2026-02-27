@@ -525,7 +525,7 @@ describe('client/src/api.js generation', () => {
     const result = transpileFile('fullstack-todo');
     const apiJs = result.files.find(f => f.path === 'client/src/api.js')!;
     expect(apiJs.content).toContain('import.meta.env.VITE_API_BASE_URL');
-    expect(apiJs.content).toContain("'http://localhost:3001/api'");
+    expect(apiJs.content).toContain("'/api'");
   });
 
   it('generates getTodos function for GET /todos', () => {

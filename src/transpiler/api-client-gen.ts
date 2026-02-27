@@ -15,7 +15,7 @@ export function generateApiClient(ctx: TranspileContext): string {
   const lines: string[] = [];
   const hasAuth = routes.some(r => r.path.includes('/auth/'));
 
-  lines.push("const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001/api';");
+  lines.push("const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';");
   lines.push('');
 
   // Custom error class for API errors

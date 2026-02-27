@@ -338,6 +338,15 @@ const PERSON_MODELS = new Set([
   'crewmember', 'player',
 ]);
 
+const PRODUCT_NAMES = ['Wireless Headphones', 'Leather Backpack', 'Smart Watch', 'Running Shoes', 'Coffee Maker'];
+const PRODUCT_MODELS = new Set(['product', 'item', 'listing', 'good', 'merchandise', 'sku']);
+
+const CATEGORY_NAMES = ['Electronics', 'Clothing', 'Home & Kitchen', 'Sports', 'Books'];
+const CATEGORY_MODELS = new Set(['category', 'department', 'genre', 'section', 'tag', 'topic']);
+
+const PROJECT_NAMES = ['Website Redesign', 'Mobile App Launch', 'API Migration', 'Dashboard v2', 'Security Audit'];
+const PROJECT_MODELS = new Set(['project', 'campaign', 'initiative', 'program', 'sprint']);
+
 function isPersonModel(modelName: string): boolean {
   return PERSON_MODELS.has(modelName.toLowerCase());
 }
@@ -349,12 +358,19 @@ function generateStringValue(fieldName: string, modelName: string, n: number): s
   const modelPrefix = modelName.toLowerCase();
   // Email: prefix with model name to avoid cross-model unique conflicts
   if (lower === 'email') return `'${modelPrefix}${n}@example.com'`;
-  // Name: use person names for person models, model-based names otherwise
+  // Name: use domain-specific names for known model types
   if (lower === 'name') {
     if (isPersonModel(modelName)) return `'${PERSON_NAMES[idx]}'`;
+    if (PRODUCT_MODELS.has(modelPrefix)) return `'${PRODUCT_NAMES[idx]}'`;
+    if (CATEGORY_MODELS.has(modelPrefix)) return `'${CATEGORY_NAMES[idx]}'`;
+    if (PROJECT_MODELS.has(modelPrefix)) return `'${PROJECT_NAMES[idx]}'`;
     return `'${modelName} ${n}'`;
   }
-  if (lower === 'slug') return `'sample-${modelPrefix}-${n}'`;
+  if (lower === 'slug') {
+    if (PRODUCT_MODELS.has(modelPrefix)) return `'${PRODUCT_NAMES[idx].toLowerCase().replace(/[^a-z0-9]+/g, '-')}'`;
+    if (CATEGORY_MODELS.has(modelPrefix)) return `'${CATEGORY_NAMES[idx].toLowerCase().replace(/[^a-z0-9]+/g, '-')}'`;
+    return `'sample-${modelPrefix}-${n}'`;
+  }
   if (lower === 'password') return `'password${n}'`;
   if (lower === 'title') {
     const titles = [
@@ -370,10 +386,20 @@ function generateStringValue(fieldName: string, modelName: string, n: number): s
     ];
     return subjects[(n - 1) % subjects.length];
   }
-  if (lower === 'description' || lower === 'bio') return `'${modelName} description for record ${n}.'`;
+  if (lower === 'description' || lower === 'bio') {
+    if (PRODUCT_MODELS.has(modelPrefix)) {
+      const descs = ['Premium quality with modern design', 'Best seller — top rated by customers', 'Durable and lightweight, perfect for daily use', 'Professional grade, built to last', 'Great value with excellent reviews'];
+      return `'${descs[idx]}'`;
+    }
+    if (CATEGORY_MODELS.has(modelPrefix)) {
+      const descs = ['Browse our top picks', 'Trending this season', 'Essentials for your home', 'Gear up for your goals', 'Expand your knowledge'];
+      return `'${descs[idx]}'`;
+    }
+    return `'${modelName} description for record ${n}.'`;
+  }
   if (lower === 'url' || lower === 'website') return `'https://example.com/${modelPrefix}/${n}'`;
   if (lower === 'avatar' || lower === 'image') return `'https://api.dicebear.com/7.x/initials/svg?seed=${modelPrefix}${n}'`;
-  if (lower.includes('image') && lower.includes('url')) return `'https://picsum.photos/seed/${modelPrefix}${n}/400/300'`;
+  if (lower.includes('image') && lower.includes('url')) return `'https://picsum.photos/seed/${PRODUCT_MODELS.has(modelPrefix) ? PRODUCT_NAMES[idx].toLowerCase().replace(/\s+/g, '-') : modelPrefix + n}/400/300'`;
   if (lower === 'phone') return `'+155500${n}${String(modelPrefix.charCodeAt(0)).slice(-2)}'`;
   if (lower === 'address') return `'${n}00 Main St, City, ST'`;
   if (lower === 'content' || lower === 'body' || lower === 'text') return `'Sample content for ${modelPrefix} ${n}.'`;
@@ -394,7 +420,10 @@ function generateIntValue(fieldName: string, n: number): string {
 /** Generate smart float values based on field name heuristics */
 function generateFloatValue(fieldName: string, n: number): string {
   const lower = fieldName.toLowerCase();
-  if (lower === 'price' || lower === 'amount' || lower === 'cost') return `${(29.99 * n).toFixed(2)}`;
+  if (lower === 'price' || lower === 'amount' || lower === 'cost') {
+    const prices = [19.99, 49.95, 199.00, 34.50, 89.99];
+    return `${prices[(n - 1) % prices.length].toFixed(2)}`;
+  }
   if (lower === 'rating' || lower === 'score') return `${(3.0 + 0.5 * n).toFixed(1)}`;
   if (lower === 'percentage' || lower === 'percent') return `${(25.0 * n).toFixed(1)}`;
   return `${n * 10.5}`;

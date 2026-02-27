@@ -27,6 +27,43 @@ import {
 // Module-level flag set during generateRootJSX — avoids threading through entire recursive tree
 let _hasAuthGating = false;
 
+// ---- Ecommerce Root JSX (Amazon-style) ----
+
+function generateEcommerceRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy: boolean): string[] {
+  const lines: string[] = [];
+  const suspenseFallback = '<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]"></div></div>';
+  const layoutProps = 'user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage} cart={cart} search={search} setSearch={setSearch} catFilter={catFilter} setCatFilter={setCatFilter} showLoginModal={showLoginModal} setShowLoginModal={setShowLoginModal}';
+
+  lines.push('<Layout ' + layoutProps + '>');
+
+  // Login modal (not a page — renders as overlay)
+  lines.push('  {showLoginModal && (');
+  lines.push('    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowLoginModal(false); }}>');
+  lines.push('      <div className="w-full max-w-md animate-slide-up">');
+  lines.push('        <LoginPage login={login} register={register} authError={authError} onClose={() => setShowLoginModal(false)} />');
+  lines.push('      </div>');
+  lines.push('    </div>');
+  lines.push('  )}');
+
+  // Page routes — shop/cart public, orders/account auth-gated
+  if (useLazy) {
+    lines.push(`  <Suspense fallback={${suspenseFallback}}>`);
+    lines.push('    {currentPage === \'shop\' && <ShopPage addToCart={addToCart} cart={cart} search={search} catFilter={catFilter} setCatFilter={setCatFilter} />}');
+    lines.push('    {currentPage === \'cart\' && <CartPage cart={cart} removeFromCart={removeFromCart} updateCartQty={updateCartQty} clearCart={clearCart} setCurrentPage={setCurrentPage} />}');
+    lines.push('    {currentPage === \'orders\' && isAuthed && <OrdersPage />}');
+    lines.push('    {currentPage === \'account\' && isAuthed && <AccountPage user={user} setCurrentPage={setCurrentPage} logout={logout} />}');
+    lines.push('  </Suspense>');
+  } else {
+    lines.push('  {currentPage === \'shop\' && <ShopPage addToCart={addToCart} cart={cart} search={search} catFilter={catFilter} setCatFilter={setCatFilter} />}');
+    lines.push('  {currentPage === \'cart\' && <CartPage cart={cart} removeFromCart={removeFromCart} updateCartQty={updateCartQty} clearCart={clearCart} setCurrentPage={setCurrentPage} />}');
+    lines.push('  {currentPage === \'orders\' && isAuthed && <OrdersPage />}');
+    lines.push('  {currentPage === \'account\' && isAuthed && <AccountPage user={user} setCurrentPage={setCurrentPage} logout={logout} />}');
+  }
+
+  lines.push('</Layout>');
+  return lines;
+}
+
 // ---- Root JSX ----
 
 export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, useLazy = false, hasAuthGating = false, hasLayout = false): string[] {
@@ -34,6 +71,11 @@ export function generateRootJSX(ctx: TranspileContext, analysis: UIAnalysis, use
   const rootClasses = 'min-h-screen bg-[var(--bg)] text-[var(--fg)]';
 
   const maxWidth = ctx.style.maxWidth;
+
+  // ---- Ecommerce: Amazon-style layout ----
+  if (ctx.isEcommerce && hasAuthGating) {
+    return generateEcommerceRootJSX(ctx, analysis, useLazy);
+  }
 
   // Check for sidebar + main layout
   const hasSidebar = ctx.uiNodes.some(n =>

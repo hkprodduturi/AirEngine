@@ -17,7 +17,7 @@ import { generateRootJSX } from './jsx-gen.js';
 import { detectDetailPageModels } from './page-gen.js';
 
 // Re-exports
-export { generateLayout, generatePublicLayout } from './layout-gen.js';
+export { generateLayout, generatePublicLayout, generateEcommerceLayout } from './layout-gen.js';
 export { generatePageComponents, detectDetailPageModels } from './page-gen.js';
 
 // ---- Main entry ----
@@ -65,8 +65,18 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
       }
     }
   }
-  // Import Layout for non-auth apps that have a generated Layout component
-  if (!hasAuthGating && hasLayout && ctx.hasBackend) {
+  // Ecommerce: import AccountPage (not in analysis.pages, generated separately)
+  if (ctx.isEcommerce && ctx.hasBackend) {
+    if (useLazy) {
+      lines.push("const AccountPage = lazy(() => import('./pages/AccountPage.jsx'));");
+    } else {
+      lines.push("import AccountPage from './pages/AccountPage.jsx';");
+    }
+  }
+  // Import Layout for ecommerce or non-auth apps that have a generated Layout component
+  if (ctx.isEcommerce && ctx.hasBackend) {
+    lines.push("import Layout from './Layout.jsx';");
+  } else if (!hasAuthGating && hasLayout && ctx.hasBackend) {
     lines.push("import Layout from './Layout.jsx';");
   }
   // Import PublicLayout when public pages exist
@@ -89,7 +99,7 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
   if (hasAuthGating) {
     // ---- Slim App: only auth state ----
     const postLoginPage = getPostLoginPage(analysis);
-    const defaultPage = ctx.publicPageNames.length > 0 ? ctx.publicPageNames[0] : 'login';
+    const defaultPage = ctx.isEcommerce ? 'shop' : (ctx.publicPageNames.length > 0 ? ctx.publicPageNames[0] : 'login');
     lines.push('  const [user, setUser] = useState(null);');
     lines.push('  const [authError, setAuthError] = useState(null);');
     lines.push(`  const [currentPage, setCurrentPage] = useState('${defaultPage}');`);
@@ -103,6 +113,14 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
       const singular = detail.modelName.charAt(0).toLowerCase() + detail.modelName.slice(1);
       lines.push(`  const [selected${detail.modelName}Id, setSelected${detail.modelName}Id] = useState(null);`);
     }
+
+    // Ecommerce: cart, search, category filter, login modal at App level
+    if (ctx.isEcommerce) {
+      lines.push('  const [cart, setCart] = useState([]);');
+      lines.push('  const [search, setSearch] = useState(\'\');');
+      lines.push('  const [catFilter, setCatFilter] = useState(\'all\');');
+      lines.push('  const [showLoginModal, setShowLoginModal] = useState(false);');
+    }
     lines.push('');
 
     // Restore BOTH token AND user from localStorage
@@ -114,9 +132,14 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
     lines.push('    if (savedUser) {');
     lines.push('      try {');
     lines.push('        setUser(JSON.parse(savedUser));');
-    lines.push(`        setCurrentPage('${postLoginPage}');`);
+    if (!ctx.isEcommerce) {
+      lines.push(`        setCurrentPage('${postLoginPage}');`);
+    }
     lines.push('      } catch (_) {}');
     lines.push('    }');
+    if (ctx.isEcommerce) {
+      lines.push("    try { const c = localStorage.getItem('ecommerce_cart'); if (c) setCart(JSON.parse(c)); } catch (_) {}");
+    }
     lines.push('  }, []);');
     lines.push('');
 
@@ -151,6 +174,23 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
     // isAuthed gate
     lines.push('  const isAuthed = !!user;');
     lines.push('');
+
+    // Ecommerce: cart helpers
+    if (ctx.isEcommerce) {
+      lines.push("  useEffect(() => { localStorage.setItem('ecommerce_cart', JSON.stringify(cart)); }, [cart]);");
+      lines.push('');
+      lines.push('  const addToCart = (product) => {');
+      lines.push('    setCart(prev => {');
+      lines.push('      const existing = prev.find(i => i.productId === product.id);');
+      lines.push('      if (existing) return prev.map(i => i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i);');
+      lines.push('      return [...prev, { productId: product.id, name: product.name, price: product.price, image_url: product.image_url, quantity: 1 }];');
+      lines.push('    });');
+      lines.push('  };');
+      lines.push('  const removeFromCart = (pid) => setCart(prev => prev.filter(i => i.productId !== pid));');
+      lines.push('  const updateCartQty = (pid, delta) => setCart(prev => prev.map(i => i.productId !== pid ? i : { ...i, quantity: Math.max(1, i.quantity + delta) }));');
+      lines.push('  const clearCart = () => setCart([]);');
+      lines.push('');
+    }
 
     // Skip: data-fetching hooks, component imports (pages handle all that)
 

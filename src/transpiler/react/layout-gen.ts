@@ -71,9 +71,114 @@ function getNavIcon(pageName: string): string {
   return NAV_ICONS[key] || DEFAULT_ICON;
 }
 
+// ---- Ecommerce Layout (Amazon-style top header) ----
+
+export function generateEcommerceLayout(ctx: TranspileContext, _analysis: UIAnalysis): string | null {
+  if (!ctx.isEcommerce) return null;
+  const appTitle = capitalize(ctx.appName).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  // Extract category names from @db Category model's enum or use API-fetched categories
+  const categoryModel = ctx.db?.models.find(m => m.name.toLowerCase() === 'category');
+  const hasCategorySlug = categoryModel?.fields.some(f => f.name === 'slug');
+
+  return `import { useState, useEffect } from 'react';
+import * as api from './api.js';
+
+export default function Layout({ children, user, logout, currentPage, setCurrentPage, cart = [], search, setSearch, catFilter, setCatFilter, showLoginModal, setShowLoginModal }) {
+  const [categories, setCategories] = useState([]);
+  const cartCount = (cart || []).reduce((s, i) => s + (i.quantity || 1), 0);
+
+  useEffect(() => {
+    api.getCategories({ limit: 50 }).then(res => setCategories(res.data ?? [])).catch(() => {});
+  }, []);
+
+  const isAuthed = !!user;
+  const requireAuth = (page) => isAuthed ? setCurrentPage(page) : setShowLoginModal(true);
+
+  const goCategory = (slug) => {
+    setCatFilter(slug);
+    setCurrentPage('shop');
+  };
+
+  return (
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)]">
+      {/* ── Header ── */}
+      <header className="sticky top-0 z-50 bg-[#0f1b2d] border-b border-[var(--border)]">
+        <div className="max-w-[1400px] mx-auto px-4 h-[60px] flex items-center gap-4">
+          {/* Logo */}
+          <button onClick={() => { setCurrentPage('shop'); setCatFilter('all'); setSearch(''); }} className="flex items-center gap-2 p-0 hover:opacity-100 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-[var(--accent)] flex items-center justify-center text-white font-bold text-sm">${appTitle.charAt(0)}</div>
+            <span className="text-lg font-bold tracking-tight hidden sm:inline">${appTitle}</span>
+          </button>
+
+          {/* Search */}
+          <div className="flex-1 max-w-3xl mx-auto">
+            <div className="flex items-stretch h-[42px]">
+              <input
+                type="search"
+                value={search || ''}
+                onChange={(e) => { setSearch(e.target.value); setCurrentPage('shop'); }}
+                placeholder="Search products..."
+                style={{ padding: '0 16px', height: '42px', margin: 0, border: 'none', borderRadius: '8px 0 0 8px', fontSize: '14px' }}
+                className="w-full bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              />
+              <button onClick={() => setCurrentPage('shop')}
+                style={{ height: '42px', width: '46px', padding: 0, margin: 0, borderRadius: '0 8px 8px 0' }}
+                className="bg-[var(--accent)] hover:brightness-110 flex items-center justify-center shrink-0 transition-all">
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Right actions */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button onClick={() => requireAuth('account')} style={{ padding: '6px 12px' }}
+              className="hidden sm:inline-flex items-center gap-2 rounded-lg hover:bg-white/5 transition-colors">
+              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+              <span className="text-sm font-medium">{isAuthed ? (user.name || '').split(' ')[0] : 'Sign in'}</span>
+            </button>
+            <button onClick={() => requireAuth('orders')} style={{ padding: '6px 12px' }}
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg hover:bg-white/5 transition-colors">
+              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+              <span className="text-sm font-medium">Orders</span>
+            </button>
+            <button onClick={() => setCurrentPage('cart')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-white/5 transition-colors relative">
+              <div className="relative">
+                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121 0 2.09-.773 2.34-1.87l1.69-7.462a1.125 1.125 0 00-1.093-1.418H5.256M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>
+                {cartCount > 0 && <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-[var(--accent)] text-white text-[11px] font-bold flex items-center justify-center">{cartCount}</span>}
+              </div>
+              <span className="text-sm font-bold hidden sm:inline">Cart</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Category sub-nav */}
+        <div className="bg-[#1a2744] border-t border-white/5">
+          <div className="max-w-[1400px] mx-auto px-4 flex items-center gap-1 h-10 overflow-x-auto text-sm">
+            <button onClick={() => goCategory('all')} className={\`px-3 py-1 rounded whitespace-nowrap transition-colors \${currentPage === 'shop' && catFilter === 'all' ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}\`}>All</button>
+            {categories.map(cat => (
+              <button key={cat.id} onClick={() => goCategory(cat.${hasCategorySlug ? 'slug' : 'name'})} className={\`px-3 py-1 rounded whitespace-nowrap transition-colors \${catFilter === cat.${hasCategorySlug ? 'slug' : 'name'} ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}\`}>{cat.name}</button>
+            ))}
+            {isAuthed && <button onClick={logout} className="ml-auto px-3 py-1 rounded whitespace-nowrap text-gray-400 hover:text-white transition-colors">Sign Out</button>}
+          </div>
+        </div>
+      </header>
+
+      {/* Page content */}
+      <main className="animate-fade-in">
+        {children}
+      </main>
+    </div>
+  );
+}
+`;
+}
+
 // ---- Layout Component ----
 
 export function generateLayout(ctx: TranspileContext, analysis: UIAnalysis): string | null {
+  // Ecommerce apps use a separate dedicated layout
+  if (ctx.isEcommerce) return null;
+
   const hasSidebar = ctx.uiNodes.some(n =>
     n.kind === 'element' && n.element === 'sidebar'
   );

@@ -12,7 +12,7 @@ import type { OutputFile } from './index.js';
 export function generateScaffold(ctx: TranspileContext): OutputFile[] {
   return [
     { path: 'package.json', content: generatePackageJson(ctx.appName) },
-    { path: 'vite.config.js', content: generateViteConfig() },
+    { path: 'vite.config.js', content: generateViteConfig(ctx) },
     { path: 'tailwind.config.cjs', content: generateTailwindConfig() },
     { path: 'postcss.config.cjs', content: generatePostcssConfig() },
     { path: 'index.html', content: generateIndexHtml(ctx.appName) },
@@ -46,12 +46,19 @@ function generatePackageJson(appName: string): string {
   }, null, 2) + '\n';
 }
 
-function generateViteConfig(): string {
+function generateViteConfig(ctx: TranspileContext): string {
+  const proxyBlock = ctx.hasBackend ? `
+  server: {
+    proxy: {
+      '/api': 'http://localhost:3001',
+    },
+  },` : '';
+
   return `import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react()],${proxyBlock}
 });
 `;
 }
@@ -312,23 +319,23 @@ body::before {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-/* ---- Typography ---- */
-h1 { font-size: 2.25rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1.15; color: var(--fg); }
-h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; color: var(--fg); }
-h3 { font-size: 1.125rem; font-weight: 600; line-height: 1.4; color: var(--fg); }
-p { line-height: 1.65; }
+/* ---- Typography — :where() wrappers = specificity 0, Tailwind always wins ---- */
+:where(h1) { font-size: 2.25rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1.15; color: var(--fg); }
+:where(h2) { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; color: var(--fg); }
+:where(h3) { font-size: 1.125rem; font-weight: 600; line-height: 1.4; color: var(--fg); }
+:where(p) { line-height: 1.65; }
 
 /* ---- Tables ---- */
-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-th {
+:where(table) { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+:where(th) {
   text-align: left; font-weight: 600; padding: 12px 16px;
   border-bottom: 2px solid var(--border); font-size: 0.6875rem;
   text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
   white-space: nowrap; user-select: none;
 }
-td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-tbody tr { transition: background 0.1s; }
-tbody tr:hover { background: var(--hover); }
+:where(td) { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+:where(tbody tr) { transition: background 0.1s; }
+:where(tbody tr:hover) { background: var(--hover); }
 
 /* ---- Forms ---- */
 .form-group {
@@ -339,7 +346,7 @@ tbody tr:hover { background: var(--hover); }
   color: color-mix(in srgb, var(--fg) 70%, var(--muted));
 }
 
-input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
   width: 100%;
   border: 1px solid var(--border-input);
   border-radius: var(--radius);
@@ -370,16 +377,16 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea {
 @media (max-width: 640px) {
   .auth-form-wrapper form button[type="submit"] { width: 100%; }
 }
-input:focus, select:focus, textarea:focus {
+:where(input:focus, select:focus, textarea:focus) {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
   background: rgba(var(--accent-rgb), 0.03);
 }
-input::placeholder, textarea::placeholder {
+:where(input::placeholder, textarea::placeholder) {
   color: var(--muted);
   opacity: 0.85;
 }
-input:focus-visible, select:focus-visible, button:focus-visible {
+:where(input:focus-visible, select:focus-visible, button:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -389,19 +396,19 @@ input[type="checkbox"], input[type="radio"] {
   accent-color: var(--accent);
 }
 
-/* ---- Buttons ---- */
-button {
+/* ---- Buttons — :where() wrappers = specificity 0, Tailwind always wins ---- */
+:where(button) {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 10px 20px; border-radius: var(--radius); font-size: 0.875rem;
   font-weight: 600; cursor: pointer; transition: all 0.15s ease; border: none;
   color: inherit; background: transparent;
 }
-button:hover { opacity: 0.92; }
-button:active { transform: scale(0.98); }
+:where(button:hover) { opacity: 0.92; }
+:where(button:active) { transform: scale(0.98); }
 button[class*="bg-[var(--accent)"]:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.25); }
 button[class*="bg-[var(--accent)"]:active { transform: scale(0.98) translateY(0); box-shadow: none; }
 button[class*="bg-red"]:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(239,68,68,0.2); }
-button:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+:where(button:disabled) { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 
 /* ---- Cards ---- */
 .card {
@@ -467,7 +474,7 @@ a { transition: all 0.2s ease; }
 .alert-success { background: rgba(34,197,94,0.08); border-color: rgba(34,197,94,0.2); color: #4ade80; }
 
 /* ---- Sidebar base ---- */
-aside {
+:where(aside) {
   background: var(--surface);
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
