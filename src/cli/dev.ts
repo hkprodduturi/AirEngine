@@ -265,12 +265,24 @@ export class DevServer {
         return;
       }
 
-      // Run the heal loop (H11: includes runtime + UI lanes)
+      // Read source + parse AST for parser trace lane (H11 gap closure)
+      let airSource: string | undefined;
+      let airAst: any;
+      try {
+        airSource = readFileSync(this.airFile, 'utf-8');
+        airAst = parse(airSource);
+      } catch {
+        // Parser trace lane will be skipped if source/AST unavailable
+      }
+
+      // Run the heal loop (H11: includes runtime + parser + UI lanes)
       const result = await runDevHealLoop({
         flowSpec,
         mode: this.selfHeal,
         outputDir: this.outDir,
         airFilePath: this.airFile,
+        airSource,
+        airAst,
         executeFlow,
         healApply: this.healApply,
         baselineMode,
@@ -438,6 +450,12 @@ export class DevServer {
       for (const r of result.uiRemediation.results) {
         console.log(`  [heal] UI ${r.action_id}: ${r.status} — ${r.description}`);
       }
+    }
+
+    // Post-patch QA rerun details
+    if (result.postPatchQARerun?.ran) {
+      const rerun = result.postPatchQARerun;
+      console.log(`  [heal] Post-patch QA rerun: ${rerun.verdict} (delta: ${rerun.improvementDelta}, failed: ${rerun.failedSteps}/${rerun.totalSteps})`);
     }
 
     console.log(`  [heal] Overall: ${result.verdict} (${result.durationMs}ms)`);

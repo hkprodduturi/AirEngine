@@ -149,7 +149,7 @@
         "trace_id": { "type": "string" },
         "transpiler_file": { "type": "string" },
         "strategy": { "type": "string" },
-        "verdict": { "type": "string", "enum": ["pass", "fail", "skipped"] },
+        "verdict": { "type": "string", "enum": ["pass", "fail", "skipped", "skipped-conflict"] },
         "diff_summary": { "type": "string" }
       },
       "additionalProperties": false

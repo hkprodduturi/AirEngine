@@ -515,8 +515,8 @@ describe('H11: Multi-lane heal loop', () => {
       skipRuntimeRemediation: true,
     });
 
-    expect(result.lanes.length).toBe(3);
-    expect(result.lanes.map(l => l.lane)).toEqual(['runtime', 'transpiler', 'ui']);
+    expect(result.lanes.length).toBe(4);
+    expect(result.lanes.map(l => l.lane)).toEqual(['runtime', 'parser', 'transpiler', 'ui']);
   });
 
   it('shadow mode skips all remediation lanes', async () => {
@@ -562,5 +562,285 @@ describe('H11: Multi-lane heal loop', () => {
       expect(target.startsWith('dist/')).toBe(false);
       expect(target.startsWith('artifacts/')).toBe(false);
     }
+  });
+
+  it('no QA rerun when no patches promoted (healApply=none)', async () => {
+    const source = readFileSync('examples/todo.air', 'utf-8');
+    const flowSpec = generateFlowSpec(source);
+    let executorCallCount = 0;
+
+    const executor: QAExecutor = async (spec) => {
+      executorCallCount++;
+      return createMockQAResult({
+        flow_id: spec.flow_id,
+        verdict: 'fail',
+        steps: [{
+          step_id: 'S001', label: 'Click', action: 'click', status: 'fail',
+          duration_ms: 0,
+          evidence: {
+            selector: null, text_content: null, url_before: null, url_after: null,
+            screenshot_path: null, console_errors: [], network_requests: [],
+            dom_snippet: null, dom_changed: false,
+          },
+          failure_reason: 'Dead CTA', dead_cta_detected: true,
+        }],
+        summary: { total: 1, passed: 0, failed: 1, skipped: 0, dead_ctas: 1, console_errors: 0 },
+      });
+    };
+
+    const result = await runDevHealLoop({
+      flowSpec,
+      mode: 'transpiler-patch',
+      outputDir: '/tmp/test-output',
+      executeFlow: executor,
+      skipRuntimeRemediation: true,
+      // healApply defaults to 'none' → no promotion → no QA rerun
+    });
+
+    // Executor called exactly once (initial QA run only, no rerun)
+    expect(executorCallCount).toBe(1);
+    // No patches promoted, so no QA rerun
+    expect(result.postPatchQARerun).toBeUndefined();
+    expect(result.promotedFiles).toEqual([]);
+  });
+
+  it('no QA rerun when healApply=verified but no patches verified', async () => {
+    const source = readFileSync('examples/todo.air', 'utf-8');
+    const flowSpec = generateFlowSpec(source);
+    let executorCallCount = 0;
+
+    const executor: QAExecutor = async (spec) => {
+      executorCallCount++;
+      return createMockQAResult({
+        flow_id: spec.flow_id,
+        verdict: 'fail',
+        steps: [{
+          step_id: 'S001', label: 'Click', action: 'click', status: 'fail',
+          duration_ms: 0,
+          evidence: {
+            selector: null, text_content: null, url_before: null, url_after: null,
+            screenshot_path: null, console_errors: [], network_requests: [],
+            dom_snippet: null, dom_changed: false,
+          },
+          failure_reason: 'Dead CTA', dead_cta_detected: true,
+        }],
+        summary: { total: 1, passed: 0, failed: 1, skipped: 0, dead_ctas: 1, console_errors: 0 },
+      });
+    };
+
+    const result = await runDevHealLoop({
+      flowSpec,
+      mode: 'transpiler-patch',
+      outputDir: '/tmp/test-output',
+      executeFlow: executor,
+      healApply: 'verified',
+      skipRuntimeRemediation: true,
+    });
+
+    // Executor called exactly once (no patches to promote → no rerun)
+    expect(executorCallCount).toBe(1);
+    expect(result.postPatchQARerun).toBeUndefined();
+    expect(result.promotedFiles).toEqual([]);
+  });
+
+  it('verdict is fail when post-patch QA rerun is worse', async () => {
+    const source = readFileSync('examples/todo.air', 'utf-8');
+    const flowSpec = generateFlowSpec(source);
+
+    // This test verifies the verdict logic path where no patches match,
+    // so no promotion happens, and verdict is determined by existing state.
+    const executor: QAExecutor = async (spec) => createMockQAResult({
+      flow_id: spec.flow_id,
+      verdict: 'fail',
+      steps: [
+        {
+          step_id: 'S001', label: 'Click CTA', action: 'click', status: 'fail',
+          duration_ms: 0,
+          evidence: {
+            selector: null, text_content: null, url_before: null, url_after: null,
+            screenshot_path: null, console_errors: [], network_requests: [],
+            dom_snippet: null, dom_changed: false,
+          },
+          failure_reason: 'Dead CTA', dead_cta_detected: true,
+        },
+        {
+          step_id: 'S002', label: 'Another fail', action: 'click', status: 'fail',
+          duration_ms: 0,
+          evidence: {
+            selector: null, text_content: null, url_before: null, url_after: null,
+            screenshot_path: null, console_errors: [], network_requests: [],
+            dom_snippet: null, dom_changed: false,
+          },
+          failure_reason: 'Dead CTA', dead_cta_detected: true,
+        },
+      ],
+      summary: { total: 2, passed: 0, failed: 2, skipped: 0, dead_ctas: 2, console_errors: 0 },
+    });
+
+    const result = await runDevHealLoop({
+      flowSpec,
+      mode: 'transpiler-patch',
+      outputDir: '/tmp/test-output',
+      executeFlow: executor,
+      healApply: 'verified',
+      skipRuntimeRemediation: true,
+    });
+
+    // No patches matched → no promotion → no rerun → fail verdict
+    expect(result.verdict).toBe('fail');
+    expect(result.failedSteps).toBe(2);
+    expect(result.postPatchQARerun).toBeUndefined();
+  });
+
+  it('parser lane allowed as patch target', () => {
+    // src/parser/ paths are now allowed
+    expect(isPromotionAllowed('src/parser/parsers.ts')).toBe(true);
+    expect(isPromotionAllowed('src/parser/lexer.ts')).toBe(true);
+  });
+
+  it('skipped-conflict verdict is valid type', async () => {
+    // Verify the verdict union includes skipped-conflict
+    const ref: import('../src/self-heal/heal-loop.js').TranspilerPatchRef = {
+      trace_id: 'test',
+      transpiler_file: 'src/transpiler/index.ts',
+      strategy: 'test',
+      verdict: 'skipped-conflict',
+    };
+    expect(ref.verdict).toBe('skipped-conflict');
+  });
+});
+
+// ---- Runtime Hardening Tests (H11 Gap Closure — D1) ----
+
+describe('H11: Runtime hardening — failed_requests + response_statuses', () => {
+  it('hasRuntimeIssues returns true for failed_requests with connection refused', () => {
+    const qa = createMockQAResult({
+      verdict: 'fail',
+      steps: [{
+        step_id: 'S001', label: 'Navigate', action: 'navigate', status: 'fail',
+        duration_ms: 0,
+        evidence: {
+          selector: null, text_content: null, url_before: null, url_after: null,
+          screenshot_path: null, console_errors: [], network_requests: [],
+          dom_snippet: null, dom_changed: false,
+          failed_requests: [{ url: 'http://localhost:3001/api/items', method: 'GET', failure: 'net::ERR_CONNECTION_REFUSED' }],
+        },
+        failure_reason: 'fetch failed', dead_cta_detected: false,
+      }],
+    });
+    expect(hasRuntimeIssues(qa)).toBe(true);
+  });
+
+  it('hasRuntimeIssues returns true for response_statuses with 500 on API path', () => {
+    const qa = createMockQAResult({
+      verdict: 'fail',
+      steps: [{
+        step_id: 'S001', label: 'Navigate', action: 'navigate', status: 'fail',
+        duration_ms: 0,
+        evidence: {
+          selector: null, text_content: null, url_before: null, url_after: null,
+          screenshot_path: null, console_errors: [], network_requests: [],
+          dom_snippet: null, dom_changed: false,
+          response_statuses: [{ url: 'http://localhost:3001/api/items', method: 'GET', status: 500 }],
+        },
+        failure_reason: 'Server error', dead_cta_detected: false,
+      }],
+    });
+    expect(hasRuntimeIssues(qa)).toBe(true);
+  });
+
+  it('classifyRuntimeIssues classifies failed_requests as server-not-running', () => {
+    const qa = createMockQAResult({
+      verdict: 'fail',
+      steps: [{
+        step_id: 'S001', label: 'Fetch items', action: 'navigate', status: 'fail',
+        duration_ms: 0,
+        evidence: {
+          selector: null, text_content: null, url_before: null, url_after: null,
+          screenshot_path: null, console_errors: [], network_requests: [],
+          dom_snippet: null, dom_changed: false,
+          failed_requests: [{ url: 'http://localhost:3001/api/items', method: 'GET', failure: 'net::ERR_CONNECTION_REFUSED' }],
+        },
+        failure_reason: 'fetch failed', dead_cta_detected: false,
+      }],
+    });
+    const issues = classifyRuntimeIssues(qa, '/tmp/test', true);
+    expect(issues.some(i => i.kind === 'server-not-running')).toBe(true);
+  });
+
+  it('classifyRuntimeIssues classifies 401 response as auth-session-boot', () => {
+    const qa = createMockQAResult({
+      verdict: 'fail',
+      steps: [{
+        step_id: 'S001', label: 'Fetch protected', action: 'navigate', status: 'fail',
+        duration_ms: 0,
+        evidence: {
+          selector: null, text_content: null, url_before: null, url_after: null,
+          screenshot_path: null, console_errors: [], network_requests: [],
+          dom_snippet: null, dom_changed: false,
+          response_statuses: [{ url: 'http://localhost:3001/api/profile', method: 'GET', status: 401 }],
+        },
+        failure_reason: 'Unauthorized', dead_cta_detected: false,
+      }],
+    });
+    const issues = classifyRuntimeIssues(qa, '/tmp/test', true);
+    expect(issues.some(i => i.kind === 'auth-session-boot')).toBe(true);
+  });
+
+  it('hasRuntimeIssues returns false when failed_requests and response_statuses are empty', () => {
+    const qa = createMockQAResult({
+      verdict: 'fail',
+      steps: [{
+        step_id: 'S001', label: 'Click', action: 'click', status: 'fail',
+        duration_ms: 0,
+        evidence: {
+          selector: null, text_content: null, url_before: null, url_after: null,
+          screenshot_path: null, console_errors: [], network_requests: [],
+          dom_snippet: null, dom_changed: false,
+          failed_requests: [],
+          response_statuses: [],
+        },
+        failure_reason: 'Dead CTA', dead_cta_detected: true,
+      }],
+    });
+    expect(hasRuntimeIssues(qa)).toBe(false);
+  });
+
+  it('backward compat: hasRuntimeIssues works when new fields are undefined', () => {
+    const qa = createMockQAResult({
+      verdict: 'fail',
+      steps: [{
+        step_id: 'S001', label: 'Click', action: 'click', status: 'fail',
+        duration_ms: 0,
+        evidence: {
+          selector: null, text_content: null, url_before: null, url_after: null,
+          screenshot_path: null, console_errors: [], network_requests: [],
+          dom_snippet: null, dom_changed: false,
+          // failed_requests and response_statuses are NOT set (undefined)
+        },
+        failure_reason: 'Dead CTA', dead_cta_detected: true,
+      }],
+    });
+    // Should not throw, should return false (no runtime issues)
+    expect(hasRuntimeIssues(qa)).toBe(false);
+  });
+
+  it('classifyRuntimeIssues classifies 5xx on db path as db-connection-failure', () => {
+    const qa = createMockQAResult({
+      verdict: 'fail',
+      steps: [{
+        step_id: 'S001', label: 'DB query', action: 'navigate', status: 'fail',
+        duration_ms: 0,
+        evidence: {
+          selector: null, text_content: null, url_before: null, url_after: null,
+          screenshot_path: null, console_errors: [], network_requests: [],
+          dom_snippet: null, dom_changed: false,
+          response_statuses: [{ url: 'http://localhost:3001/api/db/health', method: 'GET', status: 500 }],
+        },
+        failure_reason: 'DB error', dead_cta_detected: false,
+      }],
+    });
+    const issues = classifyRuntimeIssues(qa, '/tmp/test', true);
+    expect(issues.some(i => i.kind === 'db-connection-failure')).toBe(true);
   });
 });

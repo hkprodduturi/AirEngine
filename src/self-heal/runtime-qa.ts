@@ -9,6 +9,20 @@
  * dependency injection for the actual browser executor.
  */
 
+// ---- Network Failure Types (H11 gap closure) ----
+
+export interface FailedRequest {
+  url: string;
+  method: string;
+  failure: string;
+}
+
+export interface ResponseStatus {
+  url: string;
+  method: string;
+  status: number;
+}
+
 // ---- Flow Specification Types ----
 
 export interface StepExpected {
@@ -70,6 +84,8 @@ export interface StepEvidence {
   computed_styles?: Record<string, string>;
   visual_screenshot_path?: string;
   visual_diff_score?: number;
+  failed_requests?: FailedRequest[];
+  response_statuses?: ResponseStatus[];
 }
 
 export interface StepResult {

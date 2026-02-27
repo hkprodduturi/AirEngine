@@ -26,6 +26,7 @@ export type {
   FlowStep, FlowSpec, StepEvidence, StepResult, PreflightResult,
   RunMetadata, RuntimeQASummary, RuntimeQAResult,
   QARunOptions, MockablePage, VisualBaselineMode,
+  FailedRequest, ResponseStatus,
 } from '../src/self-heal/runtime-qa.js';
 
 import type {
@@ -33,6 +34,7 @@ import type {
   FlowStep, FlowSpec, StepEvidence, StepResult, PreflightResult,
   RunMetadata, RuntimeQASummary, RuntimeQAResult,
   QARunOptions, MockablePage, VisualBaselineMode,
+  FailedRequest, ResponseStatus,
 } from '../src/self-heal/runtime-qa.js';
 
 // ---- Helpers ----
@@ -133,6 +135,8 @@ export async function captureEvidence(
   consoleErrors: string[],
   networkRequests: string[],
   domChanged: boolean,
+  failedRequests?: FailedRequest[],
+  errorResponses?: ResponseStatus[],
 ): Promise<StepEvidence> {
   let textContent: string | null = null;
   let domSnippet: string | null = null;
@@ -156,7 +160,7 @@ export async function captureEvidence(
     }
   }
 
-  return {
+  const evidence: StepEvidence = {
     selector: step.selector || step.target || null,
     text_content: textContent,
     url_before: null, // Set by caller
@@ -167,6 +171,9 @@ export async function captureEvidence(
     dom_snippet: domSnippet,
     dom_changed: domChanged,
   };
+  if (failedRequests && failedRequests.length > 0) evidence.failed_requests = [...failedRequests];
+  if (errorResponses && errorResponses.length > 0) evidence.response_statuses = [...errorResponses];
+  return evidence;
 }
 
 // ---- Dead CTA Detection (step-aware, guardrail 1) ----
@@ -176,6 +183,8 @@ export async function detectDeadCTA(
   step: FlowStep,
   consoleErrors: string[],
   networkRequests: string[],
+  failedRequests?: FailedRequest[],
+  errorResponses?: ResponseStatus[],
 ): Promise<{ dead: boolean; evidence: StepEvidence }> {
   const expected = step.expected || {};
   const urlBefore = page.url();
@@ -294,7 +303,7 @@ export async function detectDeadCTA(
   }
 
   // Capture rich evidence
-  const evidence = await captureEvidence(page, step, consoleErrors, networkRequests, domChanged);
+  const evidence = await captureEvidence(page, step, consoleErrors, networkRequests, domChanged, failedRequests, errorResponses);
   evidence.url_before = urlBefore;
 
   return { dead: allExpectedAbsent, evidence };
@@ -309,6 +318,8 @@ export async function executeStep(
   consoleErrors: string[],
   networkRequests: string[],
   baselineMode?: VisualBaselineMode,
+  failedRequests?: FailedRequest[],
+  errorResponses?: ResponseStatus[],
 ): Promise<StepResult> {
   const start = performance.now();
   let evidence = emptyEvidence();
@@ -344,7 +355,7 @@ export async function executeStep(
         }
 
         if (step.dead_cta_check) {
-          const result = await detectDeadCTA(page, step, consoleErrors, networkRequests);
+          const result = await detectDeadCTA(page, step, consoleErrors, networkRequests, failedRequests, errorResponses);
           evidence = result.evidence;
           deadCta = result.dead;
           if (deadCta) {
@@ -606,6 +617,8 @@ export async function executeFlow(
   let browser: { close(): Promise<void> } | null = null;
   const consoleErrors: string[] = [];
   const networkRequests: string[] = [];
+  const failedRequests: FailedRequest[] = [];
+  const errorResponses: ResponseStatus[] = [];
 
   if (options.mockPage) {
     page = options.mockPage;
@@ -626,6 +639,22 @@ export async function executeFlow(
     (page as any).on('request', (req: any) => {
       networkRequests.push(`${req.method()} ${req.url()}`);
     });
+    (page as any).on('requestfailed', (req: any) => {
+      failedRequests.push({
+        url: req.url(),
+        method: req.method(),
+        failure: req.failure()?.errorText || 'unknown',
+      });
+    });
+    (page as any).on('response', (res: any) => {
+      if (res.status() >= 400) {
+        errorResponses.push({
+          url: res.url(),
+          method: res.request().method(),
+          status: res.status(),
+        });
+      }
+    });
   }
 
   // Attach console/network listeners for mock pages
@@ -638,11 +667,33 @@ export async function executeFlow(
       if (typeof req === 'string') networkRequests.push(req);
       else if (req?.method) networkRequests.push(`${req.method()} ${req.url()}`);
     });
+    page.on('requestfailed', (req: any) => {
+      if (req && typeof req === 'object' && req.url) {
+        failedRequests.push({
+          url: typeof req.url === 'function' ? req.url() : req.url,
+          method: typeof req.method === 'function' ? req.method() : (req.method || 'GET'),
+          failure: typeof req.failure === 'function' ? (req.failure()?.errorText || 'unknown') : (req.failure || 'unknown'),
+        });
+      }
+    });
+    page.on('response', (res: any) => {
+      if (res && typeof res === 'object') {
+        const status = typeof res.status === 'function' ? res.status() : res.status;
+        if (status >= 400) {
+          const req = typeof res.request === 'function' ? res.request() : res.request;
+          errorResponses.push({
+            url: typeof res.url === 'function' ? res.url() : res.url,
+            method: req ? (typeof req.method === 'function' ? req.method() : req.method) : 'GET',
+            status,
+          });
+        }
+      }
+    });
   }
 
   try {
     for (const step of spec.steps) {
-      const result = await executeStep(page, step, spec, consoleErrors, networkRequests, options.baselineMode);
+      const result = await executeStep(page, step, spec, consoleErrors, networkRequests, options.baselineMode, failedRequests, errorResponses);
       steps.push(result);
     }
   } finally {

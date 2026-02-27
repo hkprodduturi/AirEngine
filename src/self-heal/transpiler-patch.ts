@@ -44,6 +44,7 @@ const MAX_LINES_CHANGED = 50;
 const FRAMEWORK_PATCH_PREFIXES = [
   'src/transpiler/',
   'src/self-heal/',
+  'src/parser/',
   'scripts/',
 ];
 

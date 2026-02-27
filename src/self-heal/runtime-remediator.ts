@@ -200,6 +200,57 @@ export function classifyRuntimeIssues(
     });
   }
 
+  // 5. Failed requests (requestfailed events) — H11 gap closure
+  const failedReqs = qaResult.steps.flatMap(s => s.evidence.failed_requests ?? []);
+  for (const fr of failedReqs) {
+    const failure = fr.failure.toLowerCase();
+    if (failure.includes('net::err_connection_refused') || failure.includes('err_failed') || failure.includes('err_name_not_resolved')) {
+      if (!issues.some(i => i.kind === 'server-not-running')) {
+        issues.push({
+          kind: 'server-not-running',
+          severity: 'critical',
+          details: `Request failed: ${fr.method} ${fr.url} — ${fr.failure}`,
+          evidence: [`${fr.method} ${fr.url}: ${fr.failure}`],
+        });
+      }
+    }
+  }
+
+  // 6. Response statuses (4xx/5xx) — H11 gap closure
+  const errorResponses = qaResult.steps.flatMap(s => s.evidence.response_statuses ?? []);
+  for (const rs of errorResponses) {
+    const urlLower = rs.url.toLowerCase();
+    if (rs.status >= 500 && urlLower.includes('/api/')) {
+      if (urlLower.includes('/db') || urlLower.includes('prisma')) {
+        if (!issues.some(i => i.kind === 'db-connection-failure')) {
+          issues.push({
+            kind: 'db-connection-failure',
+            severity: 'critical',
+            details: `API 5xx on DB path: ${rs.method} ${rs.url} → ${rs.status}`,
+            evidence: [`${rs.method} ${rs.url}: ${rs.status}`],
+          });
+        }
+      } else {
+        if (!issues.some(i => i.kind === 'server-not-running')) {
+          issues.push({
+            kind: 'server-not-running',
+            severity: 'critical',
+            details: `API 5xx: ${rs.method} ${rs.url} → ${rs.status}`,
+            evidence: [`${rs.method} ${rs.url}: ${rs.status}`],
+          });
+        }
+      }
+    }
+    if ((rs.status === 401 || rs.status === 403) && !issues.some(i => i.kind === 'auth-session-boot')) {
+      issues.push({
+        kind: 'auth-session-boot',
+        severity: 'medium',
+        details: `Auth failure: ${rs.method} ${rs.url} → ${rs.status}`,
+        evidence: [`${rs.method} ${rs.url}: ${rs.status}`],
+      });
+    }
+  }
+
   // Sort: critical > high > medium
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2 };
   issues.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
@@ -513,12 +564,26 @@ export function runRemediation(
 export function hasRuntimeIssues(qaResult: RuntimeQAResult): boolean {
   if (qaResult.preflight.status === 'fail') return true;
   const consoleErrors = qaResult.steps.flatMap(s => s.evidence.console_errors).filter(Boolean);
-  return consoleErrors.some(e => {
+  if (consoleErrors.some(e => {
     const lower = e.toLowerCase();
     return lower.includes('econnrefused') || lower.includes('module not found') ||
       lower.includes('cannot find module') || lower.includes('err_module_not_found') ||
       lower.includes('prisma') || lower.includes('database') ||
       lower.includes('eaddrinuse') || lower.includes('jwt') ||
       lower.includes('unauthorized');
-  });
+  })) return true;
+
+  // H11 gap closure: check failed_requests
+  const failedReqs = qaResult.steps.flatMap(s => s.evidence.failed_requests ?? []);
+  if (failedReqs.some(fr => {
+    const f = fr.failure.toLowerCase();
+    return f.includes('net::err_connection_refused') || f.includes('err_failed') || f.includes('err_name_not_resolved');
+  })) return true;
+
+  // H11 gap closure: check response_statuses
+  const errorResponses = qaResult.steps.flatMap(s => s.evidence.response_statuses ?? []);
+  if (errorResponses.some(rs => rs.status >= 500 && rs.url.toLowerCase().includes('/api/'))) return true;
+  if (errorResponses.some(rs => rs.status === 401 || rs.status === 403)) return true;
+
+  return false;
 }

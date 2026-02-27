@@ -116,7 +116,35 @@
           "additionalProperties": { "type": "string" }
         },
         "visual_screenshot_path": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
-        "visual_diff_score": { "oneOf": [{ "type": "number" }, { "type": "null" }] }
+        "visual_diff_score": { "oneOf": [{ "type": "number" }, { "type": "null" }] },
+        "failed_requests": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/failedRequest" }
+        },
+        "response_statuses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/responseStatus" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "failedRequest": {
+      "type": "object",
+      "required": ["url", "method", "failure"],
+      "properties": {
+        "url": { "type": "string" },
+        "method": { "type": "string" },
+        "failure": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "responseStatus": {
+      "type": "object",
+      "required": ["url", "method", "status"],
+      "properties": {
+        "url": { "type": "string" },
+        "method": { "type": "string" },
+        "status": { "type": "integer", "minimum": 100 }
       },
       "additionalProperties": false
     },

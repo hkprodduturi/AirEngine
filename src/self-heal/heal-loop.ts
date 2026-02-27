@@ -4,13 +4,15 @@
  * Self-contained heal loop for `air dev --self-heal` integration.
  * Lives in src/ so it compiles to dist/. No imports from scripts/.
  *
- * H11 upgrade: outcome-first healing with three lanes:
+ * H11 upgrade: outcome-first healing with four lanes:
  *   1) Runtime/Env Remediation — deps, DB, ports, auth
- *   2) Transpiler Patch — SH9 codegen trace pipeline
- *   3) UI/Layout Remediation — style, alignment, typography, z-index
+ *   2) Parser Patch — PSH trace pipeline (H11 gap closure)
+ *   3) Transpiler Patch — SH9 codegen trace pipeline
+ *   4) UI/Layout Remediation — style, alignment, typography, z-index
  *
  * Flow: QA → classify → runtime remediation → QA re-run →
- *       transpiler patches → QA re-run → UI remediation
+ *       parser patches → transpiler patches → UI patches →
+ *       unified promotion → post-patch QA rerun
  *
  * Only patches framework-owned source (guarded by isAllowedSelfHealPatchTarget).
  * Never patches generated output.
@@ -22,6 +24,9 @@ import { execSync } from 'child_process';
 import { tmpdir } from 'os';
 import type { FlowSpec, RuntimeQAResult, QARunOptions, QAExecutor, VisualBaselineMode } from './runtime-qa.js';
 import { traceToTranspiler, runAllTraces, type CodegenTraceEntry, type CodegenTraceResult } from './codegen-trace.js';
+import {
+  traceToParser, parserTraceAsCodegenTrace, runAllParserTraces,
+} from './parser-trace.js';
 import {
   proposeTranspilerPatch, verifyTranspilerPatch, isAllowedSelfHealPatchTarget,
   normalizePatchPath, type TranspilerPatchResult, type PatchVerification,
@@ -49,6 +54,10 @@ export interface DevHealOptions {
   outputDir: string;
   /** Path to the .air source file */
   airFilePath?: string;
+  /** Raw .air source (for parser trace detection) */
+  airSource?: string;
+  /** Parsed AST (for parser trace detection) */
+  airAst?: any;
   /** QA executor (Playwright-backed or mock) */
   executeFlow: QAExecutor;
   /** Only apply verified patches to allowed targets */
@@ -79,14 +88,23 @@ export interface TranspilerPatchRef {
   trace_id: string;
   transpiler_file: string;
   strategy: string;
-  verdict: 'pass' | 'fail' | 'skipped';
+  verdict: 'pass' | 'fail' | 'skipped' | 'skipped-conflict';
   diff_summary?: string;
 }
 
 export interface HealLaneResult {
-  lane: 'runtime' | 'transpiler' | 'ui';
+  lane: 'runtime' | 'parser' | 'transpiler' | 'ui';
   ran: boolean;
   details: string;
+}
+
+export interface PostPatchQARerun {
+  ran: boolean;
+  verdict: 'pass' | 'fail';
+  improvementDelta: number;
+  totalSteps: number;
+  failedSteps: number;
+  deadCtas: number;
 }
 
 export interface DevHealResult {
@@ -114,6 +132,8 @@ export interface DevHealResult {
   uiRemediation?: UIRemediationReport;
   /** H11: Which lanes ran and what they did */
   lanes: HealLaneResult[];
+  /** H11 gap closure: Post-patch QA rerun result */
+  postPatchQARerun?: PostPatchQARerun;
 }
 
 // ---- Simplified Bridge (inline, no dependency on scripts/runtime-qa-bridge.ts) ----
@@ -346,12 +366,52 @@ export async function runDevHealLoop(options: DevHealOptions): Promise<DevHealRe
     lanes.push({ lane: 'runtime', ran: false, details: options.skipRuntimeRemediation ? 'Skipped' : 'Not applicable' });
   }
 
-  // ---- Phase 4: Transpiler Patch Lane (existing SH9/H10) ----
+  // ---- Phase 3.5: Parser Patch Lane (H11 gap closure) ----
   const generatedFiles = readGeneratedFiles(options.outputDir);
-  const transpilerPatchRefs: TranspilerPatchRef[] = [];
-  const pendingPatches: TranspilerPatchResult[] = [];
+  const allPatchRefs: TranspilerPatchRef[] = [];
+  const allPendingPatches: TranspilerPatchResult[] = [];
+  const allPatchLanes: ('parser' | 'transpiler' | 'ui')[] = [];
   const patchedFiles = new Set<string>();
 
+  if (options.airSource && options.airAst && mode === 'transpiler-patch') {
+    let parserPatchCount = 0;
+
+    // Run ALL parser traces directly against source/AST (not gated by classifications).
+    // Parser traces detect source-vs-AST discrepancies independently of runtime failures.
+    const parserDetections = runAllParserTraces(options.airSource, options.airAst);
+    for (const { trace: pTrace, result: pDetection } of parserDetections) {
+      const adapted = parserTraceAsCodegenTrace(pTrace, pDetection);
+      const targetFile = normalizePatchPath(adapted.trace.fix.target_file);
+      if (patchedFiles.has(targetFile)) continue;
+
+      const patchResult = proposeTranspilerPatch(adapted.trace, adapted.result);
+      if (!patchResult) continue;
+
+      patchedFiles.add(targetFile);
+      allPendingPatches.push(patchResult);
+      allPatchLanes.push('parser');
+      allPatchRefs.push({
+        trace_id: adapted.trace.id,
+        transpiler_file: patchResult.transpiler_file,
+        strategy: patchResult.strategy,
+        verdict: 'skipped',
+        diff_summary: patchResult.diff_summary,
+      });
+      parserPatchCount++;
+    }
+
+    lanes.push({
+      lane: 'parser',
+      ran: parserPatchCount > 0,
+      details: parserPatchCount > 0
+        ? `${parserPatchCount} parser patch(es) proposed`
+        : 'No parser trace matches',
+    });
+  } else {
+    lanes.push({ lane: 'parser', ran: false, details: 'Not applicable' });
+  }
+
+  // ---- Phase 4: Transpiler Patch Lane (existing SH9/H10) ----
   for (const classification of classifications) {
     const traceResult = traceToTranspiler(classification, generatedFiles);
     if (!traceResult) continue;
@@ -364,8 +424,9 @@ export async function runDevHealLoop(options: DevHealOptions): Promise<DevHealRe
     if (!patchResult) continue;
 
     patchedFiles.add(targetFile);
-    pendingPatches.push(patchResult);
-    transpilerPatchRefs.push({
+    allPendingPatches.push(patchResult);
+    allPatchLanes.push('transpiler');
+    allPatchRefs.push({
       trace_id: trace.id,
       transpiler_file: patchResult.transpiler_file,
       strategy: patchResult.strategy,
@@ -376,33 +437,35 @@ export async function runDevHealLoop(options: DevHealOptions): Promise<DevHealRe
 
   // Propose mode: report patches but don't verify/apply
   if (mode === 'propose') {
-    lanes.push({ lane: 'transpiler', ran: true, details: `${transpilerPatchRefs.length} patches proposed` });
+    const transpilerRefs = allPatchRefs.filter((_, i) => allPatchLanes[i] === 'transpiler' || allPatchLanes[i] === 'parser');
+    lanes.push({ lane: 'transpiler', ran: true, details: `${transpilerRefs.length} patches proposed` });
+    lanes.push({ lane: 'ui', ran: false, details: 'Not applicable' });
     return {
       qaVerdict: 'fail',
       totalSteps: qaResult.steps.length,
       deadCtas,
       failedSteps,
       classifications,
-      transpilerPatches: transpilerPatchRefs,
+      transpilerPatches: allPatchRefs,
       promotedFiles: [],
-      verdict: transpilerPatchRefs.length > 0 ? 'partial' : 'fail',
+      verdict: allPatchRefs.length > 0 ? 'partial' : 'fail',
       durationMs: Math.round(performance.now() - start),
       runtimeRemediation: runtimeReport,
       lanes,
     };
   }
 
-  // Transpiler-patch mode — verify patches
+  // Transpiler-patch mode — verify all patches (parser + transpiler)
   if (mode === 'transpiler-patch') {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const hasPending = transpilerPatchRefs.some(ref => ref.verdict !== 'pass');
+      const hasPending = allPatchRefs.some(ref => ref.verdict !== 'pass');
       if (!hasPending) break;
 
-      for (let i = 0; i < pendingPatches.length; i++) {
-        const ref = transpilerPatchRefs[i];
+      for (let i = 0; i < allPendingPatches.length; i++) {
+        const ref = allPatchRefs[i];
         if (ref.verdict === 'pass') continue;
 
-        const patch = pendingPatches[i];
+        const patch = allPendingPatches[i];
 
         let outputFilesAfter: Map<string, string> | null = null;
         if (options.mockRetranspile) {
@@ -425,30 +488,13 @@ export async function runDevHealLoop(options: DevHealOptions): Promise<DevHealRe
     }
   }
 
-  // Promotion — apply verified patches
-  const promotedFiles: string[] = [];
-  if (healApply === 'verified' && mode === 'transpiler-patch') {
-    for (let i = 0; i < pendingPatches.length; i++) {
-      const ref = transpilerPatchRefs[i];
-      if (ref.verdict !== 'pass') continue;
-
-      const patch = pendingPatches[i];
-      if (!isPromotionAllowed(patch.transpiler_file)) continue;
-
-      const filePath = join(process.cwd(), patch.transpiler_file);
-      if (!existsSync(filePath)) continue;
-
-      writeFileSync(filePath, patch.patched_content, 'utf-8');
-      promotedFiles.push(patch.transpiler_file);
-    }
-  }
-
-  const transpilerPassed = transpilerPatchRefs.filter(p => p.verdict === 'pass').length;
+  const transpilerOnlyRefs = allPatchRefs.filter((_, i) => allPatchLanes[i] === 'transpiler');
+  const transpilerPassed = transpilerOnlyRefs.filter(p => p.verdict === 'pass').length;
   lanes.push({
     lane: 'transpiler',
-    ran: transpilerPatchRefs.length > 0,
-    details: transpilerPatchRefs.length > 0
-      ? `${transpilerPassed}/${transpilerPatchRefs.length} verified, ${promotedFiles.length} promoted`
+    ran: transpilerOnlyRefs.length > 0,
+    details: transpilerOnlyRefs.length > 0
+      ? `${transpilerPassed}/${transpilerOnlyRefs.length} verified`
       : 'No codegen trace matches',
   });
 
@@ -470,13 +516,96 @@ export async function runDevHealLoop(options: DevHealOptions): Promise<DevHealRe
     lanes.push({ lane: 'ui', ran: false, details: options.skipUIRemediation ? 'Skipped' : 'Not applicable' });
   }
 
+  // ---- Phase 6: Unified Promotion + Post-Patch QA Rerun (H11 gap closure) ----
+  // Promotion — apply verified patches in deterministic order (parser → transpiler → UI)
+  const promotedFiles: string[] = [];
+  const promotedPatchedFiles = new Set<string>();
+  let postPatchQARerun: PostPatchQARerun | undefined;
+
+  if (healApply === 'verified' && mode === 'transpiler-patch') {
+    // Sort by lane order: parser first, then transpiler, then UI
+    const laneOrder: Record<string, number> = { parser: 0, transpiler: 1, ui: 2 };
+    const indices = allPendingPatches.map((_, i) => i);
+    indices.sort((a, b) => (laneOrder[allPatchLanes[a]] ?? 99) - (laneOrder[allPatchLanes[b]] ?? 99));
+
+    for (const i of indices) {
+      const ref = allPatchRefs[i];
+      if (ref.verdict !== 'pass') continue;
+
+      const patch = allPendingPatches[i];
+      if (!isPromotionAllowed(patch.transpiler_file)) continue;
+
+      const normalizedTarget = normalizePatchPath(patch.transpiler_file);
+      // Conflict: skip if already patched by earlier lane
+      if (promotedPatchedFiles.has(normalizedTarget)) {
+        ref.verdict = 'skipped-conflict';
+        continue;
+      }
+
+      const filePath = join(process.cwd(), patch.transpiler_file);
+      if (!existsSync(filePath)) continue;
+
+      writeFileSync(filePath, patch.patched_content, 'utf-8');
+      promotedFiles.push(patch.transpiler_file);
+      promotedPatchedFiles.add(normalizedTarget);
+    }
+
+    // Post-patch QA rerun: re-run QA after all promotions
+    if (promotedFiles.length > 0) {
+      const failedStepsBefore = failedSteps;
+
+      // Re-transpile if possible (to generate updated output from patched source)
+      if (options.mockRetranspile) {
+        options.mockRetranspile(process.cwd());
+      } else if (options.airFilePath) {
+        try {
+          execSync(
+            `npx tsx src/cli/index.ts transpile "${options.airFilePath}" -o "${options.outputDir}"`,
+            { cwd: process.cwd(), encoding: 'utf-8', timeout: 30000, stdio: 'pipe' },
+          );
+        } catch {
+          // Re-transpile failed — still run QA to check current state
+        }
+      }
+
+      const rerunResult = await options.executeFlow(options.flowSpec, {
+        headless,
+        flowPath: '<auto-generated>',
+        baselineMode: options.baselineMode,
+      });
+
+      const rerunFailed = rerunResult.steps.filter(s => s.status === 'fail').length;
+      const rerunDeadCtas = rerunResult.steps.filter(s => s.dead_cta_detected).length;
+      const delta = failedStepsBefore - rerunFailed;
+
+      postPatchQARerun = {
+        ran: true,
+        verdict: rerunResult.verdict === 'pass' ? 'pass' : (delta > 0 ? 'pass' : 'fail'),
+        improvementDelta: delta,
+        totalSteps: rerunResult.steps.length,
+        failedSteps: rerunFailed,
+        deadCtas: rerunDeadCtas,
+      };
+
+      // If rerun passes or improves, update state
+      if (rerunResult.verdict === 'pass' || delta > 0) {
+        qaResult = rerunResult;
+        failedSteps = rerunFailed;
+        deadCtas = rerunDeadCtas;
+      }
+    }
+  }
+
   // ---- Compute Final Verdict ----
-  const anyFixed = transpilerPassed > 0 ||
+  const allPassed = allPatchRefs.filter(p => p.verdict === 'pass').length;
+  const anyFixed = allPassed > 0 ||
     (runtimeReport?.issuesFixed ?? 0) > 0 ||
     (uiReport?.patchesApplied ?? 0) > 0;
 
   let verdict: 'pass' | 'fail' | 'partial';
-  if (failedSteps === 0) {
+  if (postPatchQARerun?.ran && postPatchQARerun.verdict === 'pass') {
+    verdict = failedSteps === 0 ? 'pass' : 'partial';
+  } else if (failedSteps === 0) {
     verdict = 'pass';
   } else if (anyFixed) {
     verdict = 'partial';
@@ -485,17 +614,18 @@ export async function runDevHealLoop(options: DevHealOptions): Promise<DevHealRe
   }
 
   return {
-    qaVerdict: 'fail',
+    qaVerdict: qaResult.verdict,
     totalSteps: qaResult.steps.length,
     deadCtas,
     failedSteps,
     classifications,
-    transpilerPatches: transpilerPatchRefs,
+    transpilerPatches: allPatchRefs,
     promotedFiles,
     verdict,
     durationMs: Math.round(performance.now() - start),
     runtimeRemediation: runtimeReport,
     uiRemediation: uiReport,
     lanes,
+    postPatchQARerun,
   };
 }
