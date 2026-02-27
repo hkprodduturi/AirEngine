@@ -1943,6 +1943,16 @@ function detectUndeclaredStateVars(
     }
   }
 
+  // Find bare {varName} JSX expressions — state scalars rendered directly (e.g., <span>{dateRange}</span>)
+  const stateNames = new Set(ctx.state.map(f => f.name));
+  const bareRefPattern = /\{(\w+)\}/g;
+  while ((m = bareRefPattern.exec(jsx)) !== null) {
+    const name = m[1];
+    if (stateNames.has(name)) {
+      varRefs.add(name);
+    }
+  }
+
   for (const varName of varRefs) {
     if (declaredVars.has(varName) || seen.has(varName)) continue;
     seen.add(varName);

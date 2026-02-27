@@ -624,13 +624,23 @@ function generatePageComponentRef(
       const propsStr = propAssignments.length > 0 ? ' ' + propAssignments.join(' ') : '';
       return `${pad}{currentPage === '${node.name}' && (\n${pad}  <${pageName}Page${propsStr} />\n${pad})}`;
     } else {
-      // Data pages: require isAuthed, pass user/logout/nav props
+      // Data pages: require isAuthed, pass user/logout/nav props + state scalar refs
       const propAssignments = [
         'user={user}',
         'logout={logout}',
         'currentPage={currentPage}',
         'setCurrentPage={setCurrentPage}',
       ];
+      // Thread @state scalar props referenced in this page's UI tree
+      const deps = analyzePageDependencies(node.children, ctx, analysis);
+      const hookMap = getHookableStateProps(ctx);
+      for (const s of deps.stateProps) {
+        if (hookMap.has(s)) continue;
+        if (!propAssignments.some(p => p.startsWith(`${s}=`))) {
+          propAssignments.push(`${s}={${s}}`);
+          propAssignments.push(`set${capitalize(s)}={set${capitalize(s)}}`);
+        }
+      }
       // C1/G3: Check if this page's model has nested routes → pass setter for detail navigation
       if (ctx.db) {
         const pageNameLower = node.name.toLowerCase();

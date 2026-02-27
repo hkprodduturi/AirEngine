@@ -7,7 +7,7 @@
 import type { TranspileContext } from '../context.js';
 import type { UIAnalysis } from '../normalize-ui.js';
 import { detectPatterns } from '../component-gen.js';
-import { capitalize, indent, hasAuthRoutes, isAuthPageName, AUTH_MUTATION_NAMES } from './helpers.js';
+import { capitalize, indent, hasAuthRoutes, isAuthPageName, AUTH_MUTATION_NAMES, analyzePageDependencies, getHookableStateProps } from './helpers.js';
 import { generateStateDecls } from './state-gen.js';
 import { generatePersistLoad, generatePersistSave } from './persist-gen.js';
 import { generateMutations } from './mutation-gen.js';
@@ -120,6 +120,34 @@ export function generateApp(ctx: TranspileContext, analysis: UIAnalysis): string
       lines.push('  const [search, setSearch] = useState(\'\');');
       lines.push('  const [catFilter, setCatFilter] = useState(\'all\');');
       lines.push('  const [showLoginModal, setShowLoginModal] = useState(false);');
+    }
+
+    // Declare @state scalars referenced by page components but not yet declared
+    const declaredAuth = new Set(['user', 'authError', 'currentPage', 'loading', 'error', 'cart', 'search', 'catFilter', 'showLoginModal']);
+    for (const detail of detailPages) {
+      declaredAuth.add(`selected${detail.modelName}Id`);
+    }
+    const hookMap = getHookableStateProps(ctx);
+    const pageStateNeeded = new Set<string>();
+    for (const page of analysis.pages) {
+      if (isAuthPageName(page.name)) continue;
+      const deps = analyzePageDependencies(page.children, ctx, analysis);
+      for (const s of deps.stateProps) {
+        if (!declaredAuth.has(s) && !hookMap.has(s)) pageStateNeeded.add(s);
+      }
+    }
+    for (const varName of pageStateNeeded) {
+      const field = ctx.state.find(f => f.name === varName);
+      let defaultVal = "''";
+      if (field) {
+        if (field.type.kind === 'array') defaultVal = '[]';
+        else if (field.type.kind === 'object') defaultVal = '{}';
+        else if (field.type.kind === 'bool') defaultVal = 'false';
+        else if (field.type.kind === 'int' || field.type.kind === 'float') defaultVal = '0';
+        else if (field.type.kind === 'optional') defaultVal = 'null';
+        else if (field.type.kind === 'enum') defaultVal = "'all'";
+      }
+      lines.push(`  const [${varName}, set${capitalize(varName)}] = useState(${defaultVal});`);
     }
     lines.push('');
 
