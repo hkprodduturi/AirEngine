@@ -189,6 +189,41 @@ program
     console.log(`    cd ${appName} && npm install && npm run dev\n`);
   });
 
+// ---- air qa-gen ----
+
+program
+  .command('qa-gen')
+  .description('Generate a QA flow spec from a .air file')
+  .argument('<file>', 'Path to .air file')
+  .option('-o, --output <path>', 'Output flow spec JSON path', './qa-flow.json')
+  .option('--client-port <port>', 'Client dev server port', '3000')
+  .option('--server-port <port>', 'API server port', '3001')
+  .option('--style-lane', 'Include style assertion steps', false)
+  .option('--visual-lane', 'Include visual snapshot steps', false)
+  .action(async (file, options) => {
+    console.log(`\n  ⚡ AirEngine QA Flow Generator\n`);
+    try {
+      const source = readFileSync(file, 'utf-8');
+      const { generateFlowSpec } = await import('../self-heal/flow-generator.js');
+      const spec = generateFlowSpec(source, {
+        clientPort: parseInt(options.clientPort, 10),
+        serverPort: parseInt(options.serverPort, 10),
+        styleLane: options.styleLane,
+        visualLane: options.visualLane,
+      });
+
+      mkdirSync(dirname(options.output), { recursive: true });
+      writeFileSync(options.output, JSON.stringify(spec, null, 2));
+
+      console.log(`  ✅ Generated flow: ${spec.flow_id}`);
+      console.log(`     → ${spec.steps.length} steps`);
+      console.log(`     → ${options.output}\n`);
+    } catch (err) {
+      console.error(`  ERROR: ${err instanceof Error ? err.message : err}\n`);
+      process.exit(1);
+    }
+  });
+
 // ---- air dev ----
 
 program
@@ -198,12 +233,21 @@ program
   .option('-o, --output <dir>', 'Output directory', './output')
   .option('-p, --port <port>', 'Client dev server port', '3000')
   .option('--server-port <port>', 'API server port', '3001')
+  .option('--self-heal <mode>', 'Self-heal mode: off, shadow, propose, transpiler-patch', 'off')
+  .option('--qa-flow <path>', 'QA flow spec path or "auto" to generate from AST', 'auto')
+  .option('--heal-apply <mode>', 'Apply verified patches: none or verified', 'none')
+  .option('--heal-debounce-ms <ms>', 'Debounce heal cycle after file change', '2000')
   .action(async (file, options) => {
     const { DevServer } = await import('./dev.js');
     const server = new DevServer(file, {
       outDir: options.output,
       clientPort: parseInt(options.port, 10),
       serverPort: parseInt(options.serverPort, 10),
+      selfHeal: options.selfHeal,
+      qaFlow: options.qaFlow,
+      healApply: options.healApply,
+      healDebounceMs: parseInt(options.healDebounceMs, 10),
+      healOnStart: true,
     });
     await server.start();
   });

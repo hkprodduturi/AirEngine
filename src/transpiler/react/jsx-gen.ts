@@ -484,7 +484,9 @@ export function generateElementJSX(
       const forgotPasswordLink = (firstAction === 'login' && hasForgotRoute)
         ? `\n${pad}  <div className="text-center mt-2"><button type="button" className="text-sm text-[var(--accent)] hover:underline" onClick={() => setCurrentPage('forgotPassword')}>Forgot Password?</button></div>`
         : '';
-      return `${pad}<form${classAttr(mapping.className)}${onSubmitAttr}>${authAlertForm}\n${childJsx}\n${pad}</form>${forgotPasswordLink}`;
+      const formContext = firstAction || scope.pageName || '';
+      const dataAirForm = formContext ? ` data-air-form="${formContext}"` : '';
+      return `${pad}<form${classAttr(mapping.className)}${dataAirForm}${onSubmitAttr}>${authAlertForm}\n${childJsx}\n${pad}</form>${forgotPasswordLink}`;
     }
 
     const childScope = scope;
@@ -739,7 +741,7 @@ export function generateUnaryJSX(
       const name = extractActionName(node.operand);
       const args = extractActionArgs(node.operand, scope);
       const typeAttr = scope.insideForm ? ' type="button"' : '';
-      return `${pad}<button${typeAttr} className="bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" onClick={() => ${name}(${args})}>${name}</button>`;
+      return `${pad}<button${typeAttr} className="bg-[var(--accent)] text-white px-4 py-2 rounded-[var(--radius)] cursor-pointer hover:opacity-90 transition-colors" data-air-cta="${name}" onClick={() => ${name}(${args})}>${name}</button>`;
     }
 
     case '*': {
@@ -1141,14 +1143,15 @@ export function generateBindJSX(
       } else {
         btnClass = mapping.className;
       }
+      const ctaAttr = ` data-air-cta="${actionName}"`;
       // Primary form action → type="submit" (form's onSubmit handles the call)
       if (scope.insideForm && scope.formAction === actionName) {
-        return `${pad}<button type="submit" className="${btnClass}">${getButtonLabel(resolved)}</button>`;
+        return `${pad}<button type="submit" className="${btnClass}"${ctaAttr}>${getButtonLabel(resolved)}</button>`;
       }
       const typeAttr = scope.insideForm ? ' type="button"' : '';
-      return `${pad}<button${typeAttr} className="${btnClass}" onClick={() => ${actionName}(${actionArgs})}>${getButtonLabel(resolved)}</button>`;
+      return `${pad}<button${typeAttr} className="${btnClass}"${ctaAttr} onClick={() => ${actionName}(${actionArgs})}>${getButtonLabel(resolved)}</button>`;
     }
-    return `${pad}<${mapping.tag} className="${mapping.className}" onClick={() => ${actionName}(${actionArgs})} />`;
+    return `${pad}<${mapping.tag} className="${mapping.className}" data-air-cta="${actionName}" onClick={() => ${actionName}(${actionArgs})} />`;
   }
 
   // Element with binding
@@ -1492,7 +1495,9 @@ export function generateElementWithAction(
     const authAlert = isAuthForm && hasAuthRoutes
       ? `\n${pad}  {authError && <div className="rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{authError}</div>}`
       : '';
-    return `${pad}<form className="${mapping.className}" onSubmit={(e) => { e.preventDefault(); ${actionName}(${actionArgs}); }}>${authAlert}\n${childJsx}\n${pad}</form>`;
+    const formContext = actionName || scope.pageName || '';
+    const dataAirForm = formContext ? ` data-air-form="${formContext}"` : '';
+    return `${pad}<form className="${mapping.className}"${dataAirForm} onSubmit={(e) => { e.preventDefault(); ${actionName}(${actionArgs}); }}>${authAlert}\n${childJsx}\n${pad}</form>`;
   }
 
   // Button with onClick

@@ -131,17 +131,17 @@ export default function Layout({ children, user, logout, currentPage, setCurrent
 
           {/* Right actions */}
           <div className="flex items-center gap-1 shrink-0">
-            <button onClick={() => requireAuth('account')} style={{ padding: '6px 12px' }}
+            <button data-air-nav="account" onClick={() => requireAuth('account')} style={{ padding: '6px 12px' }}
               className="hidden sm:inline-flex items-center gap-2 rounded-lg hover:bg-white/5 transition-colors">
               <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
               <span className="text-sm font-medium">{isAuthed ? (user.name || '').split(' ')[0] : 'Sign in'}</span>
             </button>
-            <button onClick={() => requireAuth('orders')} style={{ padding: '6px 12px' }}
+            <button data-air-nav="orders" onClick={() => requireAuth('orders')} style={{ padding: '6px 12px' }}
               className="hidden sm:inline-flex items-center gap-1.5 rounded-lg hover:bg-white/5 transition-colors">
               <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
               <span className="text-sm font-medium">Orders</span>
             </button>
-            <button onClick={() => setCurrentPage('cart')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-white/5 transition-colors relative">
+            <button data-air-nav="cart" onClick={() => setCurrentPage('cart')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-white/5 transition-colors relative">
               <div className="relative">
                 <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121 0 2.09-.773 2.34-1.87l1.69-7.462a1.125 1.125 0 00-1.093-1.418H5.256M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>
                 {cartCount > 0 && <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-[var(--accent)] text-white text-[11px] font-bold flex items-center justify-center">{cartCount}</span>}
@@ -248,6 +248,7 @@ export function generateLayout(ctx: TranspileContext, analysis: UIAnalysis): str
   lines.push('            return (');
   lines.push('              <button');
   lines.push('                key={item.key}');
+  lines.push('                data-air-nav={item.key}');
   lines.push('                onClick={() => { setCurrentPage(item.key); setSidebarOpen(false); }}');
   lines.push('                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${');
   lines.push('                  isActive');
@@ -380,6 +381,7 @@ export function generatePublicLayout(ctx: TranspileContext, analysis: UIAnalysis
   lines.push('            {navItems.map((item) => (');
   lines.push('              <button');
   lines.push('                key={item.key}');
+  lines.push('                data-air-nav={item.key}');
   lines.push('                onClick={() => setCurrentPage(item.key)}');
   lines.push('                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${');
   lines.push("                  currentPage === item.key ? 'text-[var(--accent)]' : 'text-[var(--muted)] hover:text-[var(--fg)]'");
@@ -417,6 +419,7 @@ export function generatePublicLayout(ctx: TranspileContext, analysis: UIAnalysis
   lines.push('            {navItems.map((item) => (');
   lines.push('              <button');
   lines.push('                key={item.key}');
+  lines.push('                data-air-nav={item.key}');
   lines.push('                onClick={() => { setCurrentPage(item.key); setMenuOpen(false); }}');
   lines.push('                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${');
   lines.push("                  currentPage === item.key ? 'text-[var(--accent)] bg-[var(--hover)]' : 'text-[var(--muted)] hover:text-[var(--fg)]'");
@@ -425,7 +428,7 @@ export function generatePublicLayout(ctx: TranspileContext, analysis: UIAnalysis
   lines.push('                {item.label}');
   lines.push('              </button>');
   lines.push('            ))}');
-  lines.push(`            <button onClick={() => { setCurrentPage('${ctaPage}'); setMenuOpen(false); }} className="w-full mt-2 px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius)] text-sm font-semibold hover:opacity-90">${ctaLabel}</button>`);
+  lines.push(`            <button data-air-nav="${ctaPage}" onClick={() => { setCurrentPage('${ctaPage}'); setMenuOpen(false); }} className="w-full mt-2 px-4 py-2 bg-[var(--accent)] text-white rounded-[var(--radius)] text-sm font-semibold hover:opacity-90">${ctaLabel}</button>`);
   if (withAuth) {
     lines.push("            <button onClick={() => { setCurrentPage('login'); setMenuOpen(false); }} className=\"w-full mt-1 px-3 py-2 rounded-lg text-sm font-medium text-[var(--muted)] hover:text-[var(--fg)] text-left transition-colors\">Admin Login</button>");
   }

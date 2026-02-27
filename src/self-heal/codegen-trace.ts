@@ -70,7 +70,7 @@ function getFilesByPattern(files: Map<string, string>, pattern: RegExp): [string
 const cssSpecificityFight: CodegenTraceEntry = {
   id: 'SH9-001',
   name: 'CSS element selector specificity fight',
-  classification_ids: ['style-specificity-conflict', 'style-global-selector-leak'],
+  classification_ids: ['style-specificity-conflict', 'style-global-selector-leak', 'css-specificity-fight'],
   output_file_patterns: [/index\.css$/],
   transpiler_file: 'src/transpiler/scaffold.ts',
   transpiler_function: 'generateIndexCss',
@@ -136,7 +136,7 @@ const cssSpecificityFight: CodegenTraceEntry = {
 const pageUnreachable: CodegenTraceEntry = {
   id: 'SH9-002',
   name: 'Page exists but unreachable in App.jsx',
-  classification_ids: ['codegen-route-navigation-bug', 'runtime-navigation-failure'],
+  classification_ids: ['codegen-route-navigation-bug', 'runtime-navigation-failure', 'dead-cta', 'element-not-found'],
   output_file_patterns: [/App\.jsx$/, /pages\/.*Page\.jsx$/],
   transpiler_file: 'src/transpiler/react/index.ts',
   transpiler_function: 'generateApp',
@@ -222,7 +222,7 @@ const pageUnreachable: CodegenTraceEntry = {
 const doubleLayoutWrapping: CodegenTraceEntry = {
   id: 'SH9-003',
   name: 'Double Layout wrapping in page components',
-  classification_ids: ['layout-auth-wrapper-composition'],
+  classification_ids: ['layout-auth-wrapper-composition', 'element-not-found'],
   output_file_patterns: [/pages\/.*Page\.jsx$/],
   transpiler_file: 'src/transpiler/react/page-gen.ts',
   transpiler_function: 'generatePageComponents',

@@ -1740,3 +1740,44 @@ describe('photography CTA buttons have onClick handlers', () => {
     }
   });
 });
+
+// ---- H10: data-air-* Attribute Tests ----
+
+describe('data-air-* selector hooks', () => {
+  it('data-air-page attribute on page root divs', () => {
+    const result = transpileFile('dashboard');
+    const pageFiles = result.files.filter(f => f.path.includes('/pages/') && f.path.endsWith('.jsx'));
+
+    // At least one page file should have data-air-page
+    const hasPageAttr = pageFiles.some(f => f.content.includes('data-air-page='));
+    expect(hasPageAttr).toBe(true);
+  });
+
+  it('data-air-nav attribute on nav buttons', () => {
+    const result = transpileFile('dashboard');
+    const layoutFile = result.files.find(f =>
+      f.path.endsWith('Layout.jsx') || f.path.endsWith('layout.jsx')
+    );
+
+    // Layout should have data-air-nav on nav buttons
+    if (layoutFile) {
+      expect(layoutFile.content).toContain('data-air-nav');
+    }
+  });
+
+  it('data-air-cta attribute on action buttons', () => {
+    const allJsx = getAllJsx('todo');
+
+    // todo.air has mutations (add, done, del) — at least one should have data-air-cta
+    const hasCta = allJsx.includes('data-air-cta=');
+    expect(hasCta).toBe(true);
+  });
+
+  it('data-air-form attribute on form elements', () => {
+    const allJsx = getAllJsx('auth');
+
+    // auth.air has login/register forms — should have data-air-form
+    const hasForm = allJsx.includes('data-air-form=');
+    expect(hasForm).toBe(true);
+  });
+});

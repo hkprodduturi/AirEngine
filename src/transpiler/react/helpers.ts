@@ -46,6 +46,7 @@ export interface Scope {
   formAction?: string;  // primary action name for the enclosing form's onSubmit
   insideNav?: boolean;  // inside a nav element with page navigation
   insideSidebarPage?: boolean;  // inside a page with sidebar layout (reduces section padding)
+  pageName?: string;  // current page name — used for data-air-form context
 }
 
 export const ROOT_SCOPE: Scope = { insideIter: false };

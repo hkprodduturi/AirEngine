@@ -15,148 +15,25 @@
  * CI-safe: All tests use mock Page objects by default. Real browser gated behind RUNTIME_QA_LIVE=1.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync as fExistsSync } from 'fs';
 import { join } from 'path';
 import { validateJsonSchema } from '../tests/schema-validator.js';
 
-// ---- Types ----
+// ---- Types (canonical definitions in src/self-heal/runtime-qa.ts, re-exported here) ----
 
-export interface StepExpected {
-  url_change?: boolean;
-  dom_mutation?: boolean;
-  network_request?: boolean;
-  assert_visible?: string;
-  no_errors?: boolean;
-}
+export type {
+  StepExpected, AssertStyleFields, VisualSnapshotFields,
+  FlowStep, FlowSpec, StepEvidence, StepResult, PreflightResult,
+  RunMetadata, RuntimeQASummary, RuntimeQAResult,
+  QARunOptions, MockablePage, VisualBaselineMode,
+} from '../src/self-heal/runtime-qa.js';
 
-export interface AssertStyleFields {
-  selector: string;
-  expected_styles: Record<string, string>;
-  viewport?: { width: number; height: number };
-}
-
-export interface VisualSnapshotFields {
-  baseline_name: string;
-  selector?: string;
-  threshold?: number;
-}
-
-export interface FlowStep {
-  step_id: string;
-  label: string;
-  action: 'navigate' | 'click' | 'type' | 'check_console' | 'assert_visible' | 'screenshot' | 'assert_style' | 'visual_snapshot';
-  target?: string;
-  selector?: string;
-  value?: string;
-  expected?: StepExpected;
-  dead_cta_check?: boolean;
-  severity?: string;
-  /** SH9: Style assertion fields */
-  assert_style?: AssertStyleFields;
-  /** SH9: Visual snapshot fields */
-  visual_snapshot?: VisualSnapshotFields;
-}
-
-export interface FlowSpec {
-  flow_id: string;
-  description?: string;
-  base_url_client: string;
-  base_url_server: string;
-  preflight_health_path: string;
-  setup?: string[];
-  steps: FlowStep[];
-}
-
-export interface StepEvidence {
-  selector: string | null;
-  text_content: string | null;
-  url_before: string | null;
-  url_after: string | null;
-  screenshot_path: string | null;
-  console_errors: string[];
-  network_requests: string[];
-  dom_snippet: string | null;
-  dom_changed: boolean;
-  /** SH9: Computed styles from assert_style step */
-  computed_styles?: Record<string, string>;
-  /** SH9: Visual snapshot screenshot path */
-  visual_screenshot_path?: string;
-  /** SH9: Visual diff score (0.0 = identical, 1.0 = completely different) */
-  visual_diff_score?: number;
-}
-
-export interface StepResult {
-  step_id: string;
-  label: string;
-  action: string;
-  status: 'pass' | 'fail' | 'skip' | 'error';
-  duration_ms: number;
-  evidence: StepEvidence;
-  failure_reason: string | null;
-  dead_cta_detected: boolean;
-}
-
-export interface PreflightResult {
-  health_check_url: string;
-  status: 'pass' | 'fail' | 'skip';
-  latency_ms: number;
-  error: string | null;
-}
-
-export interface RunMetadata {
-  headless: boolean;
-  flow_path: string;
-  dry_run?: boolean;
-  timeout_ms?: number;
-}
-
-export interface RuntimeQASummary {
-  total: number;
-  passed: number;
-  failed: number;
-  skipped: number;
-  dead_ctas: number;
-  console_errors: number;
-}
-
-export interface RuntimeQAResult {
-  schema_version: '1.0';
-  qa_run_id: string;
-  flow_id: string;
-  timestamp: string;
-  run_metadata: RunMetadata;
-  preflight: PreflightResult;
-  steps: StepResult[];
-  summary: RuntimeQASummary;
-  verdict: 'pass' | 'fail';
-  incident_paths: string[];
-}
-
-export interface QARunOptions {
-  headless?: boolean;
-  dryRun?: boolean;
-  timeoutMs?: number;
-  flowPath?: string;
-  /** Injected page for testing — bypasses real browser launch */
-  mockPage?: MockablePage;
-  /** Injected preflight function for testing */
-  mockPreflight?: (spec: FlowSpec) => Promise<PreflightResult>;
-}
-
-/** Minimal Page interface — compatible with Playwright Page and test mocks */
-export interface MockablePage {
-  url(): string;
-  goto(url: string, options?: Record<string, unknown>): Promise<unknown>;
-  click(selector: string, options?: Record<string, unknown>): Promise<void>;
-  fill?(selector: string, value: string): Promise<void>;
-  waitForSelector?(selector: string, options?: Record<string, unknown>): Promise<unknown>;
-  waitForEvent?(event: string, options?: Record<string, unknown>): Promise<unknown>;
-  evaluate<T>(fn: (() => T) | string): Promise<T>;
-  screenshot?(options?: Record<string, unknown>): Promise<Buffer>;
-  close?(): Promise<void>;
-  on?(event: string, handler: (...args: unknown[]) => void): void;
-  removeAllListeners?(event: string): void;
-}
+import type {
+  StepExpected, AssertStyleFields, VisualSnapshotFields,
+  FlowStep, FlowSpec, StepEvidence, StepResult, PreflightResult,
+  RunMetadata, RuntimeQASummary, RuntimeQAResult,
+  QARunOptions, MockablePage, VisualBaselineMode,
+} from '../src/self-heal/runtime-qa.js';
 
 // ---- Helpers ----
 
@@ -431,6 +308,7 @@ export async function executeStep(
   spec: FlowSpec,
   consoleErrors: string[],
   networkRequests: string[],
+  baselineMode?: VisualBaselineMode,
 ): Promise<StepResult> {
   const start = performance.now();
   let evidence = emptyEvidence();
@@ -624,8 +502,7 @@ export async function executeStep(
 
               // Compare with baseline
               const baselinePath = join('qa-baselines', `${snapFields.baseline_name}.png`);
-              const { existsSync: fExists } = await import('fs');
-              if (fExists(baselinePath)) {
+              if (fExistsSync(baselinePath)) {
                 const { compareScreenshots } = await import('./visual-diff.js');
                 const threshold = snapFields.threshold ?? 0.01;
                 const diffResult = compareScreenshots(baselinePath, ssPath, threshold);
@@ -635,6 +512,13 @@ export async function executeStep(
                   status = 'fail';
                   failureReason = `Visual diff: ${(diffResult.diffScore * 100).toFixed(2)}% exceeds ${(threshold * 100).toFixed(2)}% threshold`;
                 }
+              } else if (baselineMode === 'record-missing') {
+                // Record-missing mode: save screenshot as baseline, pass on first run
+                const baselineDir = 'qa-baselines';
+                mkdirSync(baselineDir, { recursive: true });
+                writeFileSync(baselinePath, buffer);
+                status = 'pass';
+                failureReason = null;
               } else {
                 // Missing baseline — record as skip with reason
                 status = 'skip';
@@ -758,7 +642,7 @@ export async function executeFlow(
 
   try {
     for (const step of spec.steps) {
-      const result = await executeStep(page, step, spec, consoleErrors, networkRequests);
+      const result = await executeStep(page, step, spec, consoleErrors, networkRequests, options.baselineMode);
       steps.push(result);
     }
   } finally {

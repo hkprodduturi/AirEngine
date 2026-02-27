@@ -10,7 +10,8 @@
   "files": [
     "dist",
     "docs",
-    "examples"
+    "examples",
+    "scripts"
   ],
   "scripts": {
     "build": "tsc",

@@ -806,10 +806,11 @@ function generateOriginalPage(
   const isDeepForm = !isShallowForm && hasFormDeep(page.children);
   const hasSidebar = page.children.some(c => hasSidebarNode(c));
 
+  const pageAttr = ` data-air-page="${page.name}"`;
   lines.push('  return (');
   if (isShallowForm && !hasSidebar) {
     // Auth-style centered form page — no redundant bg (root div handles it)
-    lines.push('    <div className="flex items-center justify-center min-h-screen">');
+    lines.push(`    <div className="flex items-center justify-center min-h-screen"${pageAttr}>`);
     lines.push('      <div className="w-full max-w-md animate-fade-in">');
     lines.push('        <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-8 shadow-xl space-y-5">');
     const childJsx = page.children.map(c => generateJSX(c, ctx, analysis, ROOT_SCOPE, 10)).filter(Boolean).join('\n');
@@ -822,20 +823,20 @@ function generateOriginalPage(
     // Auth pages: add auth-form-wrapper class to flatten redundant main/grid via CSS display:contents
     const isAuth = isAuthPageName(page.name);
     const wrapperCls = isAuth ? 'w-full max-w-md animate-fade-in auth-form-wrapper' : 'w-full max-w-md animate-fade-in';
-    lines.push('    <div className="flex items-center justify-center min-h-screen">');
+    lines.push(`    <div className="flex items-center justify-center min-h-screen"${pageAttr}>`);
     lines.push(`      <div className="${wrapperCls}">`);
     const childJsx = page.children.map(c => generateJSX(c, ctx, analysis, ROOT_SCOPE, 8)).filter(Boolean).join('\n');
     lines.push(childJsx);
     lines.push('      </div>');
     lines.push('    </div>');
   } else if (hasSidebar) {
-    lines.push('    <div className="flex min-h-screen">');
+    lines.push(`    <div className="flex min-h-screen"${pageAttr}>`);
     const sidebarScope: Scope = { ...ROOT_SCOPE, insideSidebarPage: true };
     const childJsx = page.children.map(c => generateJSX(c, ctx, analysis, sidebarScope, 6)).filter(Boolean).join('\n');
     lines.push(childJsx);
     lines.push('    </div>');
   } else {
-    lines.push('    <div className="space-y-6 animate-fade-in">');
+    lines.push(`    <div className="space-y-6 animate-fade-in"${pageAttr}>`);
     const childJsx = page.children.map(c => generateJSX(c, ctx, analysis, ROOT_SCOPE, 6)).filter(Boolean).join('\n');
     lines.push(childJsx);
     lines.push('    </div>');
@@ -917,8 +918,8 @@ function generateDashboardPage(
   // Render with Layout wrapping — sidebar filtered since Layout provides it
   lines.push('  return (');
   const WrapOpen = hasLayout
-    ? '    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>'
-    : '    <div className="min-h-screen p-6" style={{ background: "var(--bg)", color: "var(--fg)" }}>';
+    ? `    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage} data-air-page="${page.name}">`
+    : `    <div className="min-h-screen p-6" data-air-page="${page.name}" style={{ background: "var(--bg)", color: "var(--fg)" }}>`;
   const WrapClose = hasLayout ? '    </Layout>' : '    </div>';
   lines.push(WrapOpen);
 
@@ -1486,8 +1487,8 @@ function generateCrudPage(
     // Render with Layout wrapping
     lines.push('  return (');
     lines.push(hasLayout
-      ? '    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage}>'
-      : '    <div className="min-h-screen p-6" style={{ background: "var(--bg)", color: "var(--fg)" }}>');
+      ? `    <Layout user={user} logout={logout} currentPage={currentPage} setCurrentPage={setCurrentPage} data-air-page="${page.name}">`
+      : `    <div className="min-h-screen p-6" data-air-page="${page.name}" style={{ background: "var(--bg)", color: "var(--fg)" }}>`);
 
     // Error/success alerts (T1.2)
     lines.push('      {error && <div className="mb-4 rounded-[var(--radius)] bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 text-sm">{error}</div>}');
