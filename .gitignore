@@ -22,3 +22,4 @@ site/
 .demo-tmp/
 artifacts/
 demo-output/
+output-*/
